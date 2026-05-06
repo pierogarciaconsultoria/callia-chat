@@ -40,7 +40,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return;
     }
     setLoading(true);
-    const { data: members } = await supabase
+    const { data: members } = await (supabase as any)
       .from("workspace_members")
       .select("role, workspace:workspaces(id, name, slug, owner_id)")
       .eq("user_id", user.id);
@@ -68,13 +68,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(STORAGE_KEY, currentId);
     // refresh role for new ws
     if (!user) return;
-    supabase
+    (supabase as any)
       .from("workspace_members")
       .select("role")
       .eq("user_id", user.id)
       .eq("workspace_id", currentId)
       .maybeSingle()
-      .then(({ data }) => setRole((data?.role as Role) ?? null));
+      .then((res: any) => setRole((res?.data?.role as Role) ?? null));
   }, [currentId, user]);
 
   const currentWorkspace = workspaces.find((w) => w.id === currentId) ?? null;
