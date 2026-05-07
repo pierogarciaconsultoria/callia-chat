@@ -215,12 +215,8 @@
 
 ## Ultima fase concluida
 
-- `Fase 0 - Fundacao tecnica`
-
-## Fase atual em execucao
-
-- `Fase 1 - Estrutura do backend e adapters`
+- `Fase 9 - Acabamento, testes e go-live`
 
 ## Proxima fase da fila
 
-- `Fase 2 - Painel do agente e configuracao do workspace`
+- `Roadmap base concluido`

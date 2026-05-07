@@ -25,6 +25,7 @@ const totalPhases = projectPhases.length;
 const completedPhases = projectPhases.filter((phase) => phase.status === "completed").length;
 const currentPhase = projectPhases.find((phase) => phase.status === "in_progress");
 const nextPhase = projectPhases.find((phase) => phase.status === "next");
+const roadmapCompleted = completedPhases === totalPhases;
 
 export default function Index() {
   return (
@@ -76,22 +77,26 @@ export default function Index() {
             <CardHeader className="pb-2">
               <CardDescription>Fase atual</CardDescription>
               <CardTitle className="text-xl">
-                {currentPhase ? `Fase ${currentPhase.order}` : "Nenhuma em execucao"}
+                {roadmapCompleted ? "Roadmap concluido" : currentPhase ? `Fase ${currentPhase.order}` : "Nenhuma em execucao"}
               </CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
-              {currentPhase?.title ?? "A execucao principal ainda nao foi iniciada."}
+              {roadmapCompleted
+                ? "Todas as fases base do MVP foram entregues e validadas."
+                : currentPhase?.title ?? "A execucao principal ainda nao foi iniciada."}
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>Proxima fase</CardDescription>
               <CardTitle className="text-xl">
-                {nextPhase ? `Fase ${nextPhase.order}` : "Roadmap em revisao"}
+                {roadmapCompleted ? "Nenhuma pendente" : nextPhase ? `Fase ${nextPhase.order}` : "Roadmap em revisao"}
               </CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
-              {nextPhase?.title ?? "As proximas etapas serao atualizadas aqui."}
+              {roadmapCompleted
+                ? "O roadmap base foi concluido. Novas etapas entram como expansao ou pos-piloto."
+                : nextPhase?.title ?? "As proximas etapas serao atualizadas aqui."}
             </CardContent>
           </Card>
         </section>
@@ -194,7 +199,7 @@ export default function Index() {
                 <div className="flex items-center justify-between rounded-lg bg-muted px-3 py-2">
                   <span>Planejadas</span>
                   <span className="font-medium text-foreground">
-                    {totalPhases - completedPhases - (currentPhase ? 1 : 0)}
+                    {Math.max(totalPhases - completedPhases - (currentPhase ? 1 : 0), 0)}
                   </span>
                 </div>
                 <div className="rounded-xl border border-dashed p-4">

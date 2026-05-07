@@ -36,7 +36,7 @@ export const projectPhases: ProjectPhase[] = [
     id: "phase-1",
     order: 1,
     title: "Estrutura do backend e adapters",
-    status: "in_progress",
+    status: "completed",
     goal: "Montar a ossatura do runtime e dos provedores externos.",
     scope: [
       "Criar adapters de WhatsApp, IA, audio e visao",
@@ -55,7 +55,7 @@ export const projectPhases: ProjectPhase[] = [
     id: "phase-2",
     order: 2,
     title: "Painel do agente e configuracao do workspace",
-    status: "next",
+    status: "completed",
     goal: "Permitir configurar o workspace e o comportamento do agente pela interface.",
     scope: [
       "Tela /agent",
@@ -74,7 +74,7 @@ export const projectPhases: ProjectPhase[] = [
     id: "phase-3",
     order: 3,
     title: "Conexao WhatsApp e gestao de instancias",
-    status: "pending",
+    status: "completed",
     goal: "Conectar o workspace ao canal WhatsApp com multiplas instancias.",
     scope: [
       "Tela /whatsapp",
@@ -93,7 +93,7 @@ export const projectPhases: ProjectPhase[] = [
     id: "phase-4",
     order: 4,
     title: "Entrada de mensagens e webhook inbound",
-    status: "pending",
+    status: "completed",
     goal: "Receber mensagens com seguranca, consistencia e idempotencia.",
     scope: [
       "Webhook inbound da Evolution",
@@ -112,7 +112,7 @@ export const projectPhases: ProjectPhase[] = [
     id: "phase-5",
     order: 5,
     title: "Pipeline de IA",
-    status: "pending",
+    status: "completed",
     goal: "Construir o cerebro do atendimento automatico.",
     scope: [
       "Texto, audio e imagem",
@@ -131,7 +131,7 @@ export const projectPhases: ProjectPhase[] = [
     id: "phase-6",
     order: 6,
     title: "Inbox, realtime e atendimento humano",
-    status: "pending",
+    status: "completed",
     goal: "Entregar a ferramenta operacional do time humano.",
     scope: [
       "Tela /inbox",
@@ -150,7 +150,7 @@ export const projectPhases: ProjectPhase[] = [
     id: "phase-7",
     order: 7,
     title: "API publica e chaves",
-    status: "pending",
+    status: "completed",
     goal: "Abrir o hub para integracao com sistemas externos.",
     scope: [
       "Tela /api-keys",
@@ -169,7 +169,7 @@ export const projectPhases: ProjectPhase[] = [
     id: "phase-8",
     order: 8,
     title: "Webhooks de saida, logs e auditoria",
-    status: "pending",
+    status: "completed",
     goal: "Fechar o ciclo de integracao e governanca.",
     scope: [
       "Tela /webhooks",
@@ -188,7 +188,7 @@ export const projectPhases: ProjectPhase[] = [
     id: "phase-9",
     order: 9,
     title: "Acabamento, testes e go-live",
-    status: "pending",
+    status: "completed",
     goal: "Estabilizar o MVP para piloto real.",
     scope: [
       "Testes de RLS e do fluxo principal",

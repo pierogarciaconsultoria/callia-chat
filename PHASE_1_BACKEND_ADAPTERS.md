@@ -34,6 +34,9 @@ Criar a ossatura do runtime para que as proximas fases reutilizem interfaces, va
 - Resolver de contexto para envio proativo com escolha de instancia explicita ou default
 - Resolver de `provider_secret_ref` para backends seguros
 - Stubs controlados dos providers externos para destravar implementacao incremental
+- Adapter base da Evolution com normalizacao e chamadas HTTP encapsuladas
+- Bootstrap do runtime para montar registry e env de execucao
+- Wrappers HTTP e handler-base para futuras edge functions
 
 ## Blocos da fase
 
@@ -84,3 +87,16 @@ Criar a ossatura do runtime para que as proximas fases reutilizem interfaces, va
 - Fase 3 implementa `WhatsAppProvider` com Evolution
 - Fase 4 usa o schema de inbound e o contexto de observabilidade
 - Fase 7 pluga a autenticacao real por `x-api-key`
+
+## Fechamento da fase
+
+- Com este bloco, a Fase 1 entrega a espinha reutilizavel do runtime.
+- As proximas fases podem construir edge functions e integracoes sobre uma base comum de:
+- erro
+- observabilidade
+- auth
+- validacao
+- adapters
+- secrets
+- bootstrap
+- handler HTTP

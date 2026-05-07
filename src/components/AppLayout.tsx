@@ -2,7 +2,9 @@ import { ReactNode } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { useWorkspace } from "@/lib/workspace";
+import { useWorkspaceBranding } from "@/hooks/use-workspace-branding";
 import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Inbox,
   Bot,
@@ -55,6 +57,7 @@ function NavItem({ to, label, icon: Icon }: { to: string; label: string; icon: a
 export default function AppLayout({ children }: { children?: ReactNode }) {
   const { user, signOut } = useAuth();
   const { workspaces, currentWorkspace, setCurrentWorkspaceId } = useWorkspace();
+  const { branding, displayName } = useWorkspaceBranding();
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
@@ -67,10 +70,23 @@ export default function AppLayout({ children }: { children?: ReactNode }) {
       <aside className="w-64 border-r bg-card flex flex-col">
         <div className="p-4 border-b">
           <div className="flex items-center gap-2 mb-3">
-            <div className="h-8 w-8 rounded-md bg-primary flex items-center justify-center">
-              <Sparkles className="h-4 w-4 text-primary-foreground" />
+            <Avatar
+              className="h-9 w-9 rounded-md"
+              style={{ backgroundColor: branding?.primary_color ?? undefined }}
+            >
+              {branding?.logo_url ? (
+                <AvatarImage src={branding.logo_url} alt={displayName} />
+              ) : null}
+              <AvatarFallback className="rounded-md text-white">
+                <Sparkles className="h-4 w-4" />
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0">
+              <div className="truncate font-semibold">{displayName}</div>
+              <div className="truncate text-xs text-muted-foreground">
+                {branding?.custom_domain || currentWorkspace?.slug || "Workspace"}
+              </div>
             </div>
-            <div className="font-semibold">Agent Hub</div>
           </div>
           {workspaces.length > 0 && (
             <Select

@@ -1,11 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   extractApiKeyFromHeaders,
+  publicApiMessageSchema,
   validatePublicApiMessageInput,
 } from "@/lib/runtime/api-keys";
 import { HeaderApiKeyAuthenticator } from "@/lib/runtime/authenticator";
+import { bootstrapRuntime } from "@/lib/runtime/bootstrap";
 import { createPublicApiRequestContext } from "@/lib/runtime/context";
 import { createRuntimeError, toErrorResponse } from "@/lib/runtime/errors";
+import { createEvolutionWhatsAppProvider } from "@/lib/runtime/evolution";
+import { handleRuntimeRequest } from "@/lib/runtime/handler";
+import { jsonResponse, noContentResponse, readJsonRequest } from "@/lib/runtime/http";
 import {
   createExecutionContext,
   createLogEvent,
@@ -221,5 +226,99 @@ describe("runtime backend foundation", () => {
         correlationId: "3f0c5f13-33b3-4e91-aa93-6cfb95c57074",
       }),
     ).rejects.toThrow("AI generateText is not implemented yet.");
+  });
+
+  it("normalizes inbound payloads from the evolution provider", async () => {
+    const provider = createEvolutionWhatsAppProvider({
+      secretStore: new InMemoryProviderSecretStore(),
+      resolveSecretRef: async () => null,
+    });
+
+    const event = await provider.normalizeInboundEvent({
+      event: "messages.upsert",
+      instance: "1f479a59-6db4-4de3-b668-59e7682fdb4b",
+      data: {
+        key: {
+          id: "evt-1",
+          remoteJid: "5511999999999@s.whatsapp.net",
+        },
+        message: {
+          conversation: "Oi",
+        },
+        pushName: "Cliente Teste",
+      },
+    });
+
+    expect(event.providerEventId).toBe("evt-1");
+    expect(event.customerPhone).toBe("5511999999999");
+    expect(event.message.text).toBe("Oi");
+  });
+
+  it("bootstraps runtime with evolution provider and stubs", () => {
+    const runtime = bootstrapRuntime({
+      secretStore: new InMemoryProviderSecretStore(),
+      env: {
+        VITE_RUNTIME_ENV: "development",
+      },
+      resolveEvolutionSecretRef: () => "evolution:ws-1:instance:inst-1",
+    });
+
+    expect(runtime.env.VITE_RUNTIME_ENV).toBe("development");
+    expect(runtime.registry.getWhatsAppProvider("evolution")).toBeTruthy();
+    expect(runtime.registry.getAiProvider()).toBeTruthy();
+  });
+
+  it("reads and validates JSON request payloads", async () => {
+    const request = new Request("https://example.com", {
+      method: "POST",
+      body: JSON.stringify({
+        phoneNumber: "+5511999999999",
+        text: "Mensagem",
+      }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    const payload = await readJsonRequest(request, publicApiMessageSchema);
+
+    expect(payload.phoneNumber).toBe("+5511999999999");
+  });
+
+  it("creates JSON and no-content responses", async () => {
+    const response = jsonResponse({ ok: true }, { status: 201 });
+    const noContent = noContentResponse();
+
+    expect(response.status).toBe(201);
+    await expect(response.json()).resolves.toEqual({ ok: true });
+    expect(noContent.status).toBe(204);
+  });
+
+  it("handles runtime requests and converts runtime errors to responses", async () => {
+    const runtime = bootstrapRuntime({
+      secretStore: new InMemoryProviderSecretStore(),
+      env: { VITE_RUNTIME_ENV: "development" },
+      resolveEvolutionSecretRef: () => "evolution:ws-1:instance:inst-1",
+    });
+
+    const response = await handleRuntimeRequest(
+      new Request("https://example.com"),
+      runtime,
+      async () => {
+        throw createRuntimeError("FORBIDDEN", "Acesso negado.");
+      },
+      {
+        workspaceId: "ws-1",
+      },
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "FORBIDDEN",
+        message: "Acesso negado.",
+        details: null,
+      },
+    });
   });
 });
