@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Save, Plus, Trash2, Bot, BookOpen, Package2 } from "lucide-react";
+import { Save, Plus, Trash2, Bot, BookOpen, Package2, Sparkles } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 import { useWorkspaceAdmin, type AgentConfigRecord, type FaqRecord, type ProductRecord } from "@/hooks/use-workspace-admin";
 import { parseFollowUpRules, parsePaymentLinks, serializeFollowUpRules, serializePaymentLinks } from "@/lib/agent-settings";
 import { useWorkspace } from "@/lib/workspace";
@@ -10,6 +11,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 type EditableFaq = Pick<FaqRecord, "id" | "question" | "answer" | "is_active">;
 type EditableProduct = Pick<
@@ -49,6 +58,10 @@ export default function AgentPage() {
   const [savingConfig, setSavingConfig] = useState(false);
   const [followUpDraft, setFollowUpDraft] = useState("[]");
   const [followUpError, setFollowUpError] = useState<string | null>(null);
+  const [promptDialogOpen, setPromptDialogOpen] = useState(false);
+  const [companySegment, setCompanySegment] = useState("");
+  const [companyContext, setCompanyContext] = useState("");
+  const [generatingPrompt, setGeneratingPrompt] = useState(false);
 
   useEffect(() => {
     if (agentConfig) {
@@ -125,6 +138,45 @@ export default function AgentPage() {
       toast.error(error instanceof Error ? error.message : "Nao foi possivel salvar o agente.");
     } finally {
       setSavingConfig(false);
+    }
+  };
+
+  const generatePrompt = async () => {
+    if (!companySegment.trim() || !companyContext.trim()) {
+      toast.error("Informe o segmento e o contexto da empresa.");
+      return;
+    }
+
+    try {
+      setGeneratingPrompt(true);
+      const { data, error } = await supabase.functions.invoke("generate-agent-prompt", {
+        body: {
+          workspaceId: currentWorkspace.id,
+          segment: companySegment.trim(),
+          companyContext: companyContext.trim(),
+          language: form.language,
+          websiteUrl: form.website_url,
+          currentPrompt: form.persona_prompt,
+          model: form.ai_model,
+        },
+      });
+
+      if (error) throw error;
+      if (!data?.prompt || typeof data.prompt !== "string") {
+        throw new Error(data?.error ?? "A IA não retornou um prompt válido.");
+      }
+
+      updateForm("persona_prompt", data.prompt.trim());
+      setPromptDialogOpen(false);
+      toast.success("Prompt gerado. Revise o conteúdo e salve as configurações.");
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível gerar o prompt por IA.",
+      );
+    } finally {
+      setGeneratingPrompt(false);
     }
   };
 
@@ -241,7 +293,19 @@ export default function AgentPage() {
         </CardHeader>
         <CardContent className="grid gap-5 lg:grid-cols-2">
           <div className="space-y-2 lg:col-span-2">
-            <Label htmlFor="persona">Prompt de sistema</Label>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Label htmlFor="persona">Prompt de sistema</Label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setPromptDialogOpen(true)}
+                disabled={!canEdit}
+              >
+                <Sparkles className="h-4 w-4" />
+                Gerar por IA
+              </Button>
+            </div>
             <Textarea
               id="persona"
               value={form.persona_prompt}
@@ -405,6 +469,65 @@ export default function AgentPage() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={promptDialogOpen} onOpenChange={setPromptDialogOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Gerar prompt por IA</DialogTitle>
+            <DialogDescription>
+              Descreva o negócio para criar um prompt de atendimento alinhado ao segmento e à realidade da empresa.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="company-segment">Segmento da empresa</Label>
+              <Input
+                id="company-segment"
+                value={companySegment}
+                onChange={(event) => setCompanySegment(event.target.value)}
+                placeholder="Ex.: clínica odontológica, imobiliária, e-commerce"
+                disabled={generatingPrompt}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="company-context">Contexto da empresa</Label>
+              <Textarea
+                id="company-context"
+                value={companyContext}
+                onChange={(event) => setCompanyContext(event.target.value)}
+                placeholder="Explique serviços, público, diferenciais, tom de voz, objetivos do atendimento e restrições importantes."
+                className="min-h-[160px]"
+                disabled={generatingPrompt}
+              />
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              O texto gerado substituirá o conteúdo atual apenas no formulário. Você poderá revisar antes de salvar.
+            </p>
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPromptDialogOpen(false)}
+              disabled={generatingPrompt}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={generatePrompt}
+              disabled={generatingPrompt || !companySegment.trim() || !companyContext.trim()}
+            >
+              <Sparkles className="h-4 w-4" />
+              {generatingPrompt ? "Gerando..." : "Gerar prompt"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">

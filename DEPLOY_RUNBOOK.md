@@ -46,6 +46,7 @@ Publicar:
 - `evolution-connect`
 - `whatsapp-webhook`
 - `process-message`
+- `generate-agent-prompt`
 - `send-message`
 - `manage-api-keys`
 - `public-api`

@@ -112,9 +112,10 @@ Necessários conforme o ambiente e as features habilitadas:
 2. Admin conecta uma ou mais instâncias de WhatsApp
 3. Webhook inbound persiste eventos, conversas e mensagens
 4. `process-message` decide entre resposta automática e handoff
-5. Inbox humana assume ou devolve conversas ao bot
-6. API pública e webhooks de saída conectam sistemas externos
-7. Logs consolidam auditoria, outbound, requests e entregas
+5. `generate-agent-prompt` cria prompts de sistema a partir do segmento e contexto da empresa
+6. Inbox humana assume ou devolve conversas ao bot
+7. API pública e webhooks de saída conectam sistemas externos
+8. Logs consolidam auditoria, outbound, requests e entregas
 
 ## Deploy operacional
 
