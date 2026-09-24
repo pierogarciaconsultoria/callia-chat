@@ -24,6 +24,7 @@ const SettingsPage = lazy(() => import("./pages/Settings.tsx"));
 const WebhooksPage = lazy(() => import("./pages/Webhooks.tsx"));
 const WhatsAppPage = lazy(() => import("./pages/WhatsApp.tsx"));
 const Placeholder = lazy(() => import("./pages/Placeholder.tsx"));
+const OAuthConsent = lazy(() => import("./pages/OAuthConsent.tsx"));
 
 const queryClient = new QueryClient();
 
@@ -43,6 +44,7 @@ const App = () => (
                   <Route path="/app" element={<Navigate to="/inbox" replace />} />
                   <Route path="/login" element={<Login />} />
                   <Route path="/signup" element={<Signup />} />
+                  <Route path="/.lovable/oauth/consent" element={<OAuthConsent />} />
                   <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
                   <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
                     <Route path="/inbox" element={<InboxPage />} />
