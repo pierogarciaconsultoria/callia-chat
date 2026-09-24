@@ -13,6 +13,13 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const rawNext = new URLSearchParams(window.location.search).get("next");
+  const next = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : null;
+
+  const goNext = () => {
+    if (next) window.location.href = next;
+    else navigate("/inbox");
+  };
 
   const handleEmail = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,13 +27,15 @@ export default function Login() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (error) return toast.error(error.message);
-    navigate("/inbox");
+    goNext();
   };
 
   const handleGoogle = async () => {
-    const result = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
+    const result = await lovable.auth.signInWithOAuth("google", {
+      redirect_uri: window.location.origin + (next ?? ""),
+    });
     if (result.error) toast.error(String(result.error));
-    if (!result.redirected && !result.error) navigate("/inbox");
+    if (!result.redirected && !result.error) goNext();
   };
 
   return (
