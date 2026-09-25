@@ -15,9 +15,6 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
     );
   }
   if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
-  if (workspaces.length === 0 && location.pathname !== "/onboarding") {
-    return <Navigate to="/onboarding" replace />;
-  }
   if (workspaces.length > 0 && !currentWorkspace) {
     return (
       <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
