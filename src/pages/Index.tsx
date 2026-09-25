@@ -208,7 +208,7 @@ export default function Index() {
                     <span className="font-medium">Atualizacao deste painel</span>
                   </div>
                   <p>
-                    Esta tela e temporaria e acompanha o roadmap do projeto por ordem de desenvolvimento.
+                    Esta tela le o guia do projeto (PROJECT_BOARD.md) e se atualiza sozinha sempre que o status de uma fase muda.
                   </p>
                 </div>
               </CardContent>
@@ -231,6 +231,9 @@ export default function Index() {
                 </p>
                 <p>
                   <span className="font-medium text-foreground">Pendente:</span> fase planejada, aguardando dependencias anteriores.
+                </p>
+                <p>
+                  <span className="font-medium text-foreground">Bloqueada:</span> fase pausada por dependencia externa ou decisao pendente.
                 </p>
               </CardContent>
             </Card>

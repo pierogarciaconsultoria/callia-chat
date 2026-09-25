@@ -3,6 +3,7 @@
 ## Como usar este board
 
 - Este arquivo e o guia operacional do projeto por fases.
+- Cada fase carrega uma linha `- Status:` com um destes valores: `pending`, `in_progress`, `completed` ou `blocked`. Essa linha alimenta automaticamente a pagina `/acompanhamento`, sem edicao manual de codigo.
 - O acompanhamento vivo do status acontece pelo board de tarefas da workspace.
 - Sempre que eu iniciar uma fase, o status dela muda para `in_progress`.
 - Sempre que eu concluir uma fase, o status dela muda para `completed` com um resumo do que foi entregue.
@@ -44,6 +45,7 @@
 - Criterio de entrada: base atual compilando e schema inicial aplicado
 - Criterio de saida: schema endurecido, segredos protegidos e contratos fechados
 - Dependencias: nenhuma
+- Status: completed
 
 ## Fase 1 - Estrutura do backend e adapters
 
@@ -60,6 +62,7 @@
 - Criterio de entrada: Fase 0 concluida
 - Criterio de saida: runtime organizado e pronto para conectar casos de uso
 - Dependencias: Fase 0
+- Status: completed
 
 ## Fase 2 - Painel do agente e configuracao do workspace
 
@@ -77,6 +80,7 @@
 - Criterio de entrada: Fase 1 concluida
 - Criterio de saida: workspace consegue configurar o agente sem editar codigo
 - Dependencias: Fase 1
+- Status: completed
 
 ## Fase 3 - Conexao WhatsApp e gestao de instancias
 
@@ -94,6 +98,7 @@
 - Criterio de entrada: Fase 1 concluida
 - Criterio de saida: workspace conecta e administra uma ou mais instancias
 - Dependencias: Fase 1
+- Status: completed
 
 ## Fase 4 - Entrada de mensagens e webhook inbound
 
@@ -111,6 +116,7 @@
 - Criterio de entrada: Fase 3 concluida
 - Criterio de saida: mensagens inbound entram no sistema uma unica vez
 - Dependencias: Fase 3
+- Status: completed
 
 ## Fase 5 - Pipeline de IA
 
@@ -130,6 +136,7 @@
 - Criterio de entrada: Fase 4 concluida e Fase 2 concluida
 - Criterio de saida: bot responde com contexto e respeita handoff
 - Dependencias: Fase 2, Fase 4
+- Status: completed
 
 ## Fase 6 - Inbox, realtime e atendimento humano
 
@@ -149,6 +156,7 @@
 - Criterio de entrada: Fase 4 concluida
 - Criterio de saida: agente humano consegue operar conversas pelo painel
 - Dependencias: Fase 4
+- Status: completed
 
 ## Fase 7 - API publica e chaves
 
@@ -167,6 +175,7 @@
 - Criterio de entrada: Fase 1 concluida e Fase 3 concluida
 - Criterio de saida: cliente externo consegue enviar mensagem proativa e consultar dados
 - Dependencias: Fase 1, Fase 3
+- Status: completed
 
 ## Fase 8 - Webhooks de saida, logs e auditoria
 
@@ -185,6 +194,7 @@
 - Criterio de entrada: Fase 7 concluida
 - Criterio de saida: eventos de saida chegam ao cliente com rastreabilidade
 - Dependencias: Fase 7
+- Status: completed
 
 ## Fase 9 - Acabamento, testes e go-live
 
@@ -202,6 +212,7 @@
 - Criterio de entrada: Fases 2 a 8 concluidas
 - Criterio de saida: produto utilizavel por clientes piloto com fluxo ponta a ponta
 - Dependencias: Fases 2 a 8
+- Status: completed
 
 ## Forma de acompanhamento
 

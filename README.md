@@ -38,7 +38,7 @@ Hub SaaS multi-tenant para atendimento no WhatsApp com agente de IA, inbox human
 - `src/lib`: helpers e contratos do app
 - `supabase/migrations`: evolução do schema
 - `supabase/functions`: edge functions operacionais
-- `src/data/project-board.ts`: board público de fases
+- `src/data/project-board.ts`: board público de fases (gerado a partir do `PROJECT_BOARD.md`)
 
 ## Rotas principais
 
