@@ -383,6 +383,42 @@ export default function AgentPage() {
             />
           </div>
 
+          <div className="flex items-center justify-between rounded-lg border px-4 py-3 lg:col-span-2">
+            <div className="pr-4">
+              <div className="font-medium">Usar agente externo (via webhook)</div>
+              <div className="text-sm text-muted-foreground">
+                Envia mensagens recebidas pelo webhook sem acionar o agente de IA interno.
+              </div>
+            </div>
+            <Switch
+              checked={form.external_agent_enabled}
+              onCheckedChange={(checked) => updateForm("external_agent_enabled", checked)}
+              disabled={!canEdit}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="human_pause_hours">Pausa após resposta humana (horas)</Label>
+            <Input
+              id="human_pause_hours"
+              type="number"
+              min={1}
+              max={720}
+              step={1}
+              value={form.human_pause_hours}
+              onChange={(e) =>
+                updateForm(
+                  "human_pause_hours",
+                  Math.min(720, Math.max(1, Number.parseInt(e.target.value, 10) || 12)),
+                )
+              }
+              disabled={!canEdit}
+            />
+            <p className="text-xs text-muted-foreground">
+              Ao responder pelo celular, o bot fica pausado por esse período.
+            </p>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="timezone">Timezone</Label>
             <Input

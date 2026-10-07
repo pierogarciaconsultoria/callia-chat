@@ -3,6 +3,11 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { corsHeaders, createServiceClient, jsonResponse } from "../_shared/auth.ts";
 import { getClientIp, sha256Hex } from "../_shared/api-keys.ts";
 import { createOutboundMessageRecord, deliverOutboundMessage, resolveSendingInstance } from "../_shared/outbound.ts";
+import {
+  buildExternalAgentMetadata,
+  getPublicApiMessageContent,
+  parsePublicApiMessagePayload,
+} from "../_shared/public-api-messages.ts";
 import { triggerPendingWebhookDispatch, triggerWebhookDispatch } from "../_shared/webhooks.ts";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -25,28 +30,6 @@ function parseLimit(url: URL, fallback = 50, max = 200) {
   const raw = Number(url.searchParams.get("limit") ?? fallback);
   if (!Number.isFinite(raw)) return fallback;
   return Math.min(Math.max(Math.trunc(raw), 1), max);
-}
-
-function parseMessagePayload(payload: unknown) {
-  const body = asRecord(payload) ?? {};
-  const phoneNumber = typeof body.phoneNumber === "string" ? body.phoneNumber.trim() : "";
-  const text = typeof body.text === "string" ? body.text.trim() : "";
-  const instanceId = typeof body.instanceId === "string" ? body.instanceId : null;
-  const idempotencyKey =
-    typeof body.idempotencyKey === "string" ? body.idempotencyKey.trim() : null;
-  const metadata = asRecord(body.metadata) ?? {};
-
-  if (!phoneNumber || !text) {
-    throw new Error("invalid_message_payload");
-  }
-
-  return {
-    phoneNumber,
-    text,
-    instanceId,
-    idempotencyKey,
-    metadata,
-  };
 }
 
 function parseEventPayload(payload: unknown) {
@@ -206,6 +189,25 @@ async function findOrCreateConversation(supabase, input) {
   return data;
 }
 
+async function resolveMessageConversation(supabase, input) {
+  if (input.conversationId) {
+    const { data } = await supabase
+      .from("conversations")
+      .select("*")
+      .eq("workspace_id", input.workspaceId)
+      .eq("id", input.conversationId)
+      .maybeSingle();
+    if (!data) throw new Error("conversation_not_found");
+    return data;
+  }
+
+  return findOrCreateConversation(supabase, {
+    workspaceId: input.workspaceId,
+    phoneNumber: input.phoneNumber,
+    instanceId: input.instanceId,
+  });
+}
+
 serve(async (request) => {
   if (request.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -227,7 +229,7 @@ serve(async (request) => {
     await touchApiKeyUsage(supabase, apiKey, request);
 
     if (request.method === "POST" && endpoint === "/messages") {
-      const payload = parseMessagePayload(await request.json());
+      const payload = parsePublicApiMessagePayload(await request.json());
       requestBody = payload;
       idempotencyKey = payload.idempotencyKey;
 
@@ -246,40 +248,50 @@ serve(async (request) => {
       const targetInstance = await resolveSendingInstance(supabase, {
         workspaceId,
         instanceId: payload.instanceId,
+        conversationId: payload.conversationId,
       });
 
       if (!targetInstance) {
         throw new Error("instance_not_available");
       }
 
-      const conversation = await findOrCreateConversation(supabase, {
+      const conversation = await resolveMessageConversation(supabase, {
         workspaceId,
+        conversationId: payload.conversationId,
         phoneNumber: payload.phoneNumber,
         instanceId: targetInstance.id,
       });
+      const phoneNumber = payload.conversationId
+        ? conversation.customer_phone
+        : payload.phoneNumber ?? conversation.customer_phone;
+      if (!phoneNumber) throw new Error("phone_required");
+      const messageContent = getPublicApiMessageContent(payload);
 
       const outbound = await createOutboundMessageRecord(supabase, {
         workspaceId,
         conversationId: conversation.id,
         instanceId: targetInstance.id,
-        content: payload.text,
-        type: "text",
+        content: messageContent,
+        mediaUrl: payload.mediaUrl,
+        mimeType: payload.mimeType,
+        type: payload.mediaUrl ? "image" : "text",
         sender: "bot",
         correlationId,
-        metadata: {
-          ...payload.metadata,
-          generated_by: "public-api",
-          api_key_id: apiKeyId,
-          idempotency_key: payload.idempotencyKey,
-        },
+        metadata: buildExternalAgentMetadata(
+          payload.metadata,
+          apiKeyId,
+          payload.idempotencyKey,
+        ),
       });
 
       const delivered = await deliverOutboundMessage(supabase, {
         workspaceId,
         conversationId: conversation.id,
         instanceId: targetInstance.id,
-        phoneNumber: payload.phoneNumber,
-        text: payload.text,
+        phoneNumber,
+        text: messageContent,
+        mediaUrl: payload.mediaUrl,
+        mimeType: payload.mimeType,
         messageId: outbound.message.id,
         outboundMessageId: outbound.outbound.id,
         messageMetadata: outbound.message.metadata,
@@ -293,7 +305,11 @@ serve(async (request) => {
         outboundMessageId: outbound.outbound.id,
         providerMessageId: delivered.providerMessageId,
         whatsappInstanceId: delivered.instance.id,
-        instanceSelection: payload.instanceId ? "explicit" : "default",
+        instanceSelection: payload.instanceId
+          ? "explicit"
+          : payload.conversationId
+            ? "conversation"
+            : "default",
       };
 
       await logPublicApiRequest(supabase, {

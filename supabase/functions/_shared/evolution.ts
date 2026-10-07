@@ -130,6 +130,95 @@ export async function sendEvolutionText(input: {
   });
 }
 
+type EvolutionMediaType = "image" | "video" | "audio" | "document";
+
+const MIME_BY_EXTENSION: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+  bmp: "image/bmp",
+  svg: "image/svg+xml",
+  heic: "image/heic",
+  mp4: "video/mp4",
+  mov: "video/quicktime",
+  webm: "video/webm",
+  avi: "video/x-msvideo",
+  mkv: "video/x-matroska",
+  mp3: "audio/mpeg",
+  ogg: "audio/ogg",
+  opus: "audio/opus",
+  wav: "audio/wav",
+  m4a: "audio/mp4",
+  aac: "audio/aac",
+  pdf: "application/pdf",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ppt: "application/vnd.ms-powerpoint",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  csv: "text/csv",
+  txt: "text/plain",
+  zip: "application/zip",
+};
+
+const EXTENSION_BY_MIME: Record<string, string> = Object.fromEntries(
+  Object.entries(MIME_BY_EXTENSION).map(([extension, mimeType]) => [mimeType, extension]),
+);
+
+function getUrlFileName(mediaUrl: string) {
+  try {
+    const pathname = new URL(mediaUrl).pathname;
+    const candidate = decodeURIComponent(pathname.split("/").filter(Boolean).at(-1) ?? "");
+    return candidate || null;
+  } catch {
+    const candidate = mediaUrl.split(/[?#]/, 1)[0].split("/").filter(Boolean).at(-1) ?? "";
+    return candidate || null;
+  }
+}
+
+function getFileExtension(fileName: string | null) {
+  const match = fileName?.toLowerCase().match(/\.([a-z0-9]+)$/);
+  return match?.[1] ?? null;
+}
+
+function getEvolutionMediaType(mimeType: string): EvolutionMediaType {
+  const normalized = mimeType.toLowerCase();
+  if (normalized.startsWith("image/")) return "image";
+  if (normalized.startsWith("video/")) return "video";
+  if (normalized.startsWith("audio/")) return "audio";
+  return "document";
+}
+
+export function buildEvolutionMediaPayload(input: {
+  phoneNumber: string;
+  mediaUrl: string;
+  caption?: string | null;
+  mimeType?: string | null;
+}) {
+  const urlFileName = getUrlFileName(input.mediaUrl);
+  const extension = getFileExtension(urlFileName);
+  const inferredMimeType = extension ? MIME_BY_EXTENSION[extension] : null;
+  const mimeType = input.mimeType?.trim().toLowerCase() || inferredMimeType || "image/jpeg";
+  const mediaType = getEvolutionMediaType(mimeType);
+  const fileName = mediaType === "document"
+    ? urlFileName && extension
+      ? urlFileName
+      : `document.${EXTENSION_BY_MIME[mimeType] ?? "bin"}`
+    : undefined;
+
+  return {
+    number: input.phoneNumber,
+    media: input.mediaUrl,
+    mediatype: mediaType,
+    mimetype: mimeType,
+    ...(fileName ? { fileName } : {}),
+    caption: input.caption ?? undefined,
+  };
+}
+
 export async function sendEvolutionMedia(input: {
   instance: EvolutionInstanceRecord;
   phoneNumber: string;
@@ -141,11 +230,6 @@ export async function sendEvolutionMedia(input: {
     instance: input.instance,
     path: `/message/sendMedia/${input.instance.instance_name}`,
     method: "POST",
-    body: {
-      number: input.phoneNumber,
-      media: input.mediaUrl,
-      mediatype: input.mimeType ?? "application/octet-stream",
-      caption: input.caption ?? undefined,
-    },
+    body: buildEvolutionMediaPayload(input),
   });
 }

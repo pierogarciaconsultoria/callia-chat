@@ -117,6 +117,91 @@ Necessários conforme o ambiente e as features habilitadas:
 7. API pública e webhooks de saída conectam sistemas externos
 8. Logs consolidam auditoria, outbound, requests e entregas
 
+## Agente externo (n8n)
+
+Ative **Usar agente externo (via webhook)** em `/agent` para delegar a resposta automática do workspace a um fluxo externo, como o n8n. Com essa opção ativa:
+
+1. A Evolution entrega `MESSAGES_UPSERT` ao `whatsapp-webhook`.
+2. O Callia grava a conversa e a mensagem, mas não chama `process-message`.
+3. O Callia envia o evento `message.received` aos webhooks ativos do workspace.
+4. O n8n valida a assinatura, consulta ou processa o contexto e responde por `POST /functions/v1/public-api/messages`.
+5. A resposta é gravada como `sender = bot` e `metadata.source = external_agent`, enviada pela Evolution e reconciliada com o eco `fromMe` sem abrir atendimento humano.
+
+Uma resposta feita diretamente pelo celular é diferente: ela é gravada como `sender = agent`, coloca a conversa em modo `human` e pausa o bot pelo período configurado em **Pausa após resposta humana**. Assumir a conversa pela Inbox aplica a mesma pausa.
+
+### Evento `message.received`
+
+Exemplo de payload:
+
+```json
+{
+  "workspaceId": "workspace-uuid",
+  "conversationId": "conversation-uuid",
+  "whatsappInstanceId": "instance-uuid",
+  "instanceId": "instance-uuid",
+  "conversationMode": "bot",
+  "messageId": "message-uuid",
+  "customerPhone": "5511999999999",
+  "customerName": "Maria",
+  "type": "text",
+  "content": "Quero conhecer os planos",
+  "mediaUrl": null,
+  "transcription": null,
+  "externalId": "evolution-message-id",
+  "direction": "inbound",
+  "receivedAt": "2026-10-07T12:00:00.000Z"
+}
+```
+
+Cada entrega inclui os headers `x-callia-event`, `x-callia-delivery-id`, `x-callia-correlation-id`, `x-callia-timestamp` e `x-callia-signature`. A assinatura usa HMAC SHA-256 no formato `sha256=<hex>`, calculada sobre:
+
+```text
+{x-callia-timestamp}.{payload-json}
+```
+
+O n8n deve recalcular a assinatura com o segredo do webhook e usar comparação segura antes de processar o evento. Também deve ignorar `message.received` quando `conversationMode` for `human`.
+
+### Responder com texto
+
+O endpoint aceita `phone` ou `conversationId`. O uso de `conversationId` mantém a instância associada à conversa.
+
+```bash
+curl -X POST "$SUPABASE_URL/functions/v1/public-api/messages" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $CALLIA_API_KEY" \
+  -d '{
+    "conversationId": "conversation-uuid",
+    "text": "Olá! Posso ajudar com nossos planos.",
+    "idempotencyKey": "n8n-run-123-text"
+  }'
+```
+
+Também é possível iniciar ou localizar a conversa pelo telefone:
+
+```json
+{
+  "phone": "5511999999999",
+  "text": "Olá! Como posso ajudar?"
+}
+```
+
+### Responder com imagem e legenda
+
+Quando `mediaUrl` é informado, o Callia usa `sendEvolutionMedia`; `caption` é enviada como legenda da mídia.
+
+```bash
+curl -X POST "$SUPABASE_URL/functions/v1/public-api/messages" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $CALLIA_API_KEY" \
+  -d '{
+    "conversationId": "conversation-uuid",
+    "mediaUrl": "https://cdn.exemplo.com/catalogo.jpg",
+    "mimeType": "image/jpeg",
+    "caption": "Confira nosso catálogo atualizado.",
+    "idempotencyKey": "n8n-run-123-image"
+  }'
+```
+
 ## Deploy operacional
 
 Fluxo recomendado:

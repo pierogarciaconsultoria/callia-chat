@@ -44,6 +44,7 @@ async function updateConversationForHandoff(supabase, conversation, reason) {
         ...((conversation.metadata as Record<string, unknown> | null) ?? {}),
         handoff_reason: reason,
         handoff_at: new Date().toISOString(),
+        human_until: null,
       },
     })
     .eq("id", conversation.id)

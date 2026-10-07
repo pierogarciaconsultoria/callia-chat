@@ -14,6 +14,8 @@ export type AgentConfigRecord = {
   handoff_keywords: string[];
   follow_up_rules: Array<Record<string, unknown>>;
   ai_model: string;
+  external_agent_enabled: boolean;
+  human_pause_hours: number;
 };
 
 export type WorkspaceBrandingRecord = {
@@ -59,6 +61,8 @@ const defaultAgentConfig: AgentConfigRecord = {
   handoff_keywords: ["atendente", "humano", "reclamação"],
   follow_up_rules: [],
   ai_model: "google/gemini-3-flash-preview",
+  external_agent_enabled: false,
+  human_pause_hours: 12,
 };
 
 const defaultBranding: WorkspaceBrandingRecord = {

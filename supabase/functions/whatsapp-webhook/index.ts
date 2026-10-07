@@ -3,6 +3,15 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { corsHeaders, createServiceClient, jsonResponse } from "../_shared/auth.ts";
 import { extractQrCode, mapEvolutionStatus } from "../_shared/evolution.ts";
 import { normalizeEvolutionMessageUpsert } from "../_shared/inbound.ts";
+import {
+  buildBotResumeMetadata,
+  buildPhoneHandoffMetadata,
+  CALLIA_OUTBOUND_ECHO_WINDOW_MS,
+  findMatchingRecentOutbound,
+  isPhoneHumanReply,
+  markMessageAsPhoneReply,
+  shouldReturnConversationToBot,
+} from "../_shared/human-handoff.ts";
 import { triggerPendingWebhookDispatch, triggerWebhookDispatch } from "../_shared/webhooks.ts";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -39,6 +48,65 @@ async function findExistingMessage(supabase, workspaceId, externalId) {
     .maybeSingle();
 
   return data;
+}
+
+async function findRecentCalliaOutbound(supabase, conversationId, content) {
+  if (!content) return null;
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - CALLIA_OUTBOUND_ECHO_WINDOW_MS).toISOString();
+  const { data } = await supabase
+    .from("outbound_messages")
+    .select("id, message_id, payload, queued_at, sent_at, provider_message_id")
+    .eq("conversation_id", conversationId)
+    .gte("queued_at", cutoff)
+    .order("queued_at", { ascending: false })
+    .limit(10);
+
+  return findMatchingRecentOutbound(data ?? [], content, now);
+}
+
+async function reconcileCalliaEcho(supabase, outbound, externalMessageId) {
+  if (!outbound?.message_id) return null;
+
+  await Promise.all([
+    externalMessageId
+      ? supabase
+          .from("messages")
+          .update({ external_id: externalMessageId })
+          .eq("id", outbound.message_id)
+          .is("external_id", null)
+      : Promise.resolve(),
+    externalMessageId
+      ? supabase
+          .from("outbound_messages")
+          .update({ provider_message_id: externalMessageId })
+          .eq("id", outbound.id)
+          .is("provider_message_id", null)
+      : Promise.resolve(),
+  ]);
+
+  const { data } = await supabase
+    .from("messages")
+    .select("*")
+    .eq("id", outbound.message_id)
+    .maybeSingle();
+  return data;
+}
+
+async function getAgentRuntimeConfig(supabase, workspaceId) {
+  const { data } = await supabase
+    .from("agent_configs")
+    .select("external_agent_enabled, human_pause_hours")
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+
+  return {
+    externalAgentEnabled: data?.external_agent_enabled === true,
+    humanPauseHours:
+      Number.isInteger(data?.human_pause_hours) && data.human_pause_hours > 0
+        ? data.human_pause_hours
+        : 12,
+  };
 }
 
 async function upsertConversation(supabase, instance, normalized) {
@@ -100,10 +168,10 @@ async function upsertConversation(supabase, instance, normalized) {
   return data;
 }
 
-async function insertMessage(supabase, instance, conversation, normalized) {
-  const existing = normalized.externalMessageId
+async function insertMessage(supabase, instance, conversation, normalized, knownExisting = null) {
+  const existing = knownExisting ?? (normalized.externalMessageId
     ? await findExistingMessage(supabase, instance.workspace_id, normalized.externalMessageId)
-    : null;
+    : null);
 
   if (existing) {
     return existing;
@@ -255,8 +323,73 @@ serve(async (request) => {
     }
 
     try {
-      const conversation = await upsertConversation(supabase, instance, normalized);
-      const message = await insertMessage(supabase, instance, conversation, normalized);
+      const runtimeConfig = await getAgentRuntimeConfig(supabase, instance.workspace_id);
+      let conversation = await upsertConversation(supabase, instance, normalized);
+      const existingMessage = normalized.externalMessageId
+        ? await findExistingMessage(supabase, instance.workspace_id, normalized.externalMessageId)
+        : null;
+      const recentOutbound =
+        normalized.direction === "outbound" && !existingMessage
+          ? await findRecentCalliaOutbound(supabase, conversation.id, normalized.content)
+          : null;
+      const phoneReply = isPhoneHumanReply({
+        fromMe: normalized.direction === "outbound",
+        existingMessage,
+        matchingRecentOutbound: recentOutbound,
+      });
+
+      if (
+        normalized.direction === "inbound" &&
+        normalized.sender === "customer" &&
+        shouldReturnConversationToBot({
+          mode: conversation.mode,
+          metadata: conversation.metadata,
+        })
+      ) {
+        const { data, error } = await supabase
+          .from("conversations")
+          .update({
+            mode: "bot",
+            assigned_agent_id: null,
+            metadata: buildBotResumeMetadata(conversation.metadata),
+          })
+          .eq("id", conversation.id)
+          .select("*")
+          .single();
+        if (error) throw error;
+        conversation = data;
+      }
+
+      if (phoneReply) {
+        const { data, error } = await supabase
+          .from("conversations")
+          .update({
+            mode: "human",
+            assigned_agent_id: null,
+            metadata: buildPhoneHandoffMetadata(
+              conversation.metadata,
+              runtimeConfig.humanPauseHours,
+            ),
+          })
+          .eq("id", conversation.id)
+          .select("*")
+          .single();
+        if (error) throw error;
+        conversation = data;
+      }
+
+      const normalizedMessage = phoneReply ? markMessageAsPhoneReply(normalized) : normalized;
+
+      const reconciledMessage = recentOutbound
+        ? await reconcileCalliaEcho(supabase, recentOutbound, normalized.externalMessageId)
+        : null;
+      const message = reconciledMessage ?? await insertMessage(
+        supabase,
+        instance,
+        conversation,
+        normalizedMessage,
+        existingMessage,
+      );
 
       if (normalized.direction === "inbound" && normalized.sender === "customer") {
         await triggerWebhookDispatch({
@@ -266,6 +399,8 @@ serve(async (request) => {
             workspaceId: instance.workspace_id,
             conversationId: conversation.id,
             whatsappInstanceId: instance.id,
+            instanceId: instance.id,
+            conversationMode: conversation.mode,
             messageId: message.id,
             customerPhone: conversation.customer_phone,
             customerName: conversation.customer_name,
@@ -281,6 +416,26 @@ serve(async (request) => {
         });
       }
 
+      if (phoneReply) {
+        await triggerWebhookDispatch({
+          workspaceId: instance.workspace_id,
+          event: "conversation.handoff",
+          payload: {
+            workspaceId: instance.workspace_id,
+            conversationId: conversation.id,
+            whatsappInstanceId: instance.id,
+            instanceId: instance.id,
+            customerPhone: conversation.customer_phone,
+            customerName: conversation.customer_name,
+            mode: conversation.mode,
+            reason: "phone_reply",
+            humanUntil: conversation.metadata?.human_until ?? null,
+            handoffAt: conversation.metadata?.handoff_at ?? new Date().toISOString(),
+          },
+          correlationId: crypto.randomUUID(),
+        });
+      }
+
       await supabase
         .from("inbound_events")
         .update({
@@ -290,7 +445,11 @@ serve(async (request) => {
         })
         .eq("id", registered.event.id);
 
-      if (normalized.direction === "inbound" && normalized.sender === "customer") {
+      if (
+        normalized.direction === "inbound" &&
+        normalized.sender === "customer" &&
+        !runtimeConfig.externalAgentEnabled
+      ) {
         await triggerProcessMessage({
           workspaceId: instance.workspace_id,
           conversationId: conversation.id,

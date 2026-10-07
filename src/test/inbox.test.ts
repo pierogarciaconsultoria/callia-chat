@@ -4,6 +4,7 @@ import {
   getConversationPreviewFromConversation,
   getMessageContent,
 } from "@/lib/inbox";
+import { buildInboxClaimMetadata } from "@/lib/inbox-handoff";
 
 describe("inbox helpers", () => {
   it("normaliza telefone para exibicao", () => {
@@ -57,5 +58,21 @@ describe("inbox helpers", () => {
         whatsapp_instance: null,
       }),
     ).toBe("Ultima mensagem com audio recebida");
+  });
+
+  it("define a pausa humana ao assumir uma conversa", () => {
+    expect(
+      buildInboxClaimMetadata(
+        { origin: "inbox" },
+        "user-1",
+        6,
+        new Date("2026-10-07T12:00:00.000Z"),
+      ),
+    ).toEqual({
+      origin: "inbox",
+      claimed_at: "2026-10-07T12:00:00.000Z",
+      claimed_by: "user-1",
+      human_until: "2026-10-07T18:00:00.000Z",
+    });
   });
 });

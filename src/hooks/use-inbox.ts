@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useWorkspace } from "@/lib/workspace";
 import type { InboxConversation, InboxInstance, MessageRow } from "@/lib/inbox";
+import { buildInboxClaimMetadata } from "@/lib/inbox-handoff";
 
 type ModeFilter = "all" | "bot" | "human";
 
@@ -235,24 +236,34 @@ export function useInbox() {
   }, [markAsRead, selectedConversationId]);
 
   const assumeConversation = useCallback(async () => {
-    if (!selectedConversation || !user) return;
+    if (!currentWorkspace || !selectedConversation || !user) return;
 
     setActionLoading(true);
     try {
+      const { data: agentConfig } = await (supabase as any)
+        .from("agent_configs")
+        .select("human_pause_hours")
+        .eq("workspace_id", currentWorkspace.id)
+        .maybeSingle();
+      const pauseHours =
+        Number.isInteger(agentConfig?.human_pause_hours) && agentConfig.human_pause_hours > 0
+          ? agentConfig.human_pause_hours
+          : 12;
+
       await patchConversation(selectedConversation.id, {
         mode: "human",
         assigned_agent_id: user.id,
         unread_count: 0,
-        metadata: {
-          ...(selectedConversation.metadata ?? {}),
-          claimed_at: new Date().toISOString(),
-          claimed_by: user.id,
-        },
+        metadata: buildInboxClaimMetadata(
+          selectedConversation.metadata,
+          user.id,
+          pauseHours,
+        ),
       });
     } finally {
       setActionLoading(false);
     }
-  }, [patchConversation, selectedConversation, user]);
+  }, [currentWorkspace, patchConversation, selectedConversation, user]);
 
   const returnToBot = useCallback(async () => {
     if (!selectedConversation) return;
@@ -266,6 +277,7 @@ export function useInbox() {
           ...(selectedConversation.metadata ?? {}),
           returned_to_bot_at: new Date().toISOString(),
           returned_to_bot_by: user?.id ?? null,
+          human_until: null,
         },
       });
     } finally {

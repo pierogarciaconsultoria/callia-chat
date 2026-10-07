@@ -6,6 +6,7 @@ import {
   getWebhookUrl,
   getWhatsAppStatusMeta,
 } from "@/lib/whatsapp-instances";
+import { buildEvolutionMediaPayload } from "../../supabase/functions/_shared/evolution";
 
 describe("whatsapp instances helpers", () => {
   it("creates empty and filled instance forms", () => {
@@ -64,5 +65,55 @@ describe("whatsapp instances helpers", () => {
     ).toBe(
       "https://demo.supabase.co/functions/v1/whatsapp-webhook?instance_id=inst-1&token=token-1",
     );
+  });
+
+  it("builds an Evolution v2 image payload", () => {
+    expect(
+      buildEvolutionMediaPayload({
+        phoneNumber: "5511999999999",
+        mediaUrl: "https://cdn.example.com/photo.jpg",
+        mimeType: "image/jpeg",
+        caption: "Foto do produto",
+      }),
+    ).toEqual({
+      number: "5511999999999",
+      media: "https://cdn.example.com/photo.jpg",
+      mediatype: "image",
+      mimetype: "image/jpeg",
+      caption: "Foto do produto",
+    });
+  });
+
+  it("builds an Evolution v2 PDF document payload with fileName", () => {
+    expect(
+      buildEvolutionMediaPayload({
+        phoneNumber: "5511999999999",
+        mediaUrl: "https://cdn.example.com/proposta.pdf",
+        mimeType: "application/pdf",
+        caption: "Proposta comercial",
+      }),
+    ).toEqual({
+      number: "5511999999999",
+      media: "https://cdn.example.com/proposta.pdf",
+      mediatype: "document",
+      mimetype: "application/pdf",
+      fileName: "proposta.pdf",
+      caption: "Proposta comercial",
+    });
+  });
+
+  it("defaults extensionless Google media URLs to JPEG images", () => {
+    expect(
+      buildEvolutionMediaPayload({
+        phoneNumber: "5511999999999",
+        mediaUrl: "https://lh3.googleusercontent.com/d/ID=w1600",
+      }),
+    ).toEqual({
+      number: "5511999999999",
+      media: "https://lh3.googleusercontent.com/d/ID=w1600",
+      mediatype: "image",
+      mimetype: "image/jpeg",
+      caption: undefined,
+    });
   });
 });
