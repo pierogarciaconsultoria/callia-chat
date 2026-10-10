@@ -10,1048 +10,1623 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.1"
   }
   public: {
     Tables: {
-      agent_configs: {
+      bank_accounts: {
         Row: {
-          ai_model: string
-          business_hours: Json
-          follow_up_rules: Json
-          handoff_keywords: string[]
-          language: string
-          payment_links: Json
-          persona_prompt: string
-          updated_at: string
-          voice_enabled: boolean
-          voice_id: string | null
-          website_url: string | null
-          workspace_id: string
+          agencia: string | null
+          ativo: boolean
+          banco: string | null
+          company_id: string
+          conta: string | null
+          id: string
+          legal_entity_id: string | null
+          nome: string
         }
         Insert: {
-          ai_model?: string
-          business_hours?: Json
-          follow_up_rules?: Json
-          handoff_keywords?: string[]
-          language?: string
-          payment_links?: Json
-          persona_prompt?: string
-          updated_at?: string
-          voice_enabled?: boolean
-          voice_id?: string | null
-          website_url?: string | null
-          workspace_id: string
+          agencia?: string | null
+          ativo?: boolean
+          banco?: string | null
+          company_id: string
+          conta?: string | null
+          id?: string
+          legal_entity_id?: string | null
+          nome: string
         }
         Update: {
-          ai_model?: string
-          business_hours?: Json
-          follow_up_rules?: Json
-          handoff_keywords?: string[]
-          language?: string
-          payment_links?: Json
-          persona_prompt?: string
-          updated_at?: string
-          voice_enabled?: boolean
-          voice_id?: string | null
-          website_url?: string | null
-          workspace_id?: string
+          agencia?: string | null
+          ativo?: boolean
+          banco?: string | null
+          company_id?: string
+          conta?: string | null
+          id?: string
+          legal_entity_id?: string | null
+          nome?: string
         }
         Relationships: [
           {
-            foreignKeyName: "agent_configs_workspace_id_fkey"
-            columns: ["workspace_id"]
-            isOneToOne: true
-            referencedRelation: "workspaces"
+            foreignKeyName: "bank_accounts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bank_accounts_legal_entity_id_fkey"
+            columns: ["legal_entity_id"]
+            isOneToOne: false
+            referencedRelation: "legal_entities"
             referencedColumns: ["id"]
           },
         ]
       }
-      api_keys: {
+      cheques: {
         Row: {
+          agencia: string | null
+          banco: string | null
+          client_id: string | null
+          company_id: string
+          conta: string | null
           created_at: string
-          created_by: string | null
-          expires_at: string | null
+          financial_entry_id: string | null
           id: string
-          key_hash: string
-          last_used_at: string | null
-          last_used_ip: string | null
-          last_used_user_agent: string | null
-          last4: string
-          metadata: Json
-          name: string
-          prefix: string
-          revoked_at: string | null
-          revoked_by: string | null
-          updated_at: string
-          workspace_id: string
+          numero: string | null
+          observacao: string | null
+          status: string
+          valor: number
         }
         Insert: {
+          agencia?: string | null
+          banco?: string | null
+          client_id?: string | null
+          company_id: string
+          conta?: string | null
           created_at?: string
-          created_by?: string | null
-          expires_at?: string | null
+          financial_entry_id?: string | null
           id?: string
-          key_hash: string
-          last_used_at?: string | null
-          last_used_ip?: string | null
-          last_used_user_agent?: string | null
-          last4: string
-          metadata?: Json
-          name: string
-          prefix?: string
-          revoked_at?: string | null
-          revoked_by?: string | null
-          updated_at?: string
-          workspace_id: string
+          numero?: string | null
+          observacao?: string | null
+          status?: string
+          valor: number
         }
         Update: {
+          agencia?: string | null
+          banco?: string | null
+          client_id?: string | null
+          company_id?: string
+          conta?: string | null
           created_at?: string
-          created_by?: string | null
-          expires_at?: string | null
+          financial_entry_id?: string | null
           id?: string
-          key_hash?: string
-          last_used_at?: string | null
-          last_used_ip?: string | null
-          last_used_user_agent?: string | null
-          last4?: string
-          metadata?: Json
+          numero?: string | null
+          observacao?: string | null
+          status?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cheques_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cheques_financial_entry_id_fkey"
+            columns: ["financial_entry_id"]
+            isOneToOne: false
+            referencedRelation: "financial_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cheques_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      clients: {
+        Row: {
+          address_city: string | null
+          address_complement: string | null
+          address_neighborhood: string | null
+          address_number: string | null
+          address_state: string | null
+          address_street: string | null
+          address_zip: string | null
+          company_id: string
+          created_at: string
+          document: string | null
+          email: string | null
+          id: string
+          name: string
+          notes: string | null
+          phone: string | null
+          type: string
+        }
+        Insert: {
+          address_city?: string | null
+          address_complement?: string | null
+          address_neighborhood?: string | null
+          address_number?: string | null
+          address_state?: string | null
+          address_street?: string | null
+          address_zip?: string | null
+          company_id: string
+          created_at?: string
+          document?: string | null
+          email?: string | null
+          id?: string
+          name: string
+          notes?: string | null
+          phone?: string | null
+          type?: string
+        }
+        Update: {
+          address_city?: string | null
+          address_complement?: string | null
+          address_neighborhood?: string | null
+          address_number?: string | null
+          address_state?: string | null
+          address_street?: string | null
+          address_zip?: string | null
+          company_id?: string
+          created_at?: string
+          document?: string | null
+          email?: string | null
+          id?: string
           name?: string
-          prefix?: string
-          revoked_at?: string | null
-          revoked_by?: string | null
-          updated_at?: string
-          workspace_id?: string
+          notes?: string | null
+          phone?: string | null
+          type?: string
         }
         Relationships: [
           {
-            foreignKeyName: "api_keys_workspace_id_fkey"
-            columns: ["workspace_id"]
+            foreignKeyName: "clients_company_id_fkey"
+            columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "workspaces"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
         ]
       }
-      audit_logs: {
+      companies: {
         Row: {
-          action: string
-          actor_id: string | null
-          actor_type: string
+          address_city: string | null
+          address_complement: string | null
+          address_neighborhood: string | null
+          address_number: string | null
+          address_state: string | null
+          address_street: string | null
+          address_zip: string | null
+          cnpj: string | null
           created_at: string
+          email: string | null
           id: string
-          metadata: Json
-          target: string | null
-          workspace_id: string
+          rateio_criterio: string | null
+          logo_url: string | null
+          name: string
+          phone: string | null
         }
         Insert: {
-          action: string
-          actor_id?: string | null
-          actor_type: string
+          address_city?: string | null
+          address_complement?: string | null
+          address_neighborhood?: string | null
+          address_number?: string | null
+          address_state?: string | null
+          address_street?: string | null
+          address_zip?: string | null
+          cnpj?: string | null
           created_at?: string
+          email?: string | null
           id?: string
-          metadata?: Json
-          target?: string | null
-          workspace_id: string
+          rateio_criterio?: string | null
+          logo_url?: string | null
+          name?: string
+          phone?: string | null
         }
         Update: {
-          action?: string
-          actor_id?: string | null
-          actor_type?: string
+          address_city?: string | null
+          address_complement?: string | null
+          address_neighborhood?: string | null
+          address_number?: string | null
+          address_state?: string | null
+          address_street?: string | null
+          address_zip?: string | null
+          cnpj?: string | null
           created_at?: string
+          email?: string | null
           id?: string
-          metadata?: Json
-          target?: string | null
-          workspace_id?: string
+          rateio_criterio?: string | null
+          logo_url?: string | null
+          name?: string
+          phone?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "audit_logs_workspace_id_fkey"
-            columns: ["workspace_id"]
-            isOneToOne: false
-            referencedRelation: "workspaces"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
-      conversations: {
+      contract_installments: {
         Row: {
-          assigned_agent_id: string | null
+          company_id: string
+          contract_id: string
           created_at: string
-          customer_name: string | null
-          customer_phone: string
+          due_date: string
           id: string
-          is_closed: boolean
-          last_message_at: string
-          metadata: Json
-          mode: Database["public"]["Enums"]["conversation_mode"]
-          unread_count: number
-          updated_at: string
-          whatsapp_instance_id: string | null
-          workspace_id: string
+          installment_number: number
+          paid_at: string | null
+          status: string
+          value: number
         }
         Insert: {
-          assigned_agent_id?: string | null
+          company_id: string
+          contract_id: string
           created_at?: string
-          customer_name?: string | null
-          customer_phone: string
+          due_date: string
           id?: string
-          is_closed?: boolean
-          last_message_at?: string
-          metadata?: Json
-          mode?: Database["public"]["Enums"]["conversation_mode"]
-          unread_count?: number
-          updated_at?: string
-          whatsapp_instance_id?: string | null
-          workspace_id: string
+          installment_number: number
+          paid_at?: string | null
+          status?: string
+          value: number
         }
         Update: {
-          assigned_agent_id?: string | null
+          company_id?: string
+          contract_id?: string
           created_at?: string
-          customer_name?: string | null
-          customer_phone?: string
+          due_date?: string
           id?: string
-          is_closed?: boolean
-          last_message_at?: string
-          metadata?: Json
-          mode?: Database["public"]["Enums"]["conversation_mode"]
-          unread_count?: number
-          updated_at?: string
-          whatsapp_instance_id?: string | null
-          workspace_id?: string
+          installment_number?: number
+          paid_at?: string | null
+          status?: string
+          value?: number
         }
         Relationships: [
           {
-            foreignKeyName: "conversations_whatsapp_instance_id_fkey"
-            columns: ["whatsapp_instance_id"]
+            foreignKeyName: "contract_installments_company_id_fkey"
+            columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "whatsapp_instances"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "conversations_workspace_id_fkey"
-            columns: ["workspace_id"]
+            foreignKeyName: "contract_installments_contract_id_fkey"
+            columns: ["contract_id"]
             isOneToOne: false
-            referencedRelation: "workspaces"
+            referencedRelation: "contracts"
             referencedColumns: ["id"]
           },
         ]
       }
-      faqs: {
+      contracts: {
         Row: {
-          answer: string
+          client_id: string
+          comissao_percentual: number | null
+          comissao_valor: number | null
+          company_id: string
+          corretor_id: string | null
           created_at: string
-          id: string
-          is_active: boolean
-          question: string
-          updated_at: string
-          workspace_id: string
-        }
-        Insert: {
-          answer: string
-          created_at?: string
-          id?: string
-          is_active?: boolean
-          question: string
-          updated_at?: string
-          workspace_id: string
-        }
-        Update: {
-          answer?: string
-          created_at?: string
-          id?: string
-          is_active?: boolean
-          question?: string
-          updated_at?: string
-          workspace_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "faqs_workspace_id_fkey"
-            columns: ["workspace_id"]
-            isOneToOne: false
-            referencedRelation: "workspaces"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      inbound_events: {
-        Row: {
-          correlation_id: string
-          event_type: string
-          id: string
-          message_id: string | null
-          payload: Json
-          processed_at: string | null
-          processing_status: string
-          provider: string
-          provider_event_id: string
-          received_at: string
-          whatsapp_instance_id: string | null
-          workspace_id: string
-        }
-        Insert: {
-          correlation_id?: string
-          event_type: string
-          id?: string
-          message_id?: string | null
-          payload?: Json
-          processed_at?: string | null
-          processing_status?: string
-          provider?: string
-          provider_event_id: string
-          received_at?: string
-          whatsapp_instance_id?: string | null
-          workspace_id: string
-        }
-        Update: {
-          correlation_id?: string
-          event_type?: string
-          id?: string
-          message_id?: string | null
-          payload?: Json
-          processed_at?: string | null
-          processing_status?: string
-          provider?: string
-          provider_event_id?: string
-          received_at?: string
-          whatsapp_instance_id?: string | null
-          workspace_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "inbound_events_message_id_fkey"
-            columns: ["message_id"]
-            isOneToOne: false
-            referencedRelation: "messages"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "inbound_events_whatsapp_instance_id_fkey"
-            columns: ["whatsapp_instance_id"]
-            isOneToOne: false
-            referencedRelation: "whatsapp_instances"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "inbound_events_workspace_id_fkey"
-            columns: ["workspace_id"]
-            isOneToOne: false
-            referencedRelation: "workspaces"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      messages: {
-        Row: {
-          agent_user_id: string | null
-          ai_model: string | null
-          content: string | null
-          conversation_id: string
-          created_at: string
-          direction: Database["public"]["Enums"]["message_direction"]
-          external_id: string | null
-          id: string
-          media_url: string | null
-          metadata: Json
-          sender: Database["public"]["Enums"]["message_sender"]
-          tokens_used: number | null
-          transcription: string | null
-          type: Database["public"]["Enums"]["message_type"]
-          workspace_id: string
-        }
-        Insert: {
-          agent_user_id?: string | null
-          ai_model?: string | null
-          content?: string | null
-          conversation_id: string
-          created_at?: string
-          direction: Database["public"]["Enums"]["message_direction"]
-          external_id?: string | null
-          id?: string
-          media_url?: string | null
-          metadata?: Json
-          sender: Database["public"]["Enums"]["message_sender"]
-          tokens_used?: number | null
-          transcription?: string | null
-          type?: Database["public"]["Enums"]["message_type"]
-          workspace_id: string
-        }
-        Update: {
-          agent_user_id?: string | null
-          ai_model?: string | null
-          content?: string | null
-          conversation_id?: string
-          created_at?: string
-          direction?: Database["public"]["Enums"]["message_direction"]
-          external_id?: string | null
-          id?: string
-          media_url?: string | null
-          metadata?: Json
-          sender?: Database["public"]["Enums"]["message_sender"]
-          tokens_used?: number | null
-          transcription?: string | null
-          type?: Database["public"]["Enums"]["message_type"]
-          workspace_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "messages_conversation_id_fkey"
-            columns: ["conversation_id"]
-            isOneToOne: false
-            referencedRelation: "conversations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "messages_workspace_id_fkey"
-            columns: ["workspace_id"]
-            isOneToOne: false
-            referencedRelation: "workspaces"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      outbound_messages: {
-        Row: {
-          conversation_id: string | null
-          correlation_id: string
-          delivered_at: string | null
-          delivery_status: string
-          id: string
-          last_error: string | null
-          message_id: string | null
-          payload: Json
-          provider: string
-          provider_message_id: string | null
-          queued_at: string
-          retry_count: number
-          sent_at: string | null
-          whatsapp_instance_id: string | null
-          workspace_id: string
-        }
-        Insert: {
-          conversation_id?: string | null
-          correlation_id?: string
-          delivered_at?: string | null
-          delivery_status?: string
-          id?: string
-          last_error?: string | null
-          message_id?: string | null
-          payload?: Json
-          provider?: string
-          provider_message_id?: string | null
-          queued_at?: string
-          retry_count?: number
-          sent_at?: string | null
-          whatsapp_instance_id?: string | null
-          workspace_id: string
-        }
-        Update: {
-          conversation_id?: string | null
-          correlation_id?: string
-          delivered_at?: string | null
-          delivery_status?: string
-          id?: string
-          last_error?: string | null
-          message_id?: string | null
-          payload?: Json
-          provider?: string
-          provider_message_id?: string | null
-          queued_at?: string
-          retry_count?: number
-          sent_at?: string | null
-          whatsapp_instance_id?: string | null
-          workspace_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "outbound_messages_conversation_id_fkey"
-            columns: ["conversation_id"]
-            isOneToOne: false
-            referencedRelation: "conversations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "outbound_messages_message_id_fkey"
-            columns: ["message_id"]
-            isOneToOne: false
-            referencedRelation: "messages"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "outbound_messages_whatsapp_instance_id_fkey"
-            columns: ["whatsapp_instance_id"]
-            isOneToOne: false
-            referencedRelation: "whatsapp_instances"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "outbound_messages_workspace_id_fkey"
-            columns: ["workspace_id"]
-            isOneToOne: false
-            referencedRelation: "workspaces"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      products: {
-        Row: {
-          created_at: string
-          currency: string
           description: string | null
+          end_date: string | null
           id: string
-          image_url: string | null
-          is_active: boolean
-          link: string | null
-          name: string
-          price: number | null
-          updated_at: string
-          workspace_id: string
+          imobiliaria_id: string | null
+          notes: string | null
+          start_date: string | null
+          status: string
+          title: string
+          total_value: number | null
         }
         Insert: {
+          client_id: string
+          comissao_percentual?: number | null
+          comissao_valor?: number | null
+          company_id: string
+          corretor_id?: string | null
           created_at?: string
-          currency?: string
           description?: string | null
+          end_date?: string | null
           id?: string
-          image_url?: string | null
-          is_active?: boolean
-          link?: string | null
-          name: string
-          price?: number | null
-          updated_at?: string
-          workspace_id: string
+          imobiliaria_id?: string | null
+          notes?: string | null
+          start_date?: string | null
+          status?: string
+          title: string
+          total_value?: number | null
         }
         Update: {
+          client_id?: string
+          comissao_percentual?: number | null
+          comissao_valor?: number | null
+          company_id?: string
+          corretor_id?: string | null
           created_at?: string
-          currency?: string
           description?: string | null
+          end_date?: string | null
           id?: string
-          image_url?: string | null
-          is_active?: boolean
-          link?: string | null
-          name?: string
-          price?: number | null
-          updated_at?: string
-          workspace_id?: string
+          imobiliaria_id?: string | null
+          notes?: string | null
+          start_date?: string | null
+          status?: string
+          title?: string
+          total_value?: number | null
         }
         Relationships: [
           {
-            foreignKeyName: "products_workspace_id_fkey"
-            columns: ["workspace_id"]
+            foreignKeyName: "contracts_client_id_fkey"
+            columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "workspaces"
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_corretor_id_fkey"
+            columns: ["corretor_id"]
+            isOneToOne: false
+            referencedRelation: "corretores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_imobiliaria_id_fkey"
+            columns: ["imobiliaria_id"]
+            isOneToOne: false
+            referencedRelation: "imobiliarias"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      corretores: {
+        Row: {
+          ativo: boolean
+          company_id: string
+          cpf: string | null
+          created_at: string
+          creci: string
+          email: string | null
+          id: string
+          imobiliaria_id: string | null
+          nome: string
+          percentual_comissao_padrao: number | null
+          telefone: string | null
+          tipo: string
+        }
+        Insert: {
+          ativo?: boolean
+          company_id: string
+          cpf?: string | null
+          created_at?: string
+          creci: string
+          email?: string | null
+          id?: string
+          imobiliaria_id?: string | null
+          nome: string
+          percentual_comissao_padrao?: number | null
+          telefone?: string | null
+          tipo?: string
+        }
+        Update: {
+          ativo?: boolean
+          company_id?: string
+          cpf?: string | null
+          created_at?: string
+          creci?: string
+          email?: string | null
+          id?: string
+          imobiliaria_id?: string | null
+          nome?: string
+          percentual_comissao_padrao?: number | null
+          telefone?: string | null
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "corretores_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "corretores_imobiliaria_id_fkey"
+            columns: ["imobiliaria_id"]
+            isOneToOne: false
+            referencedRelation: "imobiliarias"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cost_centers: {
+        Row: {
+          code: string | null
+          company_id: string
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          code?: string | null
+          company_id: string
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          code?: string | null
+          company_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cost_centers_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      crm_deal_activities: {
+        Row: {
+          activity_type: string
+          attachments: string[] | null
+          company_id: string
+          created_at: string
+          date: string
+          deal_id: string
+          description: string
+          id: string
+          owner_id: string | null
+          owner_name: string
+        }
+        Insert: {
+          activity_type: string
+          attachments?: string[] | null
+          company_id: string
+          created_at?: string
+          date: string
+          deal_id: string
+          description: string
+          id?: string
+          owner_id?: string | null
+          owner_name: string
+        }
+        Update: {
+          activity_type?: string
+          attachments?: string[] | null
+          company_id?: string
+          created_at?: string
+          date?: string
+          deal_id?: string
+          description?: string
+          id?: string
+          owner_id?: string | null
+          owner_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_deal_activities_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_deal_activities_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "crm_deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_deal_activities_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      crm_deals: {
+        Row: {
+          briefing_budget_range: string | null
+          briefing_constraints: string | null
+          briefing_deadline: string | null
+          briefing_objective: string | null
+          briefing_scope: string | null
+          category: string | null
+          client_id: string | null
+          company_id: string
+          company_name: string
+          consultant: string | null
+          contract_id: string | null
+          corretor_id: string | null
+          created_at: string
+          development_unit_id: string | null
+          email: string | null
+          id: string
+          imobiliaria_id: string | null
+          inventory_asset_id: string | null
+          last_activity: string | null
+          loss_reason: string | null
+          name: string
+          origin: string | null
+          phone: string | null
+          previsao_entrega: string | null
+          project_id: string | null
+          site_access_notes: string | null
+          site_city: string | null
+          site_complement: string | null
+          site_latitude: number | null
+          site_longitude: number | null
+          site_neighborhood: string | null
+          site_number: string | null
+          site_state: string | null
+          site_street: string | null
+          site_zip: string | null
+          stage: string
+          status: string | null
+          status_label: string | null
+          temperature: string | null
+          tipo: string
+          updated_at: string
+          value: number | null
+          work_type: string | null
+        }
+        Insert: {
+          briefing_budget_range?: string | null
+          briefing_constraints?: string | null
+          briefing_deadline?: string | null
+          briefing_objective?: string | null
+          briefing_scope?: string | null
+          category?: string | null
+          client_id?: string | null
+          company_id: string
+          company_name: string
+          consultant?: string | null
+          contract_id?: string | null
+          corretor_id?: string | null
+          created_at?: string
+          development_unit_id?: string | null
+          email?: string | null
+          id?: string
+          imobiliaria_id?: string | null
+          inventory_asset_id?: string | null
+          last_activity?: string | null
+          loss_reason?: string | null
+          name: string
+          origin?: string | null
+          phone?: string | null
+          previsao_entrega?: string | null
+          project_id?: string | null
+          site_access_notes?: string | null
+          site_city?: string | null
+          site_complement?: string | null
+          site_latitude?: number | null
+          site_longitude?: number | null
+          site_neighborhood?: string | null
+          site_number?: string | null
+          site_state?: string | null
+          site_street?: string | null
+          site_zip?: string | null
+          stage: string
+          status?: string | null
+          status_label?: string | null
+          temperature?: string | null
+          tipo?: string
+          updated_at?: string
+          value?: number | null
+          work_type?: string | null
+        }
+        Update: {
+          briefing_budget_range?: string | null
+          briefing_constraints?: string | null
+          briefing_deadline?: string | null
+          briefing_objective?: string | null
+          briefing_scope?: string | null
+          category?: string | null
+          client_id?: string | null
+          company_id?: string
+          company_name?: string
+          consultant?: string | null
+          contract_id?: string | null
+          corretor_id?: string | null
+          created_at?: string
+          development_unit_id?: string | null
+          email?: string | null
+          id?: string
+          imobiliaria_id?: string | null
+          inventory_asset_id?: string | null
+          last_activity?: string | null
+          loss_reason?: string | null
+          name?: string
+          origin?: string | null
+          phone?: string | null
+          previsao_entrega?: string | null
+          project_id?: string | null
+          site_access_notes?: string | null
+          site_city?: string | null
+          site_complement?: string | null
+          site_latitude?: number | null
+          site_longitude?: number | null
+          site_neighborhood?: string | null
+          site_number?: string | null
+          site_state?: string | null
+          site_street?: string | null
+          site_zip?: string | null
+          stage?: string
+          status?: string | null
+          status_label?: string | null
+          temperature?: string | null
+          tipo?: string
+          updated_at?: string
+          value?: number | null
+          work_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_deals_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_deals_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_deals_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_deals_corretor_id_fkey"
+            columns: ["corretor_id"]
+            isOneToOne: false
+            referencedRelation: "corretores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_deals_development_unit_id_fkey"
+            columns: ["development_unit_id"]
+            isOneToOne: false
+            referencedRelation: "development_units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_deals_imobiliaria_id_fkey"
+            columns: ["imobiliaria_id"]
+            isOneToOne: false
+            referencedRelation: "imobiliarias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_deals_inventory_asset_id_fkey"
+            columns: ["inventory_asset_id"]
+            isOneToOne: false
+            referencedRelation: "inventory_assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_deals_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      development_units: {
+        Row: {
+          andar: number | null
+          banheiros: number | null
+          company_id: string
+          created_at: string
+          disponivel_venda: boolean | null
+          id: string
+          metragem: number | null
+          numero_unidade: string | null
+          orientacao: string | null
+          project_id: string
+          quartos: number | null
+          status: string
+          tipo_unidade_id: string | null
+          vagas: number | null
+          valor_venda: number | null
+        }
+        Insert: {
+          andar?: number | null
+          banheiros?: number | null
+          company_id: string
+          created_at?: string
+          disponivel_venda?: boolean | null
+          id?: string
+          metragem?: number | null
+          numero_unidade?: string | null
+          orientacao?: string | null
+          project_id: string
+          quartos?: number | null
+          status?: string
+          tipo_unidade_id?: string | null
+          vagas?: number | null
+          valor_venda?: number | null
+        }
+        Update: {
+          andar?: number | null
+          banheiros?: number | null
+          company_id?: string
+          created_at?: string
+          disponivel_venda?: boolean | null
+          id?: string
+          metragem?: number | null
+          numero_unidade?: string | null
+          orientacao?: string | null
+          project_id?: string
+          quartos?: number | null
+          status?: string
+          tipo_unidade_id?: string | null
+          vagas?: number | null
+          valor_venda?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "development_units_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "development_units_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "development_units_tipo_unidade_id_fkey"
+            columns: ["tipo_unidade_id"]
+            isOneToOne: false
+            referencedRelation: "unit_types"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      expense_allocations: {
+        Row: {
+          company_id: string
+          criterio_aplicado: Json
+          financial_entry_id: string
+          id: string
+          percentual: number
+          project_id: string
+          valor_alocado: number
+        }
+        Insert: {
+          company_id: string
+          criterio_aplicado: Json
+          financial_entry_id: string
+          id?: string
+          percentual: number
+          project_id: string
+          valor_alocado: number
+        }
+        Update: {
+          company_id?: string
+          criterio_aplicado?: Json
+          financial_entry_id?: string
+          id?: string
+          percentual?: number
+          project_id?: string
+          valor_alocado?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "expense_allocations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expense_allocations_financial_entry_id_fkey"
+            columns: ["financial_entry_id"]
+            isOneToOne: false
+            referencedRelation: "financial_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "expense_allocations_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      financial_categories: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          name: string
+          type: string | null
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          name: string
+          type?: string | null
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+          type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_categories_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      financial_entries: {
+        Row: {
+          cr_vinculado_id: string | null
+          conta_bancaria_id: string | null
+          data_competencia: string | null
+          desconto: number | null
+          juros: number | null
+          legal_entity_id: string | null
+          numero_documento: string | null
+          pago_por: string | null
+          recorrencia: string | null
+          recorrencia_parcela: number | null
+          recorrencia_serie_id: string | null
+          subcategoria_id: string | null
+          valor_pago: number | null
+          category_id: string | null
+          client_id: string | null
+          company_id: string
+          contract_id: string | null
+          corretor_id: string | null
+          cost_center_id: string | null
+          created_at: string
+          description: string | null
+          due_date: string | null
+          entry_type: string
+          id: string
+          custo_fixo: boolean
+          imobiliaria_id: string | null
+          payment_date: string | null
+          payment_method: string | null
+          project_id: string | null
+          stage_id: string | null
+          status: string
+          supplier_id: string | null
+          value: number
+        }
+        Insert: {
+          cr_vinculado_id?: string | null
+          conta_bancaria_id?: string | null
+          data_competencia?: string | null
+          desconto?: number | null
+          juros?: number | null
+          legal_entity_id?: string | null
+          numero_documento?: string | null
+          pago_por?: string | null
+          recorrencia?: string | null
+          recorrencia_parcela?: number | null
+          recorrencia_serie_id?: string | null
+          subcategoria_id?: string | null
+          valor_pago?: number | null
+          category_id?: string | null
+          client_id?: string | null
+          company_id: string
+          contract_id?: string | null
+          corretor_id?: string | null
+          cost_center_id?: string | null
+          created_at?: string
+          description?: string | null
+          due_date?: string | null
+          entry_type: string
+          id?: string
+          custo_fixo?: boolean
+          imobiliaria_id?: string | null
+          payment_date?: string | null
+          payment_method?: string | null
+          project_id?: string | null
+          stage_id?: string | null
+          status?: string
+          supplier_id?: string | null
+          value: number
+        }
+        Update: {
+          cr_vinculado_id?: string | null
+          conta_bancaria_id?: string | null
+          data_competencia?: string | null
+          desconto?: number | null
+          juros?: number | null
+          legal_entity_id?: string | null
+          numero_documento?: string | null
+          pago_por?: string | null
+          recorrencia?: string | null
+          recorrencia_parcela?: number | null
+          recorrencia_serie_id?: string | null
+          subcategoria_id?: string | null
+          valor_pago?: number | null
+          category_id?: string | null
+          client_id?: string | null
+          company_id?: string
+          contract_id?: string | null
+          corretor_id?: string | null
+          cost_center_id?: string | null
+          created_at?: string
+          description?: string | null
+          due_date?: string | null
+          entry_type?: string
+          id?: string
+          custo_fixo?: boolean
+          imobiliaria_id?: string | null
+          payment_date?: string | null
+          payment_method?: string | null
+          project_id?: string | null
+          stage_id?: string | null
+          status?: string
+          supplier_id?: string | null
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_entries_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "financial_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financial_entries_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financial_entries_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financial_entries_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financial_entries_corretor_id_fkey"
+            columns: ["corretor_id"]
+            isOneToOne: false
+            referencedRelation: "corretores"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financial_entries_cost_center_id_fkey"
+            columns: ["cost_center_id"]
+            isOneToOne: false
+            referencedRelation: "cost_centers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financial_entries_imobiliaria_id_fkey"
+            columns: ["imobiliaria_id"]
+            isOneToOne: false
+            referencedRelation: "imobiliarias"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financial_entries_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financial_entries_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "project_stages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      financial_entry_installments: {
+        Row: {
+          company_id: string
+          data_pagamento: string | null
+          data_vencimento: string
+          financial_entry_id: string
+          id: string
+          numero: number
+          status: string
+          valor: number
+        }
+        Insert: {
+          company_id: string
+          data_pagamento?: string | null
+          data_vencimento: string
+          financial_entry_id: string
+          id?: string
+          numero: number
+          status?: string
+          valor: number
+        }
+        Update: {
+          company_id?: string
+          data_pagamento?: string | null
+          data_vencimento?: string
+          financial_entry_id?: string
+          id?: string
+          numero?: number
+          status?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "financial_entry_installments_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "financial_entry_installments_financial_entry_id_fkey"
+            columns: ["financial_entry_id"]
+            isOneToOne: false
+            referencedRelation: "financial_entries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      imobiliarias: {
+        Row: {
+          ativo: boolean
+          company_id: string
+          cnpj: string | null
+          created_at: string
+          creci_pj: string
+          email: string | null
+          id: string
+          percentual_comissao_padrao: number | null
+          razao_social: string
+          telefone: string | null
+        }
+        Insert: {
+          ativo?: boolean
+          company_id: string
+          cnpj?: string | null
+          created_at?: string
+          creci_pj: string
+          email?: string | null
+          id?: string
+          percentual_comissao_padrao?: number | null
+          razao_social: string
+          telefone?: string | null
+        }
+        Update: {
+          ativo?: boolean
+          company_id?: string
+          cnpj?: string | null
+          created_at?: string
+          creci_pj?: string
+          email?: string | null
+          id?: string
+          percentual_comissao_padrao?: number | null
+          razao_social?: string
+          telefone?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "imobiliarias_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      inventory_assets: {
+        Row: {
+          company_id: string
+          contract_origem_id: string | null
+          created_at: string
+          descricao: string
+          endereco: string | null
+          id: string
+          origin: string
+          status: string
+          tipo: string | null
+          transferencia_entrada_data_acordada: string | null
+          transferencia_entrada_data_efetiva: string | null
+          transferencia_entrada_status: string
+          valor_acordado: number | null
+          valor_mercado: number | null
+          valor_venda: number | null
+        }
+        Insert: {
+          company_id: string
+          contract_origem_id?: string | null
+          created_at?: string
+          descricao: string
+          endereco?: string | null
+          id?: string
+          origin?: string
+          status?: string
+          tipo?: string | null
+          transferencia_entrada_data_acordada?: string | null
+          transferencia_entrada_data_efetiva?: string | null
+          transferencia_entrada_status?: string
+          valor_acordado?: number | null
+          valor_mercado?: number | null
+          valor_venda?: number | null
+        }
+        Update: {
+          company_id?: string
+          contract_origem_id?: string | null
+          created_at?: string
+          descricao?: string
+          endereco?: string | null
+          id?: string
+          origin?: string
+          status?: string
+          tipo?: string | null
+          transferencia_entrada_data_acordada?: string | null
+          transferencia_entrada_data_efetiva?: string | null
+          transferencia_entrada_status?: string
+          valor_acordado?: number | null
+          valor_mercado?: number | null
+          valor_venda?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inventory_assets_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_assets_contract_origem_id_fkey"
+            columns: ["contract_origem_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      legal_entities: {
+        Row: {
+          ativo: boolean
+          cnpj: string | null
+          company_id: string
+          created_at: string
+          id: string
+          razao_social: string
+          tipo: string | null
+        }
+        Insert: {
+          ativo?: boolean
+          cnpj?: string | null
+          company_id: string
+          created_at?: string
+          id?: string
+          razao_social: string
+          tipo?: string | null
+        }
+        Update: {
+          ativo?: boolean
+          cnpj?: string | null
+          company_id?: string
+          created_at?: string
+          id?: string
+          razao_social?: string
+          tipo?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "legal_entities_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payment_methods: {
+        Row: {
+          company_id: string
+          financial_entry_id: string
+          forma: string
+          id: string
+          valor: number
+        }
+        Insert: {
+          company_id: string
+          financial_entry_id: string
+          forma: string
+          id?: string
+          valor: number
+        }
+        Update: {
+          company_id?: string
+          financial_entry_id?: string
+          forma?: string
+          id?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_methods_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_methods_financial_entry_id_fkey"
+            columns: ["financial_entry_id"]
+            isOneToOne: false
+            referencedRelation: "financial_entries"
             referencedColumns: ["id"]
           },
         ]
       }
       profiles: {
         Row: {
-          avatar_url: string | null
+          company_id: string
           created_at: string
-          email: string
+          email: string | null
           full_name: string | null
           id: string
-          updated_at: string
         }
         Insert: {
-          avatar_url?: string | null
+          company_id: string
           created_at?: string
-          email: string
+          email?: string | null
           full_name?: string | null
           id: string
-          updated_at?: string
         }
         Update: {
-          avatar_url?: string | null
+          company_id?: string
           created_at?: string
-          email?: string
+          email?: string | null
           full_name?: string | null
           id?: string
-          updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
-      public_api_events: {
+      project_stage_dependencies: {
         Row: {
-          api_key_id: string
-          correlation_id: string
+          company_id: string
           created_at: string
-          event_name: string
-          external_id: string | null
+          dependency_type: string
           id: string
-          metadata: Json
-          payload: Json
-          workspace_id: string
+          lag_days: number | null
+          predecessor_stage_id: string
+          project_id: string
+          successor_stage_id: string
         }
         Insert: {
-          api_key_id: string
-          correlation_id?: string
+          company_id: string
           created_at?: string
-          event_name: string
-          external_id?: string | null
+          dependency_type: string
           id?: string
-          metadata?: Json
-          payload?: Json
-          workspace_id: string
+          lag_days?: number | null
+          predecessor_stage_id: string
+          project_id: string
+          successor_stage_id: string
         }
         Update: {
-          api_key_id?: string
-          correlation_id?: string
+          company_id?: string
           created_at?: string
-          event_name?: string
-          external_id?: string | null
+          dependency_type?: string
           id?: string
-          metadata?: Json
-          payload?: Json
-          workspace_id?: string
+          lag_days?: number | null
+          predecessor_stage_id?: string
+          project_id?: string
+          successor_stage_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "public_api_events_api_key_id_fkey"
-            columns: ["api_key_id"]
+            foreignKeyName: "project_stage_dependencies_company_id_fkey"
+            columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "api_keys"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "public_api_events_workspace_id_fkey"
-            columns: ["workspace_id"]
+            foreignKeyName: "project_stage_dependencies_predecessor_stage_id_fkey"
+            columns: ["predecessor_stage_id"]
             isOneToOne: false
-            referencedRelation: "workspaces"
+            referencedRelation: "project_stages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_stage_dependencies_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_stage_dependencies_successor_stage_id_fkey"
+            columns: ["successor_stage_id"]
+            isOneToOne: false
+            referencedRelation: "project_stages"
             referencedColumns: ["id"]
           },
         ]
       }
-      public_api_requests: {
+      project_stages: {
         Row: {
-          api_key_id: string | null
-          correlation_id: string
-          created_at: string
-          endpoint: string
-          error_code: string | null
-          id: string
-          idempotency_key: string | null
-          method: string
-          request_body: Json
-          response_body: Json | null
-          status_code: number
-          workspace_id: string
-        }
-        Insert: {
-          api_key_id?: string | null
-          correlation_id?: string
-          created_at?: string
-          endpoint: string
-          error_code?: string | null
-          id?: string
-          idempotency_key?: string | null
-          method: string
-          request_body?: Json
-          response_body?: Json | null
-          status_code: number
-          workspace_id: string
-        }
-        Update: {
-          api_key_id?: string | null
-          correlation_id?: string
-          created_at?: string
-          endpoint?: string
-          error_code?: string | null
-          id?: string
-          idempotency_key?: string | null
-          method?: string
-          request_body?: Json
-          response_body?: Json | null
-          status_code?: number
-          workspace_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "public_api_requests_api_key_id_fkey"
-            columns: ["api_key_id"]
-            isOneToOne: false
-            referencedRelation: "api_keys"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "public_api_requests_workspace_id_fkey"
-            columns: ["workspace_id"]
-            isOneToOne: false
-            referencedRelation: "workspaces"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      webhook_deliveries: {
-        Row: {
-          attempt_number: number
-          attempted_at: string
-          correlation_id: string
-          delivered_at: string | null
-          delivery_status: string
-          error: string | null
-          event: string
-          id: string
-          last_attempt_at: string | null
-          next_retry_at: string | null
-          payload: Json
-          request_headers: Json
-          response_body: string | null
-          response_headers: Json | null
-          response_status: number | null
-          retry_count: number
-          webhook_id: string
-          webhook_url: string | null
-          workspace_id: string
-        }
-        Insert: {
-          attempt_number?: number
-          attempted_at?: string
-          correlation_id?: string
-          delivered_at?: string | null
-          delivery_status?: string
-          error?: string | null
-          event: string
-          id?: string
-          last_attempt_at?: string | null
-          next_retry_at?: string | null
-          payload: Json
-          request_headers?: Json
-          response_body?: string | null
-          response_headers?: Json | null
-          response_status?: number | null
-          retry_count?: number
-          webhook_id: string
-          webhook_url?: string | null
-          workspace_id: string
-        }
-        Update: {
-          attempt_number?: number
-          attempted_at?: string
-          correlation_id?: string
-          delivered_at?: string | null
-          delivery_status?: string
-          error?: string | null
-          event?: string
-          id?: string
-          last_attempt_at?: string | null
-          next_retry_at?: string | null
-          payload?: Json
-          request_headers?: Json
-          response_body?: string | null
-          response_headers?: Json | null
-          response_status?: number | null
-          retry_count?: number
-          webhook_id?: string
-          webhook_url?: string | null
-          workspace_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "webhook_deliveries_webhook_id_fkey"
-            columns: ["webhook_id"]
-            isOneToOne: false
-            referencedRelation: "webhooks"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "webhook_deliveries_workspace_id_fkey"
-            columns: ["workspace_id"]
-            isOneToOne: false
-            referencedRelation: "workspaces"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      webhooks: {
-        Row: {
+          actual_cost: number | null
+          actual_duration_days: number | null
+          actual_end_date: string | null
+          actual_start_date: string | null
+          company_id: string
           created_at: string
           description: string | null
-          events: string[]
-          headers: Json
           id: string
-          is_active: boolean
           name: string
-          secret: string
-          updated_at: string
-          url: string
-          workspace_id: string
+          parent_stage_id: string | null
+          planned_cost: number | null
+          planned_duration_days: number | null
+          planned_end_date: string | null
+          planned_start_date: string | null
+          progress_percentage: number | null
+          project_id: string
+          stage_order: number | null
+          status: string
         }
         Insert: {
+          actual_cost?: number | null
+          actual_duration_days?: number | null
+          actual_end_date?: string | null
+          actual_start_date?: string | null
+          company_id: string
           created_at?: string
           description?: string | null
-          events?: string[]
-          headers?: Json
           id?: string
-          is_active?: boolean
-          name?: string
-          secret?: string
-          updated_at?: string
-          url: string
-          workspace_id: string
+          name: string
+          parent_stage_id?: string | null
+          planned_cost?: number | null
+          planned_duration_days?: number | null
+          planned_end_date?: string | null
+          planned_start_date?: string | null
+          progress_percentage?: number | null
+          project_id: string
+          stage_order?: number | null
+          status?: string
         }
         Update: {
+          actual_cost?: number | null
+          actual_duration_days?: number | null
+          actual_end_date?: string | null
+          actual_start_date?: string | null
+          company_id?: string
           created_at?: string
           description?: string | null
-          events?: string[]
-          headers?: Json
-          id?: string
-          is_active?: boolean
-          name?: string
-          secret?: string
-          updated_at?: string
-          url?: string
-          workspace_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "webhooks_workspace_id_fkey"
-            columns: ["workspace_id"]
-            isOneToOne: false
-            referencedRelation: "workspaces"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      whatsapp_instances: {
-        Row: {
-          connection_metadata: Json
-          created_at: string
-          display_name: string | null
-          evolution_base_url: string | null
-          id: string
-          instance_name: string
-          is_default: boolean
-          last_seen_at: string | null
-          phone_number: string | null
-          provider_secret_ref: string | null
-          provider_type: string
-          qr_code: string | null
-          status: Database["public"]["Enums"]["whatsapp_status"]
-          updated_at: string
-          webhook_token: string
-          workspace_id: string
-        }
-        Insert: {
-          connection_metadata?: Json
-          created_at?: string
-          display_name?: string | null
-          evolution_base_url?: string | null
-          id?: string
-          instance_name: string
-          is_default?: boolean
-          last_seen_at?: string | null
-          phone_number?: string | null
-          provider_secret_ref?: string | null
-          provider_type?: string
-          qr_code?: string | null
-          status?: Database["public"]["Enums"]["whatsapp_status"]
-          updated_at?: string
-          webhook_token?: string
-          workspace_id: string
-        }
-        Update: {
-          connection_metadata?: Json
-          created_at?: string
-          display_name?: string | null
-          evolution_base_url?: string | null
-          id?: string
-          instance_name?: string
-          is_default?: boolean
-          last_seen_at?: string | null
-          phone_number?: string | null
-          provider_secret_ref?: string | null
-          provider_type?: string
-          qr_code?: string | null
-          status?: Database["public"]["Enums"]["whatsapp_status"]
-          updated_at?: string
-          webhook_token?: string
-          workspace_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "whatsapp_instances_workspace_id_fkey"
-            columns: ["workspace_id"]
-            isOneToOne: false
-            referencedRelation: "workspaces"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      workspace_branding: {
-        Row: {
-          created_at: string
-          custom_domain: string | null
-          display_name: string | null
-          logo_url: string | null
-          primary_color: string | null
-          secondary_color: string | null
-          support_email: string | null
-          updated_at: string
-          workspace_id: string
-        }
-        Insert: {
-          created_at?: string
-          custom_domain?: string | null
-          display_name?: string | null
-          logo_url?: string | null
-          primary_color?: string | null
-          secondary_color?: string | null
-          support_email?: string | null
-          updated_at?: string
-          workspace_id: string
-        }
-        Update: {
-          created_at?: string
-          custom_domain?: string | null
-          display_name?: string | null
-          logo_url?: string | null
-          primary_color?: string | null
-          secondary_color?: string | null
-          support_email?: string | null
-          updated_at?: string
-          workspace_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "workspace_branding_workspace_id_fkey"
-            columns: ["workspace_id"]
-            isOneToOne: true
-            referencedRelation: "workspaces"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      workspace_members: {
-        Row: {
-          created_at: string
-          id: string
-          invited_by: string | null
-          role: Database["public"]["Enums"]["app_role"]
-          user_id: string
-          workspace_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          invited_by?: string | null
-          role?: Database["public"]["Enums"]["app_role"]
-          user_id: string
-          workspace_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          invited_by?: string | null
-          role?: Database["public"]["Enums"]["app_role"]
-          user_id?: string
-          workspace_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "workspace_members_workspace_id_fkey"
-            columns: ["workspace_id"]
-            isOneToOne: false
-            referencedRelation: "workspaces"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      workspaces: {
-        Row: {
-          created_at: string
-          id: string
-          name: string
-          owner_id: string
-          slug: string
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          name: string
-          owner_id: string
-          slug: string
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
           id?: string
           name?: string
-          owner_id?: string
-          slug?: string
-          updated_at?: string
+          parent_stage_id?: string | null
+          planned_cost?: number | null
+          planned_duration_days?: number | null
+          planned_end_date?: string | null
+          planned_start_date?: string | null
+          progress_percentage?: number | null
+          project_id?: string
+          stage_order?: number | null
+          status?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "project_stages_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_stages_parent_stage_id_fkey"
+            columns: ["parent_stage_id"]
+            isOneToOne: false
+            referencedRelation: "project_stages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_stages_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      projects: {
+        Row: {
+          actual_cost_value: number | null
+          actual_end_date: string | null
+          actual_start_date: string | null
+          budgeted_value: number | null
+          client_id: string
+          code: string | null
+          company_id: string
+          contract_id: string
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          planned_end_date: string | null
+          planned_start_date: string | null
+          progress_percentage: number | null
+          project_type: string
+          status: string
+        }
+        Insert: {
+          actual_cost_value?: number | null
+          actual_end_date?: string | null
+          actual_start_date?: string | null
+          budgeted_value?: number | null
+          client_id: string
+          code?: string | null
+          company_id: string
+          contract_id: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          planned_end_date?: string | null
+          planned_start_date?: string | null
+          progress_percentage?: number | null
+          project_type?: string
+          status?: string
+        }
+        Update: {
+          actual_cost_value?: number | null
+          actual_end_date?: string | null
+          actual_start_date?: string | null
+          budgeted_value?: number | null
+          client_id?: string
+          code?: string | null
+          company_id?: string
+          contract_id?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          planned_end_date?: string | null
+          planned_start_date?: string | null
+          progress_percentage?: number | null
+          project_type?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "projects_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "projects_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "projects_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      unit_types: {
+        Row: {
+          banheiros: number | null
+          company_id: string
+          created_at: string
+          id: string
+          metragem: number | null
+          nome: string
+          project_id: string | null
+          quartos: number | null
+          valor_base: number | null
+          vagas: number | null
+        }
+        Insert: {
+          banheiros?: number | null
+          company_id: string
+          created_at?: string
+          id?: string
+          metragem?: number | null
+          nome: string
+          project_id?: string | null
+          quartos?: number | null
+          valor_base?: number | null
+          vagas?: number | null
+        }
+        Update: {
+          banheiros?: number | null
+          company_id?: string
+          created_at?: string
+          id?: string
+          metragem?: number | null
+          nome?: string
+          project_id?: string | null
+          quartos?: number | null
+          valor_base?: number | null
+          vagas?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "unit_types_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "unit_types_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      has_workspace_role: {
-        Args: {
-          _role: Database["public"]["Enums"]["app_role"]
-          _user_id: string
-          _workspace_id: string
-        }
-        Returns: boolean
-      }
-      is_workspace_admin: {
-        Args: { _user_id: string; _workspace_id: string }
-        Returns: boolean
-      }
-      is_workspace_member: {
-        Args: { _user_id: string; _workspace_id: string }
-        Returns: boolean
-      }
-      rotate_webhook_secret: {
-        Args: { p_webhook_id: string; p_workspace_id: string }
-        Returns: string
-      }
-      rotate_whatsapp_webhook_token: {
-        Args: { p_instance_id: string; p_workspace_id: string }
-        Returns: string
-      }
-      set_default_whatsapp_instance: {
-        Args: { p_instance_id: string; p_workspace_id: string }
-        Returns: {
-          connection_metadata: Json
-          created_at: string
-          display_name: string | null
-          evolution_base_url: string | null
-          id: string
-          instance_name: string
-          is_default: boolean
-          last_seen_at: string | null
-          phone_number: string | null
-          provider_secret_ref: string | null
-          provider_type: string
-          qr_code: string | null
-          status: Database["public"]["Enums"]["whatsapp_status"]
-          updated_at: string
-          webhook_token: string
-          workspace_id: string
-        }
-        SetofOptions: {
-          from: "*"
-          to: "whatsapp_instances"
-          isOneToOne: true
-          isSetofReturn: false
-        }
-      }
+      get_user_company_id: { Args: { _user_id: string }; Returns: string }
     }
     Enums: {
-      app_role: "owner" | "admin" | "agent"
-      conversation_mode: "bot" | "human"
-      message_direction: "inbound" | "outbound"
-      message_sender: "customer" | "bot" | "agent" | "system"
-      message_type: "text" | "audio" | "image" | "video" | "document" | "system"
-      whatsapp_status:
-        | "disconnected"
-        | "connecting"
-        | "qr"
-        | "connected"
-        | "error"
+      [_ in never]: never
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1067,12 +1642,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends (DefaultSchemaTableNameOrOptions extends {
+  TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never) = never,
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1096,11 +1671,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends (DefaultSchemaTableNameOrOptions extends {
+  TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never) = never,
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1121,11 +1696,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends (DefaultSchemaTableNameOrOptions extends {
+  TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never) = never,
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1146,11 +1721,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never) = never,
+    : never = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1163,11 +1738,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never) = never,
+    : never = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -1178,19 +1753,6 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {
-      app_role: ["owner", "admin", "agent"],
-      conversation_mode: ["bot", "human"],
-      message_direction: ["inbound", "outbound"],
-      message_sender: ["customer", "bot", "agent", "system"],
-      message_type: ["text", "audio", "image", "video", "document", "system"],
-      whatsapp_status: [
-        "disconnected",
-        "connecting",
-        "qr",
-        "connected",
-        "error",
-      ],
-    },
+    Enums: {},
   },
 } as const
