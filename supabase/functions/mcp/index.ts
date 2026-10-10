@@ -3,10 +3,10 @@
 // supabase function: mcp
 // Bundled from src/lib/mcp/index.ts by @lovable.dev/mcp-js.
 // src/lib/mcp/index.ts
-import { auth, defineMcp } from "npm:@lovable.dev/mcp-js@3.0.2";
+import { auth, defineMcp } from "npm:@lovable.dev/mcp-js@3.0.5";
 
 // src/lib/mcp/tools/list-workspaces.ts
-import { defineTool } from "npm:@lovable.dev/mcp-js@3.0.2";
+import { defineTool } from "npm:@lovable.dev/mcp-js@3.0.5";
 
 // src/lib/mcp/supabase.ts
 import { createClient } from "npm:@supabase/supabase-js@^2.105.3";
@@ -71,7 +71,7 @@ var list_workspaces_default = defineTool({
 });
 
 // src/lib/mcp/tools/list-conversations.ts
-import { defineTool as defineTool2 } from "npm:@lovable.dev/mcp-js@3.0.2";
+import { defineTool as defineTool2 } from "npm:@lovable.dev/mcp-js@3.0.5";
 import { z } from "npm:zod@^3.25.76";
 var list_conversations_default = defineTool2({
   name: "list_conversations",
@@ -103,7 +103,7 @@ var list_conversations_default = defineTool2({
 });
 
 // src/lib/mcp/tools/get-messages.ts
-import { defineTool as defineTool3 } from "npm:@lovable.dev/mcp-js@3.0.2";
+import { defineTool as defineTool3 } from "npm:@lovable.dev/mcp-js@3.0.5";
 import { z as z2 } from "npm:zod@^3.25.76";
 var get_messages_default = defineTool3({
   name: "get_conversation_messages",
@@ -131,7 +131,7 @@ var get_messages_default = defineTool3({
 });
 
 // src/lib/mcp/tools/list-knowledge.ts
-import { defineTool as defineTool4 } from "npm:@lovable.dev/mcp-js@3.0.2";
+import { defineTool as defineTool4 } from "npm:@lovable.dev/mcp-js@3.0.5";
 import { z as z3 } from "npm:zod@^3.25.76";
 var list_knowledge_default = defineTool4({
   name: "list_knowledge",
@@ -184,5 +184,5 @@ var mcp_default = defineMcp({
 });
 
 // lovable-mcp-supabase-entry.ts
-import { createSupabaseHandler } from "npm:@lovable.dev/mcp-js@3.0.2/stacks/supabase";
+import { createSupabaseHandler } from "npm:@lovable.dev/mcp-js@3.0.5/stacks/supabase";
 Deno.serve(createSupabaseHandler(mcp_default, { functionName: "mcp" }));

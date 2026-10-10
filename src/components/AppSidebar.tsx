@@ -59,8 +59,8 @@ const menuItems: MenuItem[] = [
     url: '/financeiro',
     icon: DollarSign,
     children: [
-      { title: 'Contas à Pagar', url: '/financeiro/contas-a-pagar', icon: ArrowUpCircle },
-      { title: 'Contas à Receber', url: '/financeiro/contas-a-receber', icon: ArrowDownCircle },
+      { title: 'Contas a Pagar', url: '/financeiro/contas-a-pagar', icon: ArrowUpCircle },
+      { title: 'Contas a Receber', url: '/financeiro/contas-a-receber', icon: ArrowDownCircle },
     ],
   },
   { title: 'Patrimônio', url: '/patrimonio', icon: Wrench },

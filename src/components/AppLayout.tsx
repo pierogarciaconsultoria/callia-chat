@@ -96,7 +96,7 @@ function NavTree({ label, icon: Icon, items }: { label: string; icon: any; items
   );
 }
 
-export default function AppLayout({ children }: { children?: ReactNode }) {
+export function AppLayout({ children }: { children?: ReactNode }) {
   const { user, signOut } = useAuth();
   const { workspaces, currentWorkspace, setCurrentWorkspaceId } = useWorkspace();
   const { branding, displayName } = useWorkspaceBranding();
@@ -166,3 +166,5 @@ export default function AppLayout({ children }: { children?: ReactNode }) {
     </div>
   );
 }
+
+export default AppLayout;

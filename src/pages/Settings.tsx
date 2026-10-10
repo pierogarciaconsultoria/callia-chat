@@ -1,4 +1,4 @@
-import { AppLayout } from '@/components/AppLayout';
+import AppLayout from '@/components/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Hammer, KeyRound, Layers3, LifeBuoy, PieChart, Tag } from 'lucide-react';
