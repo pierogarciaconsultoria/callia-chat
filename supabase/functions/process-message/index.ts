@@ -11,6 +11,7 @@ import {
   transcribeAudio,
 } from "../_shared/agent.ts";
 import { createOutboundMessageRecord, deliverOutboundMessage, resolveSendingInstance } from "../_shared/outbound.ts";
+import { buildExternalAgentPayload, callExternalAgent, isAllowedSecretRef } from "../_shared/external-agent.ts";
 import { triggerPendingWebhookDispatch, triggerWebhookDispatch } from "../_shared/webhooks.ts";
 
 function getEnv(name: string) {
@@ -63,6 +64,166 @@ async function markOutboundFailure(supabase, outboundId, message) {
       retry_count: 1,
     })
     .eq("id", outboundId);
+}
+
+async function logWorkspaceEvent(supabase, workspaceId, action, target, metadata) {
+  await supabase
+    .from("audit_logs")
+    .insert({ workspace_id: workspaceId, actor_type: "system", actor_id: "process-message", action, target, metadata })
+    .then(() => null, () => null);
+}
+
+// Returns a response body when the external agent handled the message, or null to fall back
+// to the internal pipeline. Never throws for agent failures.
+async function tryExternalAgent(supabase, ctx) {
+  const { workspaceId, conversation, message, agentConfig, history, messageText, correlationId } = ctx;
+  const baseMeta = (message.metadata as Record<string, unknown> | null) ?? {};
+
+  // Idempotency: claim the message atomically so the agent is called at most once per message_id.
+  const attemptedAt = new Date().toISOString();
+  const { data: claimed } = await supabase
+    .from("messages")
+    .update({ metadata: { ...baseMeta, external_agent: { status: "calling", attempted_at: attemptedAt } } })
+    .eq("id", message.id)
+    .is("metadata->external_agent", null)
+    .select("id");
+
+  if (!claimed || claimed.length === 0) {
+    const { data: existingReply } = await supabase
+      .from("messages")
+      .select("id")
+      .eq("conversation_id", conversation.id)
+      .eq("direction", "outbound")
+      .eq("metadata->>source_message_id", message.id)
+      .limit(1)
+      .maybeSingle();
+    if (existingReply) {
+      return { ok: true, skipped: "already_processed", conversationId: conversation.id, replyMessageId: existingReply.id };
+    }
+    return null; // already attempted without reply: use internal pipeline, do not call agent again
+  }
+
+  const setStatus = async (status, extra = {}) => {
+    await supabase
+      .from("messages")
+      .update({ metadata: { ...baseMeta, external_agent: { status, attempted_at: attemptedAt, ...extra } } })
+      .eq("id", message.id);
+  };
+
+  const fail = async (error, details = {}) => {
+    await setStatus("failed", { error });
+    await logWorkspaceEvent(supabase, workspaceId, "external_agent.failed", message.id, {
+      error,
+      conversation_id: conversation.id,
+      correlation_id: correlationId,
+      ...details,
+    });
+    return null;
+  };
+
+  const secretRef = agentConfig.external_agent_secret_ref;
+  const secret = secretRef && isAllowedSecretRef(secretRef) ? getEnv(secretRef) : null;
+  if (!agentConfig.external_agent_url) return await fail("missing_url");
+  if (secretRef && !isAllowedSecretRef(secretRef)) return await fail("secret_ref_not_allowed", { secret_ref: secretRef });
+  if (secretRef && !secret) return await fail("secret_not_found", { secret_ref: secretRef });
+
+  const payload = buildExternalAgentPayload({
+    workspaceId,
+    conversationId: conversation.id,
+    conversation,
+    message,
+    messageText,
+    history,
+  });
+
+  const result = await callExternalAgent({
+    url: agentConfig.external_agent_url,
+    secret: secret ?? "",
+    timeoutMs: agentConfig.external_agent_timeout_ms ?? 25000,
+    payload,
+  });
+
+  if (!result.ok) {
+    return await fail(result.error, { status: result.status, duration_ms: result.durationMs, body: result.body });
+  }
+
+  const { reply, handoff, media } = result.value;
+  const instance = await resolveSendingInstance(supabase, {
+    workspaceId,
+    conversationId: conversation.id,
+    instanceId: conversation.whatsapp_instance_id,
+  });
+  const instanceId = instance?.id ?? conversation.whatsapp_instance_id;
+  const sentIds = [];
+
+  const send = async (item) => {
+    const outbound = await createOutboundMessageRecord(supabase, {
+      workspaceId,
+      conversationId: conversation.id,
+      instanceId,
+      content: item.text || null,
+      mediaUrl: item.mediaUrl ?? null,
+      mimeType: item.mediaType ?? null,
+      type: item.mediaType ?? "text",
+      sender: "bot",
+      correlationId,
+      metadata: { generated_by: "external-agent", source_message_id: message.id },
+    });
+    sentIds.push(outbound.message.id);
+    try {
+      await deliverOutboundMessage(supabase, {
+        workspaceId,
+        conversationId: conversation.id,
+        instanceId,
+        phoneNumber: conversation.customer_phone,
+        text: item.text ?? "",
+        mediaUrl: item.mediaUrl ?? null,
+        mimeType: item.mediaType ?? null,
+        messageId: outbound.message.id,
+        outboundMessageId: outbound.outbound.id,
+        messageMetadata: outbound.message.metadata,
+        outboundPayload: outbound.outbound.payload,
+      });
+    } catch (error) {
+      await markOutboundFailure(supabase, outbound.outbound.id, error instanceof Error ? error.message : "send_failed");
+    }
+  };
+
+  if (reply) await send({ text: reply });
+  for (const item of media) {
+    await send({ text: item.caption ?? "", mediaUrl: item.url, mediaType: item.type });
+  }
+
+  if (handoff) {
+    const updated = await updateConversationForHandoff(supabase, conversation, "external_agent");
+    await triggerWebhookDispatch({
+      workspaceId,
+      event: "conversation.handoff",
+      payload: {
+        workspaceId,
+        conversationId: updated.id,
+        whatsappInstanceId: updated.whatsapp_instance_id,
+        customerPhone: updated.customer_phone,
+        customerName: updated.customer_name,
+        mode: updated.mode,
+        reason: "external_agent",
+        handoffAt: new Date().toISOString(),
+      },
+      correlationId,
+    });
+    await triggerPendingWebhookDispatch(workspaceId);
+  }
+
+  await setStatus("succeeded", { duration_ms: result.durationMs, reply_message_ids: sentIds, handoff });
+
+  return {
+    ok: true,
+    conversationId: conversation.id,
+    sourceMessageId: message.id,
+    replyMessageIds: sentIds,
+    handoff,
+    usedExternalAgent: true,
+  };
 }
 
 serve(async (request) => {
@@ -213,6 +374,39 @@ serve(async (request) => {
         },
         { status: 200 },
       );
+    }
+
+    if (agentConfig.external_agent_enabled === true) {
+      try {
+        const externalResult = await tryExternalAgent(supabase, {
+          workspaceId,
+          conversation,
+          message,
+          agentConfig,
+          history: history ?? [],
+          messageText,
+          correlationId,
+        });
+        if (externalResult) {
+          return jsonResponse(externalResult, { status: 200 });
+        }
+      } catch (error) {
+        await logWorkspaceEvent(supabase, workspaceId, "external_agent.failed", messageId, {
+          error: error instanceof Error ? error.message : "unexpected_error",
+          conversation_id: conversationId,
+          correlation_id: correlationId,
+        });
+        const { data: partialReply } = await supabase
+          .from("messages")
+          .select("id")
+          .eq("conversation_id", conversationId)
+          .eq("metadata->>source_message_id", messageId)
+          .limit(1)
+          .maybeSingle();
+        if (partialReply) {
+          return jsonResponse({ ok: true, conversationId, replyMessageId: partialReply.id, partial: true }, { status: 200 });
+        }
+      }
     }
 
     const systemPrompt = buildSystemPrompt({

@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { ExternalAgentSection } from "@/components/agent/ExternalAgentSection";
 
 type EditableFaq = Pick<FaqRecord, "id" | "question" | "answer" | "is_active">;
 type EditableProduct = Pick<
@@ -405,6 +406,15 @@ export default function AgentPage() {
           </div>
         </CardContent>
       </Card>
+
+      <ExternalAgentSection
+        workspaceId={currentWorkspace.id}
+        form={form}
+        canEdit={canEdit}
+        onChange={updateForm}
+        onSave={saveConfig}
+        saving={savingConfig}
+      />
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0">
