@@ -5,6 +5,12 @@ export const EXTERNAL_AGENT_MIN_TIMEOUT_MS = 1000;
 export const EXTERNAL_AGENT_MAX_TIMEOUT_MS = 60000;
 const MEDIA_TYPES = ["image", "video", "audio", "document"];
 
+// Only secrets with this prefix may be forwarded, so platform secrets can never leak to a webhook.
+export const EXTERNAL_AGENT_SECRET_PREFIX = "EXTERNAL_AGENT_";
+export function isAllowedSecretRef(value) {
+  return typeof value === "string" && /^EXTERNAL_AGENT_[A-Z0-9_]{1,200}$/.test(value);
+}
+
 export function clampTimeout(value) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 25000;

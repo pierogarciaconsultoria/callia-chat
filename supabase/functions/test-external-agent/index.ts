@@ -1,13 +1,12 @@
 // @ts-nocheck
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { corsHeaders, jsonResponse, requireAdminContext } from "../_shared/auth.ts";
-import { callExternalAgent, isValidExternalAgentUrl } from "../_shared/external-agent.ts";
+import { callExternalAgent, isAllowedSecretRef, isValidExternalAgentUrl } from "../_shared/external-agent.ts";
 
 function getEnv(name: string) {
   return (globalThis as { Deno?: { env?: { get: (key: string) => string | undefined } } }).Deno?.env?.get(name);
 }
 
-const SECRET_REF_RE = /^[A-Za-z_][A-Za-z0-9_]{0,255}$/;
 
 serve(async (request) => {
   if (request.method === "OPTIONS") {
@@ -23,7 +22,7 @@ serve(async (request) => {
     if (!isValidExternalAgentUrl(url)) {
       return jsonResponse({ ok: false, error: "invalid_url" }, { status: 400 });
     }
-    if (secretRef && !SECRET_REF_RE.test(secretRef)) {
+    if (secretRef && !isAllowedSecretRef(secretRef)) {
       return jsonResponse({ ok: false, error: "invalid_secret_ref" }, { status: 400 });
     }
     const secret = secretRef ? getEnv(secretRef) : "";

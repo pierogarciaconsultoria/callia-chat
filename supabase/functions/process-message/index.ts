@@ -11,7 +11,7 @@ import {
   transcribeAudio,
 } from "../_shared/agent.ts";
 import { createOutboundMessageRecord, deliverOutboundMessage, resolveSendingInstance } from "../_shared/outbound.ts";
-import { buildExternalAgentPayload, callExternalAgent } from "../_shared/external-agent.ts";
+import { buildExternalAgentPayload, callExternalAgent, isAllowedSecretRef } from "../_shared/external-agent.ts";
 import { triggerPendingWebhookDispatch, triggerWebhookDispatch } from "../_shared/webhooks.ts";
 
 function getEnv(name: string) {
@@ -122,8 +122,9 @@ async function tryExternalAgent(supabase, ctx) {
   };
 
   const secretRef = agentConfig.external_agent_secret_ref;
-  const secret = secretRef ? getEnv(secretRef) : null;
+  const secret = secretRef && isAllowedSecretRef(secretRef) ? getEnv(secretRef) : null;
   if (!agentConfig.external_agent_url) return await fail("missing_url");
+  if (secretRef && !isAllowedSecretRef(secretRef)) return await fail("secret_ref_not_allowed", { secret_ref: secretRef });
   if (secretRef && !secret) return await fail("secret_not_found", { secret_ref: secretRef });
 
   const payload = buildExternalAgentPayload({
