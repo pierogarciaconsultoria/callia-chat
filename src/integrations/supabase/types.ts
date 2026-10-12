@@ -18,6 +18,10 @@ export type Database = {
         Row: {
           ai_model: string
           business_hours: Json
+          external_agent_enabled: boolean
+          external_agent_secret_ref: string | null
+          external_agent_timeout_ms: number
+          external_agent_url: string | null
           follow_up_rules: Json
           handoff_keywords: string[]
           language: string
@@ -32,6 +36,10 @@ export type Database = {
         Insert: {
           ai_model?: string
           business_hours?: Json
+          external_agent_enabled?: boolean
+          external_agent_secret_ref?: string | null
+          external_agent_timeout_ms?: number
+          external_agent_url?: string | null
           follow_up_rules?: Json
           handoff_keywords?: string[]
           language?: string
@@ -46,6 +54,10 @@ export type Database = {
         Update: {
           ai_model?: string
           business_hours?: Json
+          external_agent_enabled?: boolean
+          external_agent_secret_ref?: string | null
+          external_agent_timeout_ms?: number
+          external_agent_url?: string | null
           follow_up_rules?: Json
           handoff_keywords?: string[]
           language?: string
