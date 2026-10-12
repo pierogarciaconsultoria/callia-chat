@@ -395,6 +395,16 @@ serve(async (request) => {
           conversation_id: conversationId,
           correlation_id: correlationId,
         });
+        const { data: partialReply } = await supabase
+          .from("messages")
+          .select("id")
+          .eq("conversation_id", conversationId)
+          .eq("metadata->>source_message_id", messageId)
+          .limit(1)
+          .maybeSingle();
+        if (partialReply) {
+          return jsonResponse({ ok: true, conversationId, replyMessageId: partialReply.id, partial: true }, { status: 200 });
+        }
       }
     }
 
