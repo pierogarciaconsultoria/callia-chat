@@ -20,6 +20,7 @@ import {
   getMessageTypeLabel,
   getModeBadgeLabel,
   getModeBadgeTone,
+  isExternalSource,
 } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -293,6 +294,9 @@ export default function InboxPage() {
                         <Badge variant="outline" className={getModeBadgeTone(selectedConversation.mode)}>
                           {getModeBadgeLabel(selectedConversation.mode)}
                         </Badge>
+                        {isExternalSource(selectedConversation) ? (
+                          <Badge variant="outline" className="text-muted-foreground">via integração</Badge>
+                        ) : null}
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                         <span className="inline-flex items-center gap-1">
@@ -361,6 +365,12 @@ export default function InboxPage() {
                               <span>{getMessageTypeLabel(message)}</span>
                               <span>•</span>
                               <span>{formatDateTime(message.created_at)}</span>
+                              {isExternalSource(message) ? (
+                                <>
+                                  <span>•</span>
+                                  <span>via integração</span>
+                                </>
+                              ) : null}
                             </div>
                             <div className="whitespace-pre-wrap break-words text-sm">
                               {content || "Mensagem sem conteudo textual"}
@@ -390,6 +400,13 @@ export default function InboxPage() {
                 {selectedConversation.mode !== "human" ? (
                   <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                     Esta conversa esta em modo `bot`. Assuma a conversa para liberar o envio manual do atendente.
+                  </div>
+                ) : null}
+
+                {isExternalSource(selectedConversation) ? (
+                  <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    Esta conversa vem de um canal externo (via integração). O envio por aqui ainda depende de um
+                    adaptador desse canal, por isso a resposta manual está desativada. Responda pelo sistema de origem.
                   </div>
                 ) : null}
 
