@@ -129,7 +129,7 @@ describe("agente externo", () => {
       history,
     });
     expect(p.history).toHaveLength(20);
-    expect(p.history[0].role).toBe("user");
+    expect(p.history[0]).toEqual({ role: "assistant", content: "9" });
   });
 
   it("só aceita segredos com prefixo EXTERNAL_AGENT_", () => {
