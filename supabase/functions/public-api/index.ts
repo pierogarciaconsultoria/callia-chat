@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { corsHeaders, createServiceClient, jsonResponse } from "../_shared/auth.ts";
 import { getClientIp, sha256Hex } from "../_shared/api-keys.ts";
 import { createOutboundMessageRecord, deliverOutboundMessage, resolveSendingInstance } from "../_shared/outbound.ts";
+import { createSupabaseIngestStore, ingestExternalMessage, parseIngestPayload } from "../_shared/ingest.ts";
 import { triggerPendingWebhookDispatch, triggerWebhookDispatch } from "../_shared/webhooks.ts";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -225,6 +226,43 @@ serve(async (request) => {
     workspaceId = apiKey.workspace_id;
     apiKeyId = apiKey.id;
     await touchApiKeyUsage(supabase, apiKey, request);
+
+    if (request.method === "POST" && endpoint === "/messages/ingest") {
+      // Record-only: never sends via WhatsApp and never triggers process-message.
+      const rawBody = await request.json().catch(() => null);
+      requestBody = rawBody && typeof rawBody === "object" ? rawBody : {};
+      const payload = parseIngestPayload(rawBody);
+      requestBody = payload;
+
+      const result = await ingestExternalMessage(createSupabaseIngestStore(supabase), {
+        workspaceId,
+        apiKeyId,
+        payload,
+      });
+
+      const statusCode = result.duplicate ? 200 : 201;
+      const responseBody = {
+        ok: true,
+        duplicate: result.duplicate,
+        conversationId: result.conversationId,
+        messageId: result.messageId,
+        sent: false,
+      };
+
+      await logPublicApiRequest(supabase, {
+        workspaceId,
+        apiKeyId,
+        endpoint,
+        method: request.method,
+        statusCode,
+        requestBody,
+        responseBody,
+        correlationId,
+        idempotencyKey: payload.externalId,
+      });
+
+      return jsonResponse(responseBody, { status: statusCode });
+    }
 
     if (request.method === "POST" && endpoint === "/messages") {
       const payload = parseMessagePayload(await request.json());
@@ -509,7 +547,7 @@ serve(async (request) => {
         ? 401
         : message === "api_key_revoked" || message === "api_key_expired"
           ? 403
-          : message === "invalid_message_payload" || message === "invalid_event_payload"
+          : message === "invalid_message_payload" || message === "invalid_event_payload" || message === "invalid_ingest_payload"
             ? 400
             : message === "conversation_not_found" || message === "endpoint_not_found" || message === "instance_not_available"
               ? 404
