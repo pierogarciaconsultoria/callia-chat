@@ -25,13 +25,11 @@ async function invokeApiKeys(body: Record<string, unknown>) {
 }
 
 export function useApiKeys() {
-  const { currentWorkspace, role } = useWorkspace();
+  const { currentWorkspace, canManage: canEdit } = useWorkspace();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [keys, setKeys] = useState<ApiKeyRecord[]>([]);
   const [revealedKey, setRevealedKey] = useState<string | null>(null);
-
-  const canEdit = role === "owner" || role === "admin";
 
   const refresh = useCallback(async () => {
     if (!currentWorkspace) {

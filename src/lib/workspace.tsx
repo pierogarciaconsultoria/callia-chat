@@ -9,6 +9,7 @@ interface WorkspaceCtx {
   workspaces: Workspace[];
   currentWorkspace: Workspace | null;
   role: Role | null;
+  canManage: boolean;
   loading: boolean;
   setCurrentWorkspaceId: (id: string) => void;
   refresh: () => Promise<void>;
@@ -18,6 +19,7 @@ const Ctx = createContext<WorkspaceCtx>({
   workspaces: [],
   currentWorkspace: null,
   role: null,
+  canManage: false,
   loading: true,
   setCurrentWorkspaceId: () => {},
   refresh: async () => {},
@@ -28,14 +30,14 @@ const STORAGE_KEY = "aih.currentWorkspaceId";
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [rolesById, setRolesById] = useState<Record<string, Role>>({});
   const [currentId, setCurrentId] = useState<string | null>(() => localStorage.getItem(STORAGE_KEY));
-  const [role, setRole] = useState<Role | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
     if (!user) {
       setWorkspaces([]);
-      setRole(null);
+      setRolesById({});
       setLoading(false);
       return;
     }
@@ -44,40 +46,34 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       .from("workspace_members")
       .select("role, workspace:workspaces(id, name, slug, owner_id)")
       .eq("user_id", user.id);
-    const list: Workspace[] = (members ?? [])
-      .map((m: any) => m.workspace)
-      .filter(Boolean);
-    setWorkspaces(list);
-    let active = currentId && list.find((w) => w.id === currentId) ? currentId : list[0]?.id ?? null;
-    if (active && active !== currentId) {
-      setCurrentId(active);
-      localStorage.setItem(STORAGE_KEY, active);
-    }
-    const m = (members ?? []).find((mm: any) => mm.workspace?.id === active);
-    setRole((m?.role as Role) ?? null);
-    setLoading(false);
-  }, [user, currentId]);
 
-  useEffect(() => {
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const rows = (members ?? []).filter((m: any) => m.workspace);
+    setWorkspaces(rows.map((m: any) => m.workspace));
+    setRolesById(
+      rows.reduce((acc: Record<string, Role>, m: any) => {
+        acc[m.workspace.id] = m.role as Role;
+        return acc;
+      }, {}),
+    );
+    setCurrentId((prev) => {
+      const next = rows.some((m: any) => m.workspace.id === prev) ? prev : rows[0]?.workspace?.id ?? null;
+      if (next) localStorage.setItem(STORAGE_KEY, next);
+      return next;
+    });
+    setLoading(false);
   }, [user]);
 
   useEffect(() => {
-    if (!currentId) return;
-    localStorage.setItem(STORAGE_KEY, currentId);
-    // refresh role for new ws
-    if (!user) return;
-    (supabase as any)
-      .from("workspace_members")
-      .select("role")
-      .eq("user_id", user.id)
-      .eq("workspace_id", currentId)
-      .maybeSingle()
-      .then((res: any) => setRole((res?.data?.role as Role) ?? null));
-  }, [currentId, user]);
+    refresh();
+  }, [refresh]);
 
   const currentWorkspace = workspaces.find((w) => w.id === currentId) ?? null;
+
+  // workspaces.owner_id is the database's own authority (policy ws_delete), so a
+  // missing membership row must not silently downgrade the real owner to read-only.
+  const role: Role | null = currentWorkspace
+    ? rolesById[currentWorkspace.id] ?? (currentWorkspace.owner_id === user?.id ? "owner" : null)
+    : null;
 
   return (
     <Ctx.Provider
@@ -85,8 +81,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         workspaces,
         currentWorkspace,
         role,
+        canManage: role === "owner" || role === "admin",
         loading,
-        setCurrentWorkspaceId: setCurrentId,
+        setCurrentWorkspaceId: (id: string) => {
+          setCurrentId(id);
+          localStorage.setItem(STORAGE_KEY, id);
+        },
         refresh,
       }}
     >

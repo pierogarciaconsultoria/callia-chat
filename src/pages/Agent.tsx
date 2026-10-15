@@ -28,7 +28,7 @@ function EmptyState({ title, description }: { title: string; description: string
 }
 
 export default function AgentPage() {
-  const { role } = useWorkspace();
+  const { canManage: canEdit } = useWorkspace();
   const {
     currentWorkspace,
     loading,
@@ -41,8 +41,6 @@ export default function AgentPage() {
     upsertProduct,
     removeProduct,
   } = useWorkspaceAdmin();
-
-  const canEdit = role === "owner" || role === "admin";
 
   const [form, setForm] = useState<AgentConfigRecord | null>(null);
   const [faqDrafts, setFaqDrafts] = useState<EditableFaq[]>([]);

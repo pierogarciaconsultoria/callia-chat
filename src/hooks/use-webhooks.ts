@@ -14,13 +14,11 @@ type SaveWebhookInput = {
 };
 
 export function useWebhooks() {
-  const { currentWorkspace, role } = useWorkspace();
+  const { currentWorkspace, canManage: canEdit } = useWorkspace();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [webhooks, setWebhooks] = useState<WebhookRecord[]>([]);
   const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
-
-  const canEdit = role === "owner" || role === "admin";
 
   const invoke = useCallback(
     async (body: Record<string, unknown>) => {

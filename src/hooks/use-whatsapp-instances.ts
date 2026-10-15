@@ -16,11 +16,9 @@ async function invokeEvolutionConnect(body: Record<string, unknown>) {
 }
 
 export function useWhatsAppInstances() {
-  const { currentWorkspace, role } = useWorkspace();
+  const { currentWorkspace, canManage: canEdit } = useWorkspace();
   const [loading, setLoading] = useState(true);
   const [instances, setInstances] = useState<WhatsAppInstanceRecord[]>([]);
-
-  const canEdit = role === "owner" || role === "admin";
 
   const refresh = useCallback(async () => {
     if (!currentWorkspace) {

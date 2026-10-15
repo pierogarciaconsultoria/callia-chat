@@ -16,12 +16,10 @@ type BrandingForm = WorkspaceBrandingRecord & {
 };
 
 export default function SettingsPage() {
-  const { currentWorkspace, role } = useWorkspace();
+  const { currentWorkspace, canManage: canEdit } = useWorkspace();
   const { branding, loading, saveBranding } = useWorkspaceAdmin();
   const [form, setForm] = useState<BrandingForm | null>(null);
   const [saving, setSaving] = useState(false);
-
-  const canEdit = role === "owner" || role === "admin";
 
   useEffect(() => {
     if (!currentWorkspace || !branding) return;

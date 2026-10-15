@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useState } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { useWorkspace } from "@/lib/workspace";
 import { useWorkspaceBranding } from "@/hooks/use-workspace-branding";
@@ -98,14 +98,19 @@ function NavTree({ label, icon: Icon, items }: { label: string; icon: any; items
 
 export function AppLayout({ children }: { children?: ReactNode }) {
   const { user, signOut } = useAuth();
-  const { workspaces, currentWorkspace, setCurrentWorkspaceId } = useWorkspace();
+  const { workspaces, currentWorkspace, setCurrentWorkspaceId, canManage, loading } = useWorkspace();
   const { branding, displayName } = useWorkspaceBranding();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleSignOut = async () => {
     await signOut();
     navigate("/login");
   };
+
+  if (!loading && !canManage && location.pathname !== "/inbox") {
+    return <Navigate to="/inbox" replace />;
+  }
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -152,7 +157,7 @@ export function AppLayout({ children }: { children?: ReactNode }) {
           {mainNav.map((n) => (
             <NavItem key={n.to} {...n} />
           ))}
-          <NavTree label="Configurações" icon={Settings} items={settingsNav} />
+          {canManage && <NavTree label="Configurações" icon={Settings} items={settingsNav} />}
         </nav>
         <div className="p-3 border-t">
           <div className="text-xs text-muted-foreground truncate mb-2">{user?.email}</div>
