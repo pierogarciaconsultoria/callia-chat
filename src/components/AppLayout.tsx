@@ -18,6 +18,7 @@ import {
   LogOut,
   Sparkles,
   ChevronRight,
+  Library,
 } from "lucide-react";
 import {
   Select,
@@ -36,6 +37,7 @@ const mainNav: NavEntry[] = [
 const settingsNav: NavEntry[] = [
   { to: "/settings", label: "Workspace", icon: Settings },
   { to: "/agent", label: "Agente IA", icon: Bot },
+  { to: "/knowledge-base", label: "Base de conhecimento", icon: Library },
   { to: "/whatsapp", label: "WhatsApp", icon: MessageSquare },
   { to: "/api-keys", label: "API Keys", icon: KeyRound },
   { to: "/webhooks", label: "Webhooks", icon: Webhook },

@@ -38,6 +38,8 @@ npm run build
   - `webhooks`
   - `webhook_deliveries`
   - `audit_logs`
+  - `knowledge_sources`
+  - `knowledge_chunks`
 
 ### 3. Edge Functions
 
@@ -51,6 +53,7 @@ Publicar:
 - `public-api`
 - `manage-webhooks`
 - `webhook-dispatcher`
+- `knowledge-index`
 
 ### 4. Secrets do Supabase
 
@@ -66,6 +69,7 @@ Configurar:
 - `AI_DEFAULT_MODEL`
 - `STT_MODEL`
 - `VISION_MODEL`
+- `EMBEDDING_MODEL` (opcional; sem ele a busca usa apenas tsvector)
 
 ### 5. Painel administrativo
 
@@ -74,7 +78,8 @@ Configurar:
 - Cadastrar e conectar instância de WhatsApp
 - Definir instância padrão
 - Validar webhook inbound
-- Configurar FAQ, produtos e prompt do agente
+- Configurar prompt e comportamento do agente
+- Cadastrar base de conhecimento (FAQ, textos, arquivos, URLs) e rodar a indexacao
 - Criar primeira API key
 - Configurar webhook de saída de teste
 
@@ -88,6 +93,7 @@ Configurar:
 - `POST public-api/messages` envia mensagem proativa
 - Webhook externo recebe evento assinado
 - Logs mostram request, outbound e delivery
+- `GET public-api/knowledge/search` retorna trechos do workspace da chave
 
 ## Critérios para liberar piloto
 

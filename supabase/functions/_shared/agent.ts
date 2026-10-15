@@ -93,6 +93,39 @@ function getAiKey() {
   return getEnv("AI_COMPAT_API_KEY") ?? getEnv("OPENAI_API_KEY") ?? null;
 }
 
+export function getEmbeddingModel() {
+  return getEnv("EMBEDDING_MODEL") ?? "text-embedding-3-small";
+}
+
+// Fail-soft like every other provider call: a missing key or a rejected batch
+// leaves the chunk without a vector, and retrieval falls back to tsvector.
+export async function embedTexts(texts: string[]) {
+  const apiKey = getAiKey();
+  if (!apiKey || texts.length === 0) return new Array(texts.length).fill(null);
+
+  try {
+    const response = await fetch(`${getAiEndpoint().replace(/\/+$/, "")}/embeddings`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: getEmbeddingModel(),
+        input: texts,
+      }),
+    });
+
+    if (!response.ok) return new Array(texts.length).fill(null);
+
+    const data = await response.json();
+    const ordered = [...(data.data ?? [])].sort((a, b) => a.index - b.index);
+    return ordered.map((item) => item.embedding ?? null);
+  } catch {
+    return new Array(texts.length).fill(null);
+  }
+}
+
 async function fetchMediaAsFile(mediaUrl, fallbackName) {
   const response = await fetch(mediaUrl);
   if (!response.ok) {

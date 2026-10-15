@@ -34,6 +34,8 @@ Abrir o hub para sistemas externos com autenticacao por `x-api-key`, envio proat
 - `POST /functions/v1/public-api/events`
 - `GET /functions/v1/public-api/conversations`
 - `GET /functions/v1/public-api/conversations/:id/messages`
+- `GET /functions/v1/public-api/knowledge/search`
+- `GET /functions/v1/public-api/agent/context`
 
 ## Resultado esperado
 
@@ -93,3 +95,47 @@ curl -X POST "$BASE_URL/functions/v1/public-api/messages/ingest" \
 ```
 
 Testes: `src/test/public-api-ingest.test.ts` (criacao, deduplicacao, outbound sem envio, chave invalida).
+
+## Base de conhecimento (Fase 10)
+
+Dois endpoints de leitura, mesma autenticacao `x-api-key` e mesmo escopo de workspace da chave. Nenhum deles aceita filtro de workspace no corpo — o `workspaceId` vem sempre da chave.
+
+### `GET /functions/v1/public-api/knowledge/search`
+
+Query params:
+
+| Param | Obrigatorio | Valores |
+|---|---|---|
+| `q` | sim | texto da busca, nao vazio |
+| `limit` | nao | 1..20, padrao 5 |
+
+Comportamento:
+
+- Gera o embedding de `q` com o provedor ja configurado (`EMBEDDING_MODEL`, padrao `text-embedding-3-small`); sem chave de IA ou em falha do provedor, a busca segue so por palavra-chave.
+- Executa a funcao SQL `knowledge_search(workspace_id, query, query_embedding, limit)`: uniao de `tsvector` (`websearch_to_tsquery('portuguese', ...)` + `ts_rank_cd`) com similaridade por cosseno (`1 - (embedding <=> query_embedding)`), `max(score)` por trecho, ordenado por relevancia.
+- So retorna trechos de fontes do workspace da chave; `is_active = false` fica fora do indice.
+- Toda chamada fica em `public_api_requests`.
+
+Resposta: `200 { "ok": true, "results": [{ "title", "content", "category", "score" }] }`.
+
+```bash
+curl "$BASE_URL/functions/v1/public-api/knowledge/search?q=politica%20de%20cancelamento&limit=5" \
+  -H "x-api-key: ah_live_xxxxxxxx"
+# => 200 { "ok": true, "results": [{ "title": "Politicas", "content": "...", "category": "politicas de cancelamento", "score": 0.82 }] }
+```
+
+### `GET /functions/v1/public-api/agent/context`
+
+Sem params. Le `agent_configs` do workspace da chave.
+
+Resposta: `200 { "ok": true, "persona_prompt", "language", "business_hours", "website_url", "payment_links", "handoff_keywords" }`; `404 agent_config_not_found` quando o workspace ainda nao salvou a tela "Agente IA".
+
+```bash
+curl "$BASE_URL/functions/v1/public-api/agent/context" -H "x-api-key: ah_live_xxxxxxxx"
+```
+
+Respostas dos dois: `400 invalid_search_query`, `401` chave ausente/invalida, `403` chave revogada/expirada, `404 agent_config_not_found`.
+
+O preview da tela `/knowledge-base` ("Testar busca") passa pela edge function autenticada `knowledge-index` com `action: "search"`, que usa o mesmo `embedTexts` e a mesma `knowledge_search` — por isso o resultado visto no painel e identico ao da API, sem expor a `x-api-key` ao navegador.
+
+Testes: `src/test/knowledge-chunking.test.ts` (divisao de trechos, sobreposicao, limpeza de HTML).

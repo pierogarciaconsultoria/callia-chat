@@ -30,26 +30,6 @@ export type WorkspaceBrandingRecord = {
   support_email: string | null;
 };
 
-export type FaqRecord = {
-  id: string;
-  workspace_id: string;
-  question: string;
-  answer: string;
-  is_active: boolean;
-};
-
-export type ProductRecord = {
-  id: string;
-  workspace_id: string;
-  name: string;
-  description: string | null;
-  price: number | null;
-  currency: string;
-  link: string | null;
-  image_url: string | null;
-  is_active: boolean;
-};
-
 const defaultAgentConfig: AgentConfigRecord = {
   workspace_id: "",
   persona_prompt:
@@ -84,15 +64,11 @@ export function useWorkspaceAdmin() {
   const [loading, setLoading] = useState(true);
   const [agentConfig, setAgentConfig] = useState<AgentConfigRecord | null>(null);
   const [branding, setBranding] = useState<WorkspaceBrandingRecord | null>(null);
-  const [faqs, setFaqs] = useState<FaqRecord[]>([]);
-  const [products, setProducts] = useState<ProductRecord[]>([]);
 
   const refresh = useCallback(async () => {
     if (!currentWorkspace) {
       setAgentConfig(null);
       setBranding(null);
-      setFaqs([]);
-      setProducts([]);
       setLoading(false);
       return;
     }
@@ -101,7 +77,7 @@ export function useWorkspaceAdmin() {
 
     const workspaceId = currentWorkspace.id;
 
-    const [agentRes, brandingRes, faqRes, productRes] = await Promise.all([
+    const [agentRes, brandingRes] = await Promise.all([
       (supabase as any)
         .from("agent_configs")
         .select("*")
@@ -112,16 +88,6 @@ export function useWorkspaceAdmin() {
         .select("*")
         .eq("workspace_id", workspaceId)
         .maybeSingle(),
-      (supabase as any)
-        .from("faqs")
-        .select("*")
-        .eq("workspace_id", workspaceId)
-        .order("created_at", { ascending: true }),
-      (supabase as any)
-        .from("products")
-        .select("*")
-        .eq("workspace_id", workspaceId)
-        .order("created_at", { ascending: true }),
     ]);
 
     setAgentConfig({
@@ -149,8 +115,6 @@ export function useWorkspaceAdmin() {
       display_name: currentWorkspace.name,
       ...(brandingRes.data ?? {}),
     });
-    setFaqs((faqRes.data ?? []) as FaqRecord[]);
-    setProducts((productRes.data ?? []) as ProductRecord[]);
     setLoading(false);
   }, [currentWorkspace]);
 
@@ -186,83 +150,13 @@ export function useWorkspaceAdmin() {
     [currentWorkspace, refreshWorkspaces],
   );
 
-  const upsertFaq = useCallback(
-    async (faq: Partial<FaqRecord> & Pick<FaqRecord, "question" | "answer">) => {
-      if (!currentWorkspace) return;
-      const payload = {
-        id: faq.id,
-        workspace_id: currentWorkspace.id,
-        question: faq.question,
-        answer: faq.answer,
-        is_active: faq.is_active ?? true,
-      };
-
-      const { data } = await (supabase as any)
-        .from("faqs")
-        .upsert(payload)
-        .select("*")
-        .single();
-
-      setFaqs((prev) => {
-        const filtered = prev.filter((item) => item.id !== data.id);
-        return [...filtered, data].sort((a, b) => a.question.localeCompare(b.question));
-      });
-    },
-    [currentWorkspace],
-  );
-
-  const removeFaq = useCallback(async (faqId: string) => {
-    await (supabase as any).from("faqs").delete().eq("id", faqId);
-    setFaqs((prev) => prev.filter((faq) => faq.id !== faqId));
-  }, []);
-
-  const upsertProduct = useCallback(
-    async (product: Partial<ProductRecord> & Pick<ProductRecord, "name">) => {
-      if (!currentWorkspace) return;
-      const payload = {
-        id: product.id,
-        workspace_id: currentWorkspace.id,
-        name: product.name,
-        description: product.description ?? null,
-        price: product.price ?? null,
-        currency: product.currency ?? "BRL",
-        link: product.link ?? null,
-        image_url: product.image_url ?? null,
-        is_active: product.is_active ?? true,
-      };
-
-      const { data } = await (supabase as any)
-        .from("products")
-        .upsert(payload)
-        .select("*")
-        .single();
-
-      setProducts((prev) => {
-        const filtered = prev.filter((item) => item.id !== data.id);
-        return [...filtered, data].sort((a, b) => a.name.localeCompare(b.name));
-      });
-    },
-    [currentWorkspace],
-  );
-
-  const removeProduct = useCallback(async (productId: string) => {
-    await (supabase as any).from("products").delete().eq("id", productId);
-    setProducts((prev) => prev.filter((product) => product.id !== productId));
-  }, []);
-
   return {
     currentWorkspace,
     loading,
     agentConfig,
     branding,
-    faqs,
-    products,
     refresh,
     saveAgentConfig,
     saveBranding,
-    upsertFaq,
-    removeFaq,
-    upsertProduct,
-    removeProduct,
   };
 }

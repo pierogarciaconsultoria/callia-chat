@@ -28,6 +28,7 @@
 8. API publica e chaves
 9. Webhooks de saida, logs e auditoria
 10. Acabamento, testes e go-live
+11. Base de conhecimento e contexto para agentes externos
 
 ## Fase 0 - Fundacao tecnica
 
@@ -214,6 +215,25 @@
 - Dependencias: Fases 2 a 8
 - Status: completed
 
+## Fase 10 - Base de conhecimento e contexto para agentes externos
+
+- Objetivo: dar a cada empresa uma base de conhecimento propria e consultavel por uma IA que roda fora do Callia (ex.: n8n).
+- Escopo:
+- tela `/knowledge-base` com abas de perguntas e respostas, documentos e textos, catalogo e teste de busca
+- migracao do CRUD de FAQ e catalogo que estava em `/agent`
+- `knowledge_sources` e `knowledge_chunks` com pgvector, tsvector em portugues e RLS por `workspace_members`
+- espelhamento automatico de `faqs` e `products` em fontes indexaveis
+- edge function `knowledge-index` com extracao de PDF/DOCX/URL, chunking com sobreposicao e embeddings opcionais
+- `GET public-api/knowledge/search` e `GET public-api/agent/context` com a mesma autenticacao `x-api-key`
+- Entregaveis:
+- base de conhecimento editavel pelo cliente sem referencia a segmento especifico
+- busca hibrida exposta na API publica e no preview da tela
+- contexto do agente disponivel para o orquestrador externo
+- Criterio de entrada: Fases 2, 7 e 9 concluidas
+- Criterio de saida: admin do workspace A cadastra conteudo e nada vaza para o workspace B, nem pela API
+- Dependencias: Fase 2, Fase 7
+- Status: in_progress
+
 ## Forma de acompanhamento
 
 - Acompanhamento estrategico: usar este arquivo como mapa do projeto.
@@ -230,4 +250,4 @@
 
 ## Proxima fase da fila
 
-- `Roadmap base concluido`
+- `Fase 10 - Base de conhecimento e contexto para agentes externos`

@@ -17,6 +17,7 @@ const Login = lazy(() => import("./pages/Login.tsx"));
 const Signup = lazy(() => import("./pages/Signup.tsx"));
 const Onboarding = lazy(() => import("./pages/Onboarding.tsx"));
 const AgentPage = lazy(() => import("./pages/Agent.tsx"));
+const KnowledgeBasePage = lazy(() => import("./pages/KnowledgeBase.tsx"));
 const ApiKeysPage = lazy(() => import("./pages/ApiKeys.tsx"));
 const InboxPage = lazy(() => import("./pages/Inbox.tsx"));
 const LogsPage = lazy(() => import("./pages/Logs.tsx"));
@@ -49,6 +50,7 @@ const App = () => (
                   <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
                     <Route path="/inbox" element={<InboxPage />} />
                     <Route path="/agent" element={<AgentPage />} />
+                    <Route path="/knowledge-base" element={<KnowledgeBasePage />} />
                     <Route path="/whatsapp" element={<WhatsAppPage />} />
                     <Route path="/api-keys" element={<ApiKeysPage />} />
                     <Route path="/webhooks" element={<WebhooksPage />} />

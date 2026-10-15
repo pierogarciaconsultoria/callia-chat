@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { Save, Plus, Trash2, Bot, BookOpen, Package2 } from "lucide-react";
-import { useWorkspaceAdmin, type AgentConfigRecord, type FaqRecord, type ProductRecord } from "@/hooks/use-workspace-admin";
+import { Save, Bot, Library } from "lucide-react";
+import { useWorkspaceAdmin, type AgentConfigRecord } from "@/hooks/use-workspace-admin";
 import { parseFollowUpRules, parsePaymentLinks, serializeFollowUpRules, serializePaymentLinks } from "@/lib/agent-settings";
 import { useWorkspace } from "@/lib/workspace";
 import { Button } from "@/components/ui/button";
@@ -12,39 +13,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { ExternalAgentSection } from "@/components/agent/ExternalAgentSection";
 
-type EditableFaq = Pick<FaqRecord, "id" | "question" | "answer" | "is_active">;
-type EditableProduct = Pick<
-  ProductRecord,
-  "id" | "name" | "description" | "price" | "currency" | "link" | "image_url" | "is_active"
->;
-
-function EmptyState({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-      <div className="font-medium text-foreground">{title}</div>
-      <div className="mt-1">{description}</div>
-    </div>
-  );
-}
-
 export default function AgentPage() {
   const { canManage: canEdit } = useWorkspace();
-  const {
-    currentWorkspace,
-    loading,
-    agentConfig,
-    faqs,
-    products,
-    saveAgentConfig,
-    upsertFaq,
-    removeFaq,
-    upsertProduct,
-    removeProduct,
-  } = useWorkspaceAdmin();
+  const { currentWorkspace, loading, agentConfig, saveAgentConfig } = useWorkspaceAdmin();
 
   const [form, setForm] = useState<AgentConfigRecord | null>(null);
-  const [faqDrafts, setFaqDrafts] = useState<EditableFaq[]>([]);
-  const [productDrafts, setProductDrafts] = useState<EditableProduct[]>([]);
   const [savingConfig, setSavingConfig] = useState(false);
   const [followUpDraft, setFollowUpDraft] = useState("[]");
   const [followUpError, setFollowUpError] = useState<string | null>(null);
@@ -54,32 +27,6 @@ export default function AgentPage() {
       setForm(agentConfig);
     }
   }, [agentConfig]);
-
-  useEffect(() => {
-    setFaqDrafts(
-      faqs.map((faq) => ({
-        id: faq.id,
-        question: faq.question,
-        answer: faq.answer,
-        is_active: faq.is_active,
-      })),
-    );
-  }, [faqs]);
-
-  useEffect(() => {
-    setProductDrafts(
-      products.map((product) => ({
-        id: product.id,
-        name: product.name,
-        description: product.description,
-        price: product.price,
-        currency: product.currency,
-        link: product.link,
-        image_url: product.image_url,
-        is_active: product.is_active,
-      })),
-    );
-  }, [products]);
 
   const handoffKeywords = useMemo(
     () => form?.handoff_keywords.join(", ") ?? "",
@@ -127,93 +74,13 @@ export default function AgentPage() {
     }
   };
 
-  const addFaqDraft = () => {
-    setFaqDrafts((prev) => [...prev, { id: `new-faq-${Date.now()}`, question: "", answer: "", is_active: true }]);
-  };
-
-  const saveFaqDraft = async (draft: EditableFaq) => {
-    try {
-      await upsertFaq({
-        id: draft.id.startsWith("new-faq-") ? undefined : draft.id,
-        question: draft.question,
-        answer: draft.answer,
-        is_active: draft.is_active,
-      });
-      toast.success("FAQ salva.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Nao foi possivel salvar a FAQ.");
-    }
-  };
-
-  const deleteFaqDraft = async (draft: EditableFaq) => {
-    if (draft.id.startsWith("new-faq-")) {
-      setFaqDrafts((prev) => prev.filter((item) => item.id !== draft.id));
-      return;
-    }
-
-    try {
-      await removeFaq(draft.id);
-      toast.success("FAQ removida.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Nao foi possivel remover a FAQ.");
-    }
-  };
-
-  const addProductDraft = () => {
-    setProductDrafts((prev) => [
-      ...prev,
-      {
-        id: `new-product-${Date.now()}`,
-        name: "",
-        description: "",
-        price: null,
-        currency: "BRL",
-        link: "",
-        image_url: "",
-        is_active: true,
-      },
-    ]);
-  };
-
-  const saveProductDraft = async (draft: EditableProduct) => {
-    try {
-      await upsertProduct({
-        id: draft.id.startsWith("new-product-") ? undefined : draft.id,
-        name: draft.name,
-        description: draft.description ?? null,
-        price: draft.price ?? null,
-        currency: draft.currency || "BRL",
-        link: draft.link ?? null,
-        image_url: draft.image_url ?? null,
-        is_active: draft.is_active,
-      });
-      toast.success("Produto salvo.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Nao foi possivel salvar o produto.");
-    }
-  };
-
-  const deleteProductDraft = async (draft: EditableProduct) => {
-    if (draft.id.startsWith("new-product-")) {
-      setProductDrafts((prev) => prev.filter((item) => item.id !== draft.id));
-      return;
-    }
-
-    try {
-      await removeProduct(draft.id);
-      toast.success("Produto removido.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Nao foi possivel remover o produto.");
-    }
-  };
-
   return (
     <div className="space-y-6 p-8">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Agente IA</h1>
           <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Configure o comportamento do agente, a base de conhecimento e os dados que o bot usa para vender e fazer handoff.
+            Configure o comportamento do agente e os dados que o bot usa para responder, vender e fazer handoff.
           </p>
         </div>
         <Button onClick={saveConfig} disabled={!canEdit || savingConfig}>
@@ -248,6 +115,9 @@ export default function AgentPage() {
               disabled={!canEdit}
               className="min-h-[180px]"
             />
+            <p className="text-xs text-muted-foreground">
+              Persona e limites do atendimento. O conteudo a que o agente responde vem da base de conhecimento.
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -258,6 +128,9 @@ export default function AgentPage() {
               onChange={(e) => updateForm("language", e.target.value)}
               disabled={!canEdit}
             />
+            <p className="text-xs text-muted-foreground">
+              Idioma da resposta, no formato de codigo. Ex.: pt-BR, en, es.
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -268,6 +141,9 @@ export default function AgentPage() {
               onChange={(e) => updateForm("ai_model", e.target.value)}
               disabled={!canEdit}
             />
+            <p className="text-xs text-muted-foreground">
+              Nome do modelo enviado ao provedor de IA configurado no ambiente.
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -279,6 +155,9 @@ export default function AgentPage() {
               disabled={!canEdit}
               placeholder="https://empresa.com.br"
             />
+            <p className="text-xs text-muted-foreground">
+              Endereco oficial que o agente pode citar. Nao confunde com as fontes indexadas.
+            </p>
           </div>
 
           <div className="space-y-2">
@@ -329,6 +208,9 @@ export default function AgentPage() {
               disabled={!canEdit}
               placeholder="America/Sao_Paulo"
             />
+            <p className="text-xs text-muted-foreground">
+              Fuso usado para interpretar o horario de atendimento.
+            </p>
           </div>
 
           <div className="space-y-2 lg:col-span-2">
@@ -348,6 +230,9 @@ export default function AgentPage() {
               disabled={!canEdit}
               placeholder="atendente, humano, urgente"
             />
+            <p className="text-xs text-muted-foreground">
+              Separadas por virgula. Quando o cliente escreve uma delas, a conversa sai do bot.
+            </p>
           </div>
 
           <div className="space-y-2 lg:col-span-2">
@@ -415,210 +300,21 @@ export default function AgentPage() {
       />
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+        <CardHeader>
           <div className="flex items-center gap-3">
-            <BookOpen className="h-5 w-5 text-primary" />
+            <Library className="h-5 w-5 text-primary" />
             <div>
-              <CardTitle>FAQ</CardTitle>
-              <CardDescription>Perguntas e respostas que alimentam a base de conhecimento do agente.</CardDescription>
+              <CardTitle>Base de conhecimento</CardTitle>
+              <CardDescription>
+                Perguntas frequentes, documentos, textos e catalogo ficam em uma tela propria.
+              </CardDescription>
             </div>
           </div>
-          <Button variant="outline" size="sm" onClick={addFaqDraft} disabled={!canEdit}>
-            <Plus className="h-4 w-4" />
-            Nova FAQ
-          </Button>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {faqDrafts.length === 0 && (
-            <EmptyState title="Nenhuma FAQ cadastrada" description="Crie perguntas frequentes para orientar o agente nas respostas." />
-          )}
-
-          {faqDrafts.map((faq, index) => (
-            <div key={faq.id} className="rounded-xl border p-4">
-              <div className="mb-4 flex items-center justify-between">
-                <div className="font-medium">FAQ {index + 1}</div>
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    Ativa
-                    <Switch
-                      checked={faq.is_active}
-                      onCheckedChange={(checked) =>
-                        setFaqDrafts((prev) =>
-                          prev.map((item) => (item.id === faq.id ? { ...item, is_active: checked } : item)),
-                        )
-                      }
-                      disabled={!canEdit}
-                    />
-                  </div>
-                  <Button variant="ghost" size="icon" onClick={() => deleteFaqDraft(faq)} disabled={!canEdit}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-              <div className="grid gap-3">
-                <div className="space-y-2">
-                  <Label>Pergunta</Label>
-                  <Input
-                    value={faq.question}
-                    onChange={(e) =>
-                      setFaqDrafts((prev) =>
-                        prev.map((item) => (item.id === faq.id ? { ...item, question: e.target.value } : item)),
-                      )
-                    }
-                    disabled={!canEdit}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Resposta</Label>
-                  <Textarea
-                    value={faq.answer}
-                    onChange={(e) =>
-                      setFaqDrafts((prev) =>
-                        prev.map((item) => (item.id === faq.id ? { ...item, answer: e.target.value } : item)),
-                      )
-                    }
-                    disabled={!canEdit}
-                  />
-                </div>
-                <div className="flex justify-end">
-                  <Button onClick={() => saveFaqDraft(faq)} disabled={!canEdit || !faq.question || !faq.answer}>
-                    Salvar FAQ
-                  </Button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
-          <div className="flex items-center gap-3">
-            <Package2 className="h-5 w-5 text-primary" />
-            <div>
-              <CardTitle>Catalogo de produtos</CardTitle>
-              <CardDescription>Produtos e servicos que o agente pode sugerir durante o atendimento.</CardDescription>
-            </div>
-          </div>
-          <Button variant="outline" size="sm" onClick={addProductDraft} disabled={!canEdit}>
-            <Plus className="h-4 w-4" />
-            Novo produto
+        <CardContent>
+          <Button variant="outline" asChild>
+            <Link to="/knowledge-base">Gerenciar base de conhecimento</Link>
           </Button>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {productDrafts.length === 0 && (
-            <EmptyState title="Nenhum produto cadastrado" description="Adicione itens para o agente usar em recomendacoes, links e contexto comercial." />
-          )}
-
-          {productDrafts.map((product, index) => (
-            <div key={product.id} className="rounded-xl border p-4">
-              <div className="mb-4 flex items-center justify-between">
-                <div className="font-medium">Produto {index + 1}</div>
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    Ativo
-                    <Switch
-                      checked={product.is_active}
-                      onCheckedChange={(checked) =>
-                        setProductDrafts((prev) =>
-                          prev.map((item) => (item.id === product.id ? { ...item, is_active: checked } : item)),
-                        )
-                      }
-                      disabled={!canEdit}
-                    />
-                  </div>
-                  <Button variant="ghost" size="icon" onClick={() => deleteProductDraft(product)} disabled={!canEdit}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-              <div className="grid gap-3 lg:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Nome</Label>
-                  <Input
-                    value={product.name}
-                    onChange={(e) =>
-                      setProductDrafts((prev) =>
-                        prev.map((item) => (item.id === product.id ? { ...item, name: e.target.value } : item)),
-                      )
-                    }
-                    disabled={!canEdit}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Preco</Label>
-                  <Input
-                    type="number"
-                    value={product.price ?? ""}
-                    onChange={(e) =>
-                      setProductDrafts((prev) =>
-                        prev.map((item) => ({
-                          ...item,
-                          ...(item.id === product.id
-                            ? { price: e.target.value ? Number(e.target.value) : null }
-                            : {}),
-                        })),
-                      )
-                    }
-                    disabled={!canEdit}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Moeda</Label>
-                  <Input
-                    value={product.currency}
-                    onChange={(e) =>
-                      setProductDrafts((prev) =>
-                        prev.map((item) => (item.id === product.id ? { ...item, currency: e.target.value } : item)),
-                      )
-                    }
-                    disabled={!canEdit}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Link</Label>
-                  <Input
-                    value={product.link ?? ""}
-                    onChange={(e) =>
-                      setProductDrafts((prev) =>
-                        prev.map((item) => (item.id === product.id ? { ...item, link: e.target.value } : item)),
-                      )
-                    }
-                    disabled={!canEdit}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Imagem</Label>
-                  <Input
-                    value={product.image_url ?? ""}
-                    onChange={(e) =>
-                      setProductDrafts((prev) =>
-                        prev.map((item) => (item.id === product.id ? { ...item, image_url: e.target.value } : item)),
-                      )
-                    }
-                    disabled={!canEdit}
-                  />
-                </div>
-                <div className="space-y-2 lg:col-span-2">
-                  <Label>Descricao</Label>
-                  <Textarea
-                    value={product.description ?? ""}
-                    onChange={(e) =>
-                      setProductDrafts((prev) =>
-                        prev.map((item) => (item.id === product.id ? { ...item, description: e.target.value } : item)),
-                      )
-                    }
-                    disabled={!canEdit}
-                  />
-                </div>
-                <div className="flex justify-end lg:col-span-2">
-                  <Button onClick={() => saveProductDraft(product)} disabled={!canEdit || !product.name}>
-                    Salvar produto
-                  </Button>
-                </div>
-              </div>
-            </div>
-          ))}
         </CardContent>
       </Card>
     </div>

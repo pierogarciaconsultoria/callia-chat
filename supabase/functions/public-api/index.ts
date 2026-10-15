@@ -4,6 +4,7 @@ import { corsHeaders, createServiceClient, jsonResponse } from "../_shared/auth.
 import { getClientIp, sha256Hex } from "../_shared/api-keys.ts";
 import { createOutboundMessageRecord, deliverOutboundMessage, resolveSendingInstance } from "../_shared/outbound.ts";
 import { createSupabaseIngestStore, ingestExternalMessage, parseIngestPayload } from "../_shared/ingest.ts";
+import { embedTexts } from "../_shared/agent.ts";
 import { triggerPendingWebhookDispatch, triggerWebhookDispatch } from "../_shared/webhooks.ts";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -539,6 +540,85 @@ serve(async (request) => {
       return jsonResponse(responseBody, { status: 200 });
     }
 
+    if (request.method === "GET" && endpoint === "/knowledge/search") {
+      const query = (url.searchParams.get("q") ?? "").trim();
+      const limit = parseLimit(url, 5, 20);
+      requestBody = { q: query, limit };
+
+      if (!query) {
+        throw new Error("invalid_search_query");
+      }
+
+      const [queryEmbedding] = await embedTexts([query]);
+
+      const { data, error } = await supabase.rpc("knowledge_search", {
+        _workspace_id: workspaceId,
+        _query: query,
+        _query_embedding: queryEmbedding ?? null,
+        _limit: limit,
+      });
+
+      if (error) throw error;
+
+      const responseBody = {
+        ok: true,
+        results: (data ?? []).map((row) => ({
+          title: row.title,
+          content: row.content,
+          category: row.category,
+          score: row.score,
+        })),
+      };
+
+      await logPublicApiRequest(supabase, {
+        workspaceId,
+        apiKeyId,
+        endpoint,
+        method: request.method,
+        statusCode: 200,
+        requestBody,
+        responseBody,
+        correlationId,
+      });
+
+      return jsonResponse(responseBody, { status: 200 });
+    }
+
+    if (request.method === "GET" && endpoint === "/agent/context") {
+      requestBody = {};
+
+      const { data, error } = await supabase
+        .from("agent_configs")
+        .select(
+          "persona_prompt, language, business_hours, website_url, payment_links, handoff_keywords",
+        )
+        .eq("workspace_id", workspaceId)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) {
+        throw new Error("agent_config_not_found");
+      }
+
+      const responseBody = {
+        ok: true,
+        ...data,
+      };
+
+      await logPublicApiRequest(supabase, {
+        workspaceId,
+        apiKeyId,
+        endpoint,
+        method: request.method,
+        statusCode: 200,
+        requestBody,
+        responseBody,
+        correlationId,
+      });
+
+      return jsonResponse(responseBody, { status: 200 });
+    }
+
     throw new Error("endpoint_not_found");
   } catch (error) {
     const message = error instanceof Error ? error.message : "unexpected_error";
@@ -547,9 +627,9 @@ serve(async (request) => {
         ? 401
         : message === "api_key_revoked" || message === "api_key_expired"
           ? 403
-          : message === "invalid_message_payload" || message === "invalid_event_payload" || message === "invalid_ingest_payload"
+          : message === "invalid_message_payload" || message === "invalid_event_payload" || message === "invalid_ingest_payload" || message === "invalid_search_query"
             ? 400
-            : message === "conversation_not_found" || message === "endpoint_not_found" || message === "instance_not_available"
+            : message === "conversation_not_found" || message === "endpoint_not_found" || message === "instance_not_available" || message === "agent_config_not_found"
               ? 404
               : 500;
 
