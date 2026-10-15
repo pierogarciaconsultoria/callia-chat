@@ -81,7 +81,6 @@ export default function InboxPage() {
   } = useInbox();
   const [draft, setDraft] = useState("");
   const canSendManual = selectedConversation?.mode === "human" && !isExternalSource(selectedConversation);
-  const canSendManual = selectedConversation?.mode === "human";
   const conversationSummary = useMemo(() => {
     const totalUnread = conversations.reduce((total, item) => total + (item.unread_count ?? 0), 0);
     return {

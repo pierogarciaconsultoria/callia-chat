@@ -1,78 +1,32 @@
+import { lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-import { CrmProvider } from "./contexts/CrmContext";
-import { CrmSettingsProvider } from "./contexts/CrmSettingsContext";
-import { SettingsProvider } from "@/contexts/SettingsContext";
-import { ProtectedRoute } from "@/components/ProtectedRoute";
-import Index from "./pages/Index";
-import Login from "./pages/Login";
-import Signup from "./pages/Signup";
-import ForgotPassword from "./pages/ForgotPassword";
-import ResetPassword from "./pages/ResetPassword";
-import Placeholder from "./pages/Placeholder";
-import Settings from "./pages/Settings";
-import AccountSettings from "./pages/AccountSettings";
-import WorkTypesSettings from "./pages/WorkTypesSettings";
-import WorkCategoriesSettings from "./pages/WorkCategoriesSettings";
-import CrmLossReasonsSettings from "./pages/CrmLossReasonsSettings";
-import RateioSettings from "./pages/RateioSettings";
-import ContasAPagar from "./pages/ContasAPagar";
-import ContasAReceber from "./pages/ContasAReceber";
-import CrmLeads from "./pages/CrmLeads";
-import NotFound from "./pages/NotFound";
-import Clientes from "./pages/Clientes";
-import Contratos from "./pages/Contratos";
-import Corretores from "./pages/Corretores";
-import ProjectGuide from "./pages/ProjectGuide";
-import LandingPage from "./pages/LandingPage";
-import { AssistantChat } from "./components/AssistantChat";
-import SupportTickets from "./pages/SupportTickets";
+import AppErrorBoundary from "./components/AppErrorBoundary";
+import RouteLoader from "./components/RouteLoader";
+import { AuthProvider } from "./lib/auth";
+import { WorkspaceProvider } from "./lib/workspace";
+import ProtectedRoute from "./components/ProtectedRoute";
+import AppLayout from "./components/AppLayout";
+
+const NotFound = lazy(() => import("./pages/NotFound.tsx"));
+const Index = lazy(() => import("./pages/Index.tsx"));
+const Login = lazy(() => import("./pages/Login.tsx"));
+const Signup = lazy(() => import("./pages/Signup.tsx"));
+const Onboarding = lazy(() => import("./pages/Onboarding.tsx"));
+const AgentPage = lazy(() => import("./pages/Agent.tsx"));
+const ApiKeysPage = lazy(() => import("./pages/ApiKeys.tsx"));
+const InboxPage = lazy(() => import("./pages/Inbox.tsx"));
+const LogsPage = lazy(() => import("./pages/Logs.tsx"));
+const SettingsPage = lazy(() => import("./pages/Settings.tsx"));
+const WebhooksPage = lazy(() => import("./pages/Webhooks.tsx"));
+const WhatsAppPage = lazy(() => import("./pages/WhatsApp.tsx"));
+const Placeholder = lazy(() => import("./pages/Placeholder.tsx"));
+const OAuthConsent = lazy(() => import("./pages/OAuthConsent.tsx"));
 
 const queryClient = new QueryClient();
-
-const HomeRoute = () => {
-  const { loading, session } = useAuth();
-
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-      </div>
-    );
-  }
-
-  if (!session) {
-    return <LandingPage />;
-  }
-
-  return (
-    <ProtectedRoute>
-      <Index />
-    </ProtectedRoute>
-  );
-};
-
-const SuperAdminRoute = ({ children }: { children: React.ReactNode }) => {
-  const { loading, isSuperAdmin } = useAuth();
-
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-      </div>
-    );
-  }
-
-  if (!isSuperAdmin) {
-    return <NotFound />;
-  }
-
-  return <>{children}</>;
-};
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -80,189 +34,34 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <AuthProvider>
-          <SettingsProvider>
-            <CrmSettingsProvider>
-              <CrmProvider>
-                <>
-                  <Routes>
-                    <Route path="/landing" element={<LandingPage />} />
-                    <Route path="/login" element={<Login />} />
-                    <Route path="/signup" element={<Signup />} />
-                    <Route path="/forgot-password" element={<ForgotPassword />} />
-                    <Route path="/reset-password" element={<ResetPassword />} />
-                    <Route path="/" element={<HomeRoute />} />
-                    <Route
-                      path="/crm"
-                      element={
-                        <ProtectedRoute>
-                          <CrmLeads />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/clientes"
-                      element={
-                        <ProtectedRoute>
-                          <Clientes />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/contratos"
-                      element={
-                        <ProtectedRoute>
-                          <Contratos />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/corretores"
-                      element={
-                        <ProtectedRoute>
-                          <Corretores />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/imobiliarias"
-                      element={
-                        <ProtectedRoute>
-                          <Corretores defaultTab="imobiliarias" />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/fornecedores"
-                      element={
-                        <ProtectedRoute>
-                          <Placeholder title="Fornecedores" />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/obras"
-                      element={
-                        <ProtectedRoute>
-                          <Placeholder title="Obras" />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/obras/:id"
-                      element={
-                        <ProtectedRoute>
-                          <Placeholder title="Obra" />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/compras"
-                      element={
-                        <ProtectedRoute>
-                          <Placeholder title="Compras" />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route path="/financeiro" element={<Navigate to="/financeiro/contas-a-pagar" replace />} />
-                    <Route
-                      path="/financeiro/contas-a-pagar"
-                      element={
-                        <ProtectedRoute>
-                          <ContasAPagar />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/financeiro/contas-a-receber"
-                      element={
-                        <ProtectedRoute>
-                          <ContasAReceber />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/patrimonio"
-                      element={
-                        <ProtectedRoute>
-                          <Placeholder title="Patrimônio" />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/project-guide"
-                      element={
-                        <ProtectedRoute>
-                          <SuperAdminRoute>
-                            <ProjectGuide />
-                          </SuperAdminRoute>
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/configuracoes"
-                      element={
-                        <ProtectedRoute>
-                          <Settings />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/configuracoes/conta"
-                      element={
-                        <ProtectedRoute>
-                          <AccountSettings />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/configuracoes/tipos-obra"
-                      element={
-                        <ProtectedRoute>
-                          <WorkTypesSettings />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/configuracoes/categorias-obra"
-                      element={
-                        <ProtectedRoute>
-                          <WorkCategoriesSettings />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/configuracoes/crm"
-                      element={
-                        <ProtectedRoute>
-                          <CrmLossReasonsSettings />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/configuracoes/rateio"
-                      element={
-                        <ProtectedRoute>
-                          <RateioSettings />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route
-                      path="/configuracoes/suporte"
-                      element={
-                        <ProtectedRoute>
-                          <SupportTickets />
-                        </ProtectedRoute>
-                      }
-                    />
-                    <Route path="*" element={<NotFound />} />
-                  </Routes>
-                  <AssistantChat />
-                </>
-              </CrmProvider>
-            </CrmSettingsProvider>
-          </SettingsProvider>
-        </AuthProvider>
+        <AppErrorBoundary>
+          <Suspense fallback={<RouteLoader />}>
+            <AuthProvider>
+              <WorkspaceProvider>
+                <Routes>
+                  <Route path="/" element={<Index />} />
+                  <Route path="/acompanhamento" element={<Index />} />
+                  <Route path="/app" element={<Navigate to="/inbox" replace />} />
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/signup" element={<Signup />} />
+                  <Route path="/.lovable/oauth/consent" element={<OAuthConsent />} />
+                  <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
+                  <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
+                    <Route path="/inbox" element={<InboxPage />} />
+                    <Route path="/agent" element={<AgentPage />} />
+                    <Route path="/whatsapp" element={<WhatsAppPage />} />
+                    <Route path="/api-keys" element={<ApiKeysPage />} />
+                    <Route path="/webhooks" element={<WebhooksPage />} />
+                    <Route path="/team" element={<Placeholder title="Time" description="Convidar membros e gerenciar roles" />} />
+                    <Route path="/logs" element={<LogsPage />} />
+                    <Route path="/settings" element={<SettingsPage />} />
+                  </Route>
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </WorkspaceProvider>
+            </AuthProvider>
+          </Suspense>
+        </AppErrorBoundary>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

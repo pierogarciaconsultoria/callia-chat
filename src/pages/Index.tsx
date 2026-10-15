@@ -1,275 +1,239 @@
-import { useEffect, useState } from 'react';
-import AppLayout from '@/components/AppLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { useToast } from '@/hooks/use-toast';
-import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
-import { CheckCircle2, Circle, HardHat, Users, DollarSign, ShoppingCart } from 'lucide-react';
-import { RankingCorretores } from '@/components/brokers/RankingCorretores';
+import { Link } from "react-router-dom";
+import { ArrowRight, CheckCircle2, Clock3, Layers3, LockKeyhole, RadioTower } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { projectPhases, statusMeta } from "@/data/project-board";
+
+const roadmapHighlights = [
+  {
+    title: "Fundacao primeiro",
+    description: "Banco, seguranca, segredos e contratos antes das integracoes operacionais.",
+    icon: LockKeyhole,
+  },
+  {
+    title: "Canais depois",
+    description: "WhatsApp, webhooks e pipeline entram depois que a estrutura estiver pronta.",
+    icon: RadioTower,
+  },
+  {
+    title: "Operacao por fases",
+    description: "Cada entrega fecha um bloco funcional antes de abrir o proximo.",
+    icon: Layers3,
+  },
+];
+
+const totalPhases = projectPhases.length;
+const completedPhases = projectPhases.filter((phase) => phase.status === "completed").length;
+const currentPhase = projectPhases.find((phase) => phase.status === "in_progress");
+const nextPhase = projectPhases.find((phase) => phase.status === "next");
+const roadmapCompleted = completedPhases === totalPhases;
 
 export default function Index() {
-  const { user } = useAuth();
-  const { toast } = useToast();
-  const [showOnboarding, setShowOnboarding] = useState(false);
-  const [companyName, setCompanyName] = useState('');
-  const [savingCompany, setSavingCompany] = useState(false);
-  const [hasCompany, setHasCompany] = useState(false);
-  const [clientCount, setClientCount] = useState<number | null>(null);
-  const [dealCount, setDealCount] = useState<number | null>(null);
-  const [projectCount, setProjectCount] = useState<number | null>(null);
-
-  useEffect(() => {
-    const checkProfile = async () => {
-      if (!user) return;
-
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('company_id')
-        .eq('id', user.id)
-        .maybeSingle();
-
-      if (error) return;
-
-      const hasCompanyId = !!profile?.company_id;
-      setHasCompany(hasCompanyId);
-
-      if (!hasCompanyId) {
-        setShowOnboarding(true);
-        return;
-      }
-
-      const companyId = profile.company_id;
-
-      const [{ count: clientsCount }, { count: projectsCount }, { count: dealsCount }] =
-        await Promise.all([
-          supabase
-            .from('clients')
-            .select('id', { count: 'exact', head: true })
-            .eq('company_id', companyId),
-          supabase
-            .from('projects')
-            .select('id', { count: 'exact', head: true })
-            .eq('company_id', companyId),
-          supabase
-            .from('crm_deals')
-            .select('id', { count: 'exact', head: true })
-            .eq('company_id', companyId),
-        ]);
-
-      setClientCount(clientsCount ?? 0);
-      setProjectCount(projectsCount ?? 0);
-      setDealCount(dealsCount ?? 0);
-    };
-
-    void checkProfile();
-  }, [user]);
-
-  const handleCreateCompany = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!user || !companyName.trim() || savingCompany) return;
-
-    setSavingCompany(true);
-    const name = companyName.trim();
-
-    const { data: company, error: companyError } = await supabase
-      .from('companies')
-      .insert({ name })
-      .select('id')
-      .single();
-
-    if (companyError || !company?.id) {
-      toast({
-        title: 'Erro ao criar empresa',
-        description: 'Tente novamente em alguns instantes.',
-        variant: 'destructive',
-      });
-      setSavingCompany(false);
-      return;
-    }
-
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .update({ company_id: company.id })
-      .eq('id', user.id);
-
-    if (profileError) {
-      toast({
-        title: 'Erro ao vincular empresa',
-        description: 'A empresa foi criada, mas não foi possível concluir o vínculo do usuário.',
-        variant: 'destructive',
-      });
-      setSavingCompany(false);
-      return;
-    }
-
-    toast({
-      title: 'Empresa criada com sucesso',
-      description: 'Agora você pode começar a usar o PRUMO com os dados da sua empresa.',
-    });
-
-    setSavingCompany(false);
-    setHasCompany(true);
-    setShowOnboarding(false);
-  };
-
-  const checklistItems = [
-    {
-      id: 'company',
-      title: 'Cadastrar sua empresa',
-      description: 'Definir o nome da empresa para organizar obras e contratos.',
-      done: hasCompany,
-    },
-    {
-      id: 'client',
-      title: 'Cadastrar seu primeiro cliente',
-      description: 'Registrar quem contrata suas obras e contratos.',
-      done: (clientCount ?? 0) > 0,
-    },
-    {
-      id: 'deal',
-      title: 'Registrar sua primeira oportunidade no CRM',
-      description: 'Mapear um negócio de obra no funil comercial.',
-      done: (dealCount ?? 0) > 0,
-    },
-    {
-      id: 'project',
-      title: 'Criar sua primeira obra a partir de uma oportunidade',
-      description: 'Converter um negócio ganho em obra dentro do PRUMO.',
-      done: (projectCount ?? 0) > 0,
-    },
-  ];
-
-  const completedSteps = checklistItems.filter((item) => item.done).length;
-  const totalSteps = checklistItems.length;
-
   return (
-    <AppLayout>
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-muted-foreground">Visão geral das suas obras e operações</p>
-        </div>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-3">
-            <div>
-              <CardTitle className="text-sm font-medium text-foreground">
-                Próximos passos para configurar o PRUMO
-              </CardTitle>
-              <p className="text-xs text-muted-foreground">
-                {completedSteps}/{totalSteps} passos concluídos
-              </p>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3 text-xs text-muted-foreground">
-            {checklistItems.map((item) => (
-              <div key={item.id} className="flex items-start gap-3">
-                {item.done ? (
-                  <CheckCircle2 className="mt-[2px] h-4 w-4 text-primary" />
-                ) : (
-                  <Circle className="mt-[2px] h-4 w-4 text-muted-foreground" />
-                )}
-                <div>
-                  <p className="text-[13px] font-medium text-foreground">{item.title}</p>
-                  <p className="text-[11px] text-muted-foreground">{item.description}</p>
-                </div>
+    <div className="min-h-screen bg-muted/30">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-10 md:px-6 lg:px-8">
+        <section className="rounded-3xl border bg-background p-8 shadow-sm">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+            <div className="max-w-3xl space-y-4">
+              <div className="inline-flex items-center rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-sm font-medium text-primary">
+                Acompanhamento publico temporario do projeto
               </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Obras Ativas</CardTitle>
-              <HardHat className="h-4 w-4 text-primary" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">0</div>
-              <p className="text-xs text-muted-foreground">Em andamento</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Clientes</CardTitle>
-              <Users className="h-4 w-4 text-secondary" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">0</div>
-              <p className="text-xs text-muted-foreground">Cadastrados</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Contas a Pagar</CardTitle>
-              <DollarSign className="h-4 w-4 text-destructive" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">R$ 0</div>
-              <p className="text-xs text-muted-foreground">Pendentes</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Compras</CardTitle>
-              <ShoppingCart className="h-4 w-4 text-warning" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">0</div>
-              <p className="text-xs text-muted-foreground">Este mês</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        <RankingCorretores />
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Bem-vindo ao PRUMO</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Seu sistema de gestão de obras está pronto. Comece cadastrando seus clientes e criando suas primeiras
-              obras. Os módulos serão habilitados conforme as próximas fases de desenvolvimento.
-            </p>
-          </CardContent>
-        </Card>
-
-        <Dialog open={showOnboarding} onOpenChange={setShowOnboarding}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Vamos começar configurando sua empresa</DialogTitle>
-            </DialogHeader>
-            <form className="space-y-4 pt-2" onSubmit={handleCreateCompany}>
-              <div className="space-y-2">
-                <Label htmlFor="company-name">Nome da empresa</Label>
-                <Input
-                  id="company-name"
-                  placeholder="Ex.: Construtora Horizonte"
-                  value={companyName}
-                  onChange={(event) => setCompanyName(event.target.value)}
-                  required
-                />
-                <p className="text-xs text-muted-foreground">
-                  Usaremos esse nome para organizar suas obras, contratos e relatórios.
+              <div className="space-y-3">
+                <h1 className="text-4xl font-semibold tracking-tight text-foreground md:text-5xl">
+                  Agent Hub em desenvolvimento por fases
+                </h1>
+                <p className="max-w-2xl text-base text-muted-foreground md:text-lg">
+                  Esta pagina mostra a ordem de desenvolvimento do projeto, o que entra em cada fase e qual bloco vem a seguir.
                 </p>
               </div>
-              <div className="flex justify-end gap-2">
-                <Button type="submit" disabled={savingCompany}>
-                  {savingCompany ? 'Salvando...' : 'Criar empresa e continuar'}
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Link
+                to="/login"
+                className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                Entrar no painel
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        <section className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription>Fases planejadas</CardDescription>
+              <CardTitle className="text-3xl">{totalPhases}</CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm text-muted-foreground">
+              Da fundacao tecnica ate o acabamento e go-live.
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription>Fase atual</CardDescription>
+              <CardTitle className="text-xl">
+                {roadmapCompleted ? "Roadmap concluido" : currentPhase ? `Fase ${currentPhase.order}` : "Nenhuma em execucao"}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm text-muted-foreground">
+              {roadmapCompleted
+                ? "Todas as fases base do MVP foram entregues e validadas."
+                : currentPhase?.title ?? "A execucao principal ainda nao foi iniciada."}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription>Proxima fase</CardDescription>
+              <CardTitle className="text-xl">
+                {roadmapCompleted ? "Nenhuma pendente" : nextPhase ? `Fase ${nextPhase.order}` : "Roadmap em revisao"}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm text-muted-foreground">
+              {roadmapCompleted
+                ? "O roadmap base foi concluido. Novas etapas entram como expansao ou pos-piloto."
+                : nextPhase?.title ?? "As proximas etapas serao atualizadas aqui."}
+            </CardContent>
+          </Card>
+        </section>
+
+        <section className="grid gap-4 lg:grid-cols-3">
+          {roadmapHighlights.map(({ title, description, icon: Icon }) => (
+            <Card key={title}>
+              <CardHeader>
+                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Icon className="h-5 w-5" />
+                </div>
+                <CardTitle className="text-lg">{title}</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">{description}</CardContent>
+            </Card>
+          ))}
+        </section>
+
+        <section className="grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
+          <Card>
+            <CardHeader>
+              <CardTitle>Ordem de desenvolvimento</CardTitle>
+              <CardDescription>
+                A construcao segue da fundacao ao telhado para reduzir retrabalho.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {projectPhases.map((phase) => {
+                const meta = statusMeta[phase.status];
+
+                return (
+                  <div key={phase.id} className="rounded-2xl border bg-background p-5">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-full border bg-muted text-sm font-semibold">
+                            {phase.order}
+                          </div>
+                          <div>
+                            <h3 className="text-lg font-semibold">{phase.title}</h3>
+                            <p className="text-sm text-muted-foreground">{phase.goal}</p>
+                          </div>
+                        </div>
+                      </div>
+                      <span className={`inline-flex w-fit items-center rounded-full border px-3 py-1 text-xs font-medium ${meta.className}`}>
+                        {meta.label}
+                      </span>
+                    </div>
+
+                    <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                      <div>
+                        <div className="mb-2 text-sm font-medium text-foreground">Escopo principal</div>
+                        <ul className="space-y-2 text-sm text-muted-foreground">
+                          {phase.scope.map((item) => (
+                            <li key={item} className="flex items-start gap-2">
+                              <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                              <span>{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div>
+                        <div className="mb-2 text-sm font-medium text-foreground">Entregaveis</div>
+                        <ul className="space-y-2 text-sm text-muted-foreground">
+                          {phase.deliverables.map((item) => (
+                            <li key={item} className="flex items-start gap-2">
+                              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                              <span>{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                        <div className="mt-4 rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
+                          <span className="font-medium text-foreground">Dependencias:</span> {phase.dependsOn}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Resumo executivo</CardTitle>
+                <CardDescription>Status geral da obra do produto.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4 text-sm text-muted-foreground">
+                <div className="flex items-center justify-between rounded-lg bg-muted px-3 py-2">
+                  <span>Concluidas</span>
+                  <span className="font-medium text-foreground">{completedPhases}</span>
+                </div>
+                <div className="flex items-center justify-between rounded-lg bg-muted px-3 py-2">
+                  <span>Em andamento</span>
+                  <span className="font-medium text-foreground">
+                    {currentPhase ? 1 : 0}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between rounded-lg bg-muted px-3 py-2">
+                  <span>Planejadas</span>
+                  <span className="font-medium text-foreground">
+                    {Math.max(totalPhases - completedPhases - (currentPhase ? 1 : 0), 0)}
+                  </span>
+                </div>
+                <div className="rounded-xl border border-dashed p-4">
+                  <div className="mb-2 flex items-center gap-2 text-foreground">
+                    <Clock3 className="h-4 w-4 text-primary" />
+                    <span className="font-medium">Atualizacao deste painel</span>
+                  </div>
+                  <p>
+                    Esta tela le o guia do projeto (PROJECT_BOARD.md) e se atualiza sozinha sempre que o status de uma fase muda.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Como ler</CardTitle>
+                <CardDescription>Guia rapido para acompanhamento.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-muted-foreground">
+                <p>
+                  <span className="font-medium text-foreground">Proxima:</span> etapa que abre a execucao principal.
+                </p>
+                <p>
+                  <span className="font-medium text-foreground">Em andamento:</span> fase atualmente em desenvolvimento.
+                </p>
+                <p>
+                  <span className="font-medium text-foreground">Concluida:</span> fase entregue e validada.
+                </p>
+                <p>
+                  <span className="font-medium text-foreground">Pendente:</span> fase planejada, aguardando dependencias anteriores.
+                </p>
+                <p>
+                  <span className="font-medium text-foreground">Bloqueada:</span> fase pausada por dependencia externa ou decisao pendente.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </section>
       </div>
-    </AppLayout>
+    </div>
   );
 }
