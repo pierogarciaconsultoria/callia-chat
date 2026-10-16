@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   BookOpen,
+  CalendarCheck,
   FileText,
   Link2,
   Package2,
@@ -14,6 +15,7 @@ import {
   Upload,
 } from "lucide-react";
 import { useKnowledge } from "@/hooks/use-knowledge";
+import { useReservationConnector } from "@/hooks/use-reservation-connector";
 import {
   CATEGORY_EXAMPLES,
   UPLOADABLE_EXTENSIONS,
@@ -46,6 +48,14 @@ type EditableSource = {
   url: string;
   category: string;
 };
+
+type EditableConnector = {
+  company_id: string;
+  currency: string;
+  is_active: boolean;
+};
+
+const blankConnector: EditableConnector = { company_id: "", currency: "BRL", is_active: true };
 
 const blankSource: EditableSource = { title: "", content: "", url: "", category: "" };
 
@@ -120,6 +130,13 @@ export default function KnowledgeBasePage() {
     search,
   } = useKnowledge();
 
+  const {
+    connector,
+    loadError: connectorError,
+    saving: connectorSaving,
+    saveConnector,
+  } = useReservationConnector();
+
   const [faqDrafts, setFaqDrafts] = useState<EditableFaq[]>([]);
   const [productDrafts, setProductDrafts] = useState<EditableProduct[]>([]);
   const [textDraft, setTextDraft] = useState<EditableSource>(blankSource);
@@ -130,6 +147,7 @@ export default function KnowledgeBasePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<KnowledgeSearchHit[] | null>(null);
+  const [connectorDraft, setConnectorDraft] = useState<EditableConnector>(blankConnector);
 
   useEffect(() => {
     setFaqDrafts(
@@ -156,6 +174,18 @@ export default function KnowledgeBasePage() {
       })),
     );
   }, [products]);
+
+  useEffect(() => {
+    setConnectorDraft(
+      connector
+        ? {
+            company_id: connector.company_id,
+            currency: connector.currency,
+            is_active: connector.is_active,
+          }
+        : blankConnector,
+    );
+  }, [connector]);
 
   const mirroredByRecord = useMemo(() => {
     const map = new Map<string, KnowledgeSourceRecord>();
@@ -355,6 +385,31 @@ export default function KnowledgeBasePage() {
     }
   };
 
+  const saveConnectorDraft = async () => {
+    const companyId = connectorDraft.company_id.trim();
+    const currency = connectorDraft.currency.trim().toUpperCase();
+
+    if (!companyId) {
+      toast.error("Informe o id da empresa do hbook.");
+      return;
+    }
+    if (!/^[A-Za-z0-9-]+$/.test(companyId)) {
+      toast.error("O id da empresa so aceita letras, numeros e traco.");
+      return;
+    }
+    if (!/^[A-Z]{3}$/.test(currency)) {
+      toast.error("A moeda precisa ter 3 letras, como BRL.");
+      return;
+    }
+
+    try {
+      await saveConnector({ company_id: companyId, currency, is_active: connectorDraft.is_active });
+      toast.success("Conector salvo.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Nao foi possivel salvar o conector.");
+    }
+  };
+
   return (
     <div className="space-y-6 p-8">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -392,6 +447,7 @@ export default function KnowledgeBasePage() {
           <TabsTrigger value="faqs">Perguntas e respostas</TabsTrigger>
           <TabsTrigger value="sources">Documentos e textos</TabsTrigger>
           <TabsTrigger value="catalog">Catalogo</TabsTrigger>
+          <TabsTrigger value="connector">Conector de reservas</TabsTrigger>
           <TabsTrigger value="search">Testar busca</TabsTrigger>
         </TabsList>
 
@@ -920,6 +976,85 @@ export default function KnowledgeBasePage() {
                   <div className="text-sm text-muted-foreground">{hit.content}</div>
                 </div>
               ))}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="connector" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <CalendarCheck className="h-5 w-5 text-primary" />
+                <div>
+                  <CardTitle>Conector de reservas (hbook)</CardTitle>
+                  <CardDescription>
+                    O id da empresa aparece na pagina de reservas do hbook, no endereco:
+                    hbook.hsystem.com.br/Booking?companyId=... A API publica usa este cadastro para consultar
+                    disponibilidade e preco sem expor nada do hbook para quem chama.
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {connectorError && (
+                <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                  {connectorError} Se a tabela de conectores ainda nao existe neste banco, aplique a migracao da
+                  Fase 10.
+                </div>
+              )}
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="connectorCompanyId">Id da empresa (hbook)</Label>
+                  <Input
+                    id="connectorCompanyId"
+                    value={connectorDraft.company_id}
+                    onChange={(event) =>
+                      setConnectorDraft((prev) => ({ ...prev, company_id: event.target.value }))
+                    }
+                    disabled={!canEdit || connectorSaving}
+                    placeholder="5c38b782e74ff268604a8655"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="connectorCurrency">Moeda</Label>
+                  <Input
+                    id="connectorCurrency"
+                    value={connectorDraft.currency}
+                    onChange={(event) => setConnectorDraft((prev) => ({ ...prev, currency: event.target.value }))}
+                    disabled={!canEdit || connectorSaving}
+                    placeholder="BRL"
+                    maxLength={3}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    O hbook devolve os valores sem moeda. Informe o codigo de 3 letras que o agente deve citar.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-4 rounded-lg border px-4 py-3">
+                <div>
+                  <div className="text-sm font-medium">Conector ativo</div>
+                  <div className="text-xs text-muted-foreground">
+                    Desative para que a API de disponibilidade pare de responder para este workspace.
+                  </div>
+                </div>
+                <Switch
+                  checked={connectorDraft.is_active}
+                  onCheckedChange={(checked) => setConnectorDraft((prev) => ({ ...prev, is_active: checked }))}
+                  disabled={!canEdit || connectorSaving}
+                />
+              </div>
+
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <Button onClick={saveConnectorDraft} disabled={!canEdit || connectorSaving}>
+                  <Save className="h-4 w-4" />
+                  {connectorSaving ? "Salvando..." : connector ? "Salvar conector" : "Cadastrar conector"}
+                </Button>
+                <code className="break-all text-xs text-muted-foreground">
+                  GET /functions/v1/public-api/connectors/hbook/availability?checkin=DD/MM/AAAA&amp;checkout=DD/MM/AAAA&amp;adults=2&amp;children=0
+                </code>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

@@ -225,10 +225,13 @@
 - espelhamento automatico de `faqs` e `products` em fontes indexaveis
 - edge function `knowledge-index` com extracao de PDF/DOCX/URL, chunking com sobreposicao e embeddings opcionais
 - `GET public-api/knowledge/search` e `GET public-api/agent/context` com a mesma autenticacao `x-api-key`
+- `workspace_connectors` (hbook) com RLS e cadastro na aba "Conector de reservas" da mesma tela
+- `GET public-api/connectors/hbook/availability`, proxy do motor de reservas com timeout de 10 s e sem repassar cookies ou headers do hbook
 - Entregaveis:
 - base de conhecimento editavel pelo cliente sem referencia a segmento especifico
 - busca hibrida exposta na API publica e no preview da tela
 - contexto do agente disponivel para o orquestrador externo
+- disponibilidade, tarifa, preco total, preco por diaria e link de reserva consultaveis por IA externa
 - Criterio de entrada: Fases 2, 7 e 9 concluidas
 - Criterio de saida: admin do workspace A cadastra conteudo e nada vaza para o workspace B, nem pela API
 - Dependencias: Fase 2, Fase 7

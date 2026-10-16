@@ -5,6 +5,7 @@ import { getClientIp, sha256Hex } from "../_shared/api-keys.ts";
 import { createOutboundMessageRecord, deliverOutboundMessage, resolveSendingInstance } from "../_shared/outbound.ts";
 import { createSupabaseIngestStore, ingestExternalMessage, parseIngestPayload } from "../_shared/ingest.ts";
 import { embedTexts } from "../_shared/agent.ts";
+import { fetchAvailability, mapAvailability, resolveAvailabilityQuery } from "../_shared/hbook.ts";
 import { triggerPendingWebhookDispatch, triggerWebhookDispatch } from "../_shared/webhooks.ts";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -157,6 +158,18 @@ async function findExistingIdempotentResponse(supabase, input) {
     return null;
   }
 
+  return data;
+}
+
+async function findHbookConnector(supabase, workspaceId) {
+  const { data, error } = await supabase
+    .from("workspace_connectors")
+    .select("id, config, is_active")
+    .eq("workspace_id", workspaceId)
+    .eq("provider", "hbook")
+    .maybeSingle();
+
+  if (error) throw error;
   return data;
 }
 
@@ -619,6 +632,65 @@ serve(async (request) => {
       return jsonResponse(responseBody, { status: 200 });
     }
 
+    if (request.method === "GET" && endpoint === "/connectors/hbook/availability") {
+      const connector = await findHbookConnector(supabase, workspaceId);
+      const companyId = String(connector?.config?.company_id ?? "").trim();
+      if (!connector || connector.is_active === false || !companyId) {
+        throw new Error("connector_not_available");
+      }
+
+      const stay = resolveAvailabilityQuery(url.searchParams, companyId);
+      const currency = String(connector?.config?.currency ?? "").trim() || "BRL";
+      requestBody = {
+        checkin: stay.checkin,
+        checkout: stay.checkout,
+        adults: stay.adults,
+        children: stay.children,
+      };
+
+      let payload;
+      try {
+        payload = await fetchAvailability(stay.request);
+      } catch {
+        // The engine answers with its own cookies and headers; none of that may
+        // reach the caller, so every upstream failure is one generic error.
+        const failureBody = { error: "upstream_unavailable" };
+
+        await logPublicApiRequest(supabase, {
+          workspaceId,
+          apiKeyId,
+          endpoint,
+          method: request.method,
+          statusCode: 502,
+          requestBody,
+          responseBody: failureBody,
+          correlationId,
+          errorCode: "upstream_unavailable",
+        });
+
+        return jsonResponse(failureBody, { status: 502 });
+      }
+
+      const responseBody = mapAvailability(payload, {
+        nights: stay.nights,
+        currency,
+        bookingLink: stay.bookingLink,
+      });
+
+      await logPublicApiRequest(supabase, {
+        workspaceId,
+        apiKeyId,
+        endpoint,
+        method: request.method,
+        statusCode: 200,
+        requestBody,
+        responseBody,
+        correlationId,
+      });
+
+      return jsonResponse(responseBody, { status: 200 });
+    }
+
     throw new Error("endpoint_not_found");
   } catch (error) {
     const message = error instanceof Error ? error.message : "unexpected_error";
@@ -627,11 +699,13 @@ serve(async (request) => {
         ? 401
         : message === "api_key_revoked" || message === "api_key_expired"
           ? 403
-          : message === "invalid_message_payload" || message === "invalid_event_payload" || message === "invalid_ingest_payload" || message === "invalid_search_query"
+          : message === "invalid_message_payload" || message === "invalid_event_payload" || message === "invalid_ingest_payload" || message === "invalid_search_query" || message === "invalid_stay_dates"
             ? 400
-            : message === "conversation_not_found" || message === "endpoint_not_found" || message === "instance_not_available" || message === "agent_config_not_found"
+            : message === "conversation_not_found" || message === "endpoint_not_found" || message === "instance_not_available" || message === "agent_config_not_found" || message === "connector_not_available"
               ? 404
-              : 500;
+              : message === "upstream_unavailable"
+                ? 502
+                : 500;
 
     const responseBody = { error: message, correlationId };
 

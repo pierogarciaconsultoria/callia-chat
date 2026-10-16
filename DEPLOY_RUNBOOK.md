@@ -40,6 +40,7 @@ npm run build
   - `audit_logs`
   - `knowledge_sources`
   - `knowledge_chunks`
+  - `workspace_connectors`
 
 ### 3. Edge Functions
 
@@ -54,6 +55,8 @@ Publicar:
 - `manage-webhooks`
 - `webhook-dispatcher`
 - `knowledge-index`
+
+Sempre que `supabase/functions/_shared/*.ts` mudar, redeploye as functions que importam aquele modulo (`public-api` e `knowledge-index`) — o `_shared` nao e publicado separado; ele entra no bundle de cada function no momento do deploy.
 
 ### 4. Secrets do Supabase
 
@@ -80,6 +83,7 @@ Configurar:
 - Validar webhook inbound
 - Configurar prompt e comportamento do agente
 - Cadastrar base de conhecimento (FAQ, textos, arquivos, URLs) e rodar a indexacao
+- Cadastrar o conector hbook (id da empresa e moeda) na aba "Conector de reservas" de `/knowledge-base`
 - Criar primeira API key
 - Configurar webhook de saída de teste
 
@@ -94,6 +98,7 @@ Configurar:
 - Webhook externo recebe evento assinado
 - Logs mostram request, outbound e delivery
 - `GET public-api/knowledge/search` retorna trechos do workspace da chave
+- `GET public-api/connectors/hbook/availability` retorna `rooms` com preco e `booking_link` para datas com estadia possivel
 
 ## Critérios para liberar piloto
 
