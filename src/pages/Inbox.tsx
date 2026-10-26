@@ -16,6 +16,7 @@ import {
   Video,
   XCircle,
 } from "lucide-react";
+import { invokeFunction } from "@/lib/functions";
 import { cn } from "@/lib/cn";
 import { OnboardingChecklist } from "@/components/OnboardingChecklist";
 import { useAuth } from "@/lib/auth";
@@ -234,8 +235,14 @@ function Thread({
             : { mode },
       },
       {
-        onSuccess: () =>
-          toast.success(mode === "human" ? "Você assumiu a conversa." : mode === "bot" ? "Conversa devolvida ao bot." : "Conversa encerrada."),
+        onSuccess: () => {
+          toast.success(mode === "human" ? "Você assumiu a conversa." : mode === "bot" ? "Conversa devolvida ao bot." : "Conversa encerrada.");
+          // Mensagens do cliente que ficaram sem resposta enquanto estava com a equipe: a IA responde agora.
+          if (mode === "bot") {
+            invokeFunction("process-message", { action: "resume", workspace_id: conversation.workspace_id, conversation_id: conversation.id })
+              .catch((e) => toast.error(e));
+          }
+        },
         onError: (e) => toast.error(e),
       },
     );

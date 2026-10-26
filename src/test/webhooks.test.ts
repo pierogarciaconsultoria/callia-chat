@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { encryptSecret, hmacSha256Hex } from "../../supabase/functions/_shared/crypto.ts";
 import { deliverWebhook, retryDelaySeconds, signWebhook } from "../../supabase/functions/_shared/webhooks.ts";
+import { looksAutomatedFromPhone } from "../../supabase/functions/_shared/evolution.ts";
 
 const master = "k".repeat(40);
 
@@ -65,5 +66,18 @@ describe("entrega de webhooks", () => {
     const last = fakeDb(await delivery({ attempts: 2 }));
     await deliverWebhook(last, "d1", master, async () => { throw new TypeError("connection refused"); });
     expect(last.updates[0]).toMatchObject({ status: "failed", attempts: 3 });
+  });
+});
+
+describe("mensagem automática do WhatsApp Business enviada pelo celular", () => {
+  it("saudação longa 4 s depois do cliente é automática (caso real da Morada)", () => {
+    const greeting = "Olá.Esperamos encontrá-lo bem. 🙏Agradecemos o contato e caso desejas apenas realizar cotação e disponibilidade, em nosso site, link abaixo é possível realizar cotação on line e consultar disponibilidade.";
+    expect(looksAutomatedFromPhone(greeting, "2026-10-26T20:46:53Z", "2026-10-26T20:46:49Z")).toBe(true);
+  });
+
+  it("resposta curta ou digitada com calma é da equipe", () => {
+    expect(looksAutomatedFromPhone("Oi, já te respondo!", "2026-10-26T20:46:53Z", "2026-10-26T20:46:49Z")).toBe(false);
+    expect(looksAutomatedFromPhone("Boa tarde! Temos vaga sim para essas datas, posso reservar para você?", "2026-10-26T20:47:40Z", "2026-10-26T20:46:49Z")).toBe(false);
+    expect(looksAutomatedFromPhone("Texto longo qualquer enviado bem depois da mensagem do cliente, sem pressa nenhuma.", "2026-10-26T21:00:00Z", "2026-10-26T20:46:49Z")).toBe(false);
   });
 });

@@ -2,7 +2,7 @@
 // URL configurada na Evolution: /functions/v1/whatsapp-webhook?instance=<uuid>&token=<token da instância>
 import { createHandler, json, readJson, RuntimeError, runInBackground, sleep } from "../_shared/http.ts";
 import { sha256Hex, timingSafeEqual } from "../_shared/crypto.ts";
-import { type EvolutionMessageEvent, parseEvolutionWebhook } from "../_shared/evolution.ts";
+import { type EvolutionMessageEvent, looksAutomatedFromPhone, parseEvolutionWebhook } from "../_shared/evolution.ts";
 import { adminDb, type Db, functionUrl, internalHeaders, optionalEnv } from "../_shared/supabase.ts";
 import { emitEvent } from "../_shared/webhooks.ts";
 
@@ -127,8 +127,16 @@ async function handleMessage(
       p_status: "sent",
     });
     const row = data?.[0];
-    // Equipe respondeu pelo celular: pausa o bot para não atropelar a conversa.
+    // Saudação/ausência automática do WhatsApp Business não é a equipe respondendo.
+    let automated = false;
     if (row && !row.duplicate && row.conversation_mode === "bot") {
+      const { data: lastIn } = await db.from("messages").select("created_at").eq("conversation_id", row.conversation_id)
+        .eq("direction", "inbound").lte("created_at", ev.timestamp).order("created_at", { ascending: false }).limit(1).maybeSingle();
+      automated = looksAutomatedFromPhone(ev.text, ev.timestamp, lastIn?.created_at ?? null);
+      if (automated) await db.from("messages").update({ metadata: { ...metadata, echo: true, from_device: true, auto_reply: true } }).eq("id", row.message_id);
+    }
+    // Equipe respondeu pelo celular: pausa o bot para não atropelar a conversa.
+    if (row && !row.duplicate && row.conversation_mode === "bot" && !automated) {
       await db.from("conversations").update({ mode: "human", handoff_at: new Date().toISOString() }).eq("id", row.conversation_id);
       await emitEvent(db, {
         workspaceId: instance.workspace_id,

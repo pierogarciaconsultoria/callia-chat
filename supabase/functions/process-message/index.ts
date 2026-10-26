@@ -18,9 +18,10 @@ import { assertActive, hasFeature, loadEntitlements, monthlyMessagesLeft } from 
 
 Deno.serve(createHandler("process-message", async ({ req, correlationId, log }) => {
   if (req.method !== "POST") throw new RuntimeError("invalid_request", "Use POST.");
-  const body = await readJson<{ action?: string; message_id?: string; workspace_id?: string; messages?: unknown }>(req);
+  const body = await readJson<{ action?: string; message_id?: string; workspace_id?: string; conversation_id?: string; messages?: unknown }>(req);
 
   if (body.action === "simulate") return json(await simulate(req, body, correlationId, log));
+  if (body.action === "resume") return json(await resume(req, body, correlationId, log));
   if (!isInternalCall(req)) throw new RuntimeError("unauthorized", "Chamada interna apenas.");
   if (typeof body.message_id !== "string") throw new RuntimeError("invalid_request", "message_id obrigatório.");
   return json(await processMessage(adminDb(), body.message_id, correlationId, log));
@@ -221,6 +222,23 @@ function textForHistory(m: { type: string; content: string | null; metadata: Rec
     return [m.content, `[imagem: ${meta.image_description}]`].filter(Boolean).join("\n");
   }
   return m.content;
+}
+
+/**
+ * Conversa devolvida ao bot pelo painel: se a última mensagem é do cliente (ficou sem resposta
+ * enquanto estava com a equipe), a MarIA responde agora.
+ */
+async function resume(req: Request, body: { workspace_id?: string; conversation_id?: string }, correlationId: string, log: Logger) {
+  const user = await requireUser(req);
+  await requireWorkspaceRole(user.id, body.workspace_id, ["owner", "admin", "agent"]);
+  const db = adminDb();
+  const { data: conv } = await db.from("conversations").select("id, mode").eq("id", body.conversation_id ?? "").eq("workspace_id", body.workspace_id as string).maybeSingle();
+  if (!conv) throw new RuntimeError("not_found", "Conversa não encontrada.");
+  if (conv.mode !== "bot") return { skipped: "not_bot_mode" };
+  const { data: last } = await db.from("messages").select("id, direction, sender").eq("conversation_id", conv.id)
+    .order("seq", { ascending: false }).limit(1).maybeSingle();
+  if (!last || last.direction !== "inbound" || last.sender !== "customer") return { skipped: "nothing_pending" };
+  return await processMessage(db, last.id, correlationId, log);
 }
 
 /** Simulador do painel: roda o pipeline com mensagens fictícias, sem enviar nem gravar nada. */

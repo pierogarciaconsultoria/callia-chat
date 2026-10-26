@@ -333,3 +333,16 @@ export class EvolutionClient {
     return { base64: raw.base64, mimetype: raw.mimetype ?? null };
   }
 }
+
+/**
+ * Mensagem enviada pelo celular que parece automática (saudação/ausência do WhatsApp Business):
+ * texto longo poucos segundos depois da mensagem do cliente — rápido demais para alguém digitar.
+ * Essas mensagens não tiram a conversa do bot.
+ */
+export function looksAutomatedFromPhone(text: string | null, sentAt: string, lastInboundAt: string | null): boolean {
+  if (!text || !lastInboundAt) return false;
+  const seconds = (Date.parse(sentAt) - Date.parse(lastInboundAt)) / 1000;
+  if (!Number.isFinite(seconds) || seconds < 0 || seconds > 30) return false;
+  const length = text.trim().length;
+  return length >= 40 && length / Math.max(1, seconds) > 15;
+}
