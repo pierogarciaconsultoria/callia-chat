@@ -231,17 +231,19 @@ export function ColumnChart({ values, labels, titles, color, valueLabel, height 
 
 // ---------------------------------------------------------------- Barras horizontais (série única, valor na ponta)
 
-export function BarList({ items, color, empty }: { items: Array<{ key: string; label: string; value: number }>; color: string; empty: string }) {
+export function BarList({ items, color, empty, format = compact }: {
+  items: Array<{ key: string; label: string; value: number; detail?: string }>; color: string; empty: string; format?: (n: number) => string;
+}) {
   if (!items.length) return <p className="py-6 text-center text-sm text-slate-500">{empty}</p>;
   const max = Math.max(...items.map((i) => i.value));
   return (
     <ul className="space-y-3">
       {items.map((i) => (
         <li key={i.key}>
-          <p className="mb-1 text-sm text-slate-700 dark:text-slate-300">{i.label}</p>
+          <p className="mb-1 text-sm text-slate-700 dark:text-slate-300">{i.label}{i.detail && <span className="text-slate-500"> · {i.detail}</span>}</p>
           <div className="flex items-center gap-2">
             <div className="h-3 min-w-[2px] rounded-r" style={{ width: `${Math.max(1, (i.value / max) * 85)}%`, background: color }} aria-hidden />
-            <span className="text-sm font-semibold tabular-nums text-slate-900 dark:text-slate-100">{compact(i.value)}</span>
+            <span className="whitespace-nowrap text-sm font-semibold tabular-nums text-slate-900 dark:text-slate-100">{format(i.value)}</span>
           </div>
         </li>
       ))}

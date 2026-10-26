@@ -6,11 +6,11 @@ import { supabase } from "@/lib/supabase";
 import { unwrap } from "@/lib/functions";
 import { cn } from "@/lib/cn";
 import { useRequiredWorkspace } from "@/lib/workspace";
-import { formatDateTime, formatMoney, formatPhone } from "@/lib/format";
+import { formatDateTime, formatPhone } from "@/lib/format";
 import { useAgentConfig } from "@/hooks/use-agent-config";
 import { useWhatsAppInstances } from "@/hooks/use-whatsapp-instances";
 import {
-  bucketLabel, bucketTitle, compact, delta, duration, HANDOFF_LABELS, labeledCounts, percent, RANGE_PRESETS, rangeFor,
+  brl, bucketLabel, bucketTitle, compact, delta, duration, HANDOFF_LABELS, labeledCounts, percent, RANGE_PRESETS, rangeFor,
   CHANNEL_LABELS, TOOL_LABELS, trimFuture, waitingFor, type DashboardData, type QuotesReservations as QuotesData, type RangePreset,
 } from "@/lib/dashboard";
 import { BarList, ChartCard, ColumnChart, DataTable, Legend, LineChart, StackedBar } from "@/components/charts";
@@ -193,7 +193,10 @@ function Kpis({ data, agent }: { data: DashboardData; agent: string }) {
 
 function QuotesReservations({ data, agent }: { data: QuotesData; agent: string }) {
   const conversion = percent(data.from_quote, data.quoted_conversations);
-  const channels = labeledCounts(data.by_channel, CHANNEL_LABELS);
+  // Por canal: valor em R$ (barra) e quantidade (detalhe).
+  const channels = labeledCounts(data.by_channel_cents, CHANNEL_LABELS)
+    .map((c) => ({ ...c, detail: `${data.by_channel[c.key] ?? 0} reserva(s)` }));
+  const channelCounts = labeledCounts(data.by_channel, CHANNEL_LABELS).filter((c) => !data.by_channel_cents[c.key]);
   return (
     <section className="space-y-3" aria-labelledby="quotes-title">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -206,10 +209,13 @@ function QuotesReservations({ data, agent }: { data: QuotesData; agent: string }
         <Tile label="Orçamentos realizados" value={compact(data.quotes)} hint={`${data.quoted_conversations} conversa(s) receberam orçamento da ${agent}`} />
         {data.pms_connected ? (
           <>
-            <Tile label="Reservas efetuadas" value={compact(data.reservations)}
-              hint={`${data.confirmed} confirmada(s) · ${data.pre_reservations} pré-reserva(s) · ${data.canceled} cancelada(s), todos os canais`} />
-            <Tile label="Reservas após orçamento" value={compact(data.from_quote)}
-              hint={data.from_quote ? `${formatMoney(data.from_quote_total_cents / 100)} em diárias · mesmo telefone, até 30 dias depois` : "hóspede com o mesmo telefone, até 30 dias depois do orçamento"} />
+            <Tile label="Reservas efetuadas" value={brl(data.reservations_total_cents)} hint={`${data.reservations} reserva(s) em todos os canais`}>
+              <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">Confirmadas: {brl(data.confirmed_total_cents)} ({data.confirmed})</p>
+              <p className="text-xs text-slate-600 dark:text-slate-300">Pré-reservas: {brl(data.pre_total_cents)} ({data.pre_reservations})</p>
+              {data.canceled > 0 && <p className="mt-0.5 text-xs text-slate-500">Canceladas {brl(data.canceled_total_cents)} ({data.canceled}), fora do total</p>}
+            </Tile>
+            <Tile label="Reservas após orçamento" value={brl(data.from_quote_total_cents)}
+              hint={`${data.from_quote} reserva(s) de hóspedes que receberam orçamento (mesmo telefone, até 30 dias depois)`} />
             <Tile label="Conversão dos orçamentos" value={conversion === null ? "—" : `${conversion}%`}
               hint={`${data.from_quote} reserva(s) de ${data.quoted_conversations} conversa(s) com orçamento`} />
           </>
@@ -224,9 +230,11 @@ function QuotesReservations({ data, agent }: { data: QuotesData; agent: string }
         )}
       </div>
       {data.pms_connected && (
-        <ChartCard title="Reservas por canal" description="Reservas confirmadas e pré-reservas do período, por canal de venda."
-          table={<DataTable head={["Canal", "Reservas"]} rows={channels.map((c) => [c.label, c.value])} />}>
-          <BarList items={channels} color={C.guest} empty="Nenhuma reserva nova no período." />
+        <ChartCard title="Reservas por canal" description="Valor em diárias (R$) das reservas confirmadas e pré-reservas do período, por canal de venda."
+          table={<DataTable head={["Canal", "Reservas", "Valor (R$)"]}
+            rows={[...channels.map((c) => [c.label, data.by_channel[c.key] ?? 0, brl(c.value * 100)]), ...channelCounts.map((c) => [c.label, c.value, brl(0)])]} />}>
+          <BarList items={channels.map((c) => ({ ...c, value: c.value / 100 }))} color={C.guest} empty="Nenhuma reserva nova no período."
+            format={(v) => brl(v * 100)} />
         </ChartCard>
       )}
     </section>

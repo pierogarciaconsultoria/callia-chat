@@ -50,6 +50,17 @@ export interface QuotesReservations {
   from_quote: number;
   from_quote_total_cents: number;
   by_channel: Record<string, number>;
+  /** Valores em centavos (R$ = centavos / 100). */
+  reservations_total_cents: number;
+  confirmed_total_cents: number;
+  pre_total_cents: number;
+  canceled_total_cents: number;
+  by_channel_cents: Record<string, number>;
+}
+
+/** Centavos → "R$ 5.800,00". */
+export function brl(cents: number | null | undefined): string {
+  return (Number(cents) / 100 || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
 export const CHANNEL_LABELS: Record<string, string> = {

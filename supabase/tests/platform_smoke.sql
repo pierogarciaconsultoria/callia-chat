@@ -164,6 +164,9 @@ begin
   assert (r->>'reservations')::int = 2 and (r->>'confirmed')::int = 1 and (r->>'pre_reservations')::int = 1 and (r->>'canceled')::int = 1, 'reservas (sem base e sem canceladas): ' || r::text;
   assert (r->>'from_quote')::int = 1 and (r->>'from_quote_total_cents')::bigint = 500000, 'conversão pelo telefone: ' || r::text;
   assert (r #>> '{by_channel,pre_reservation_form}')::int = 1 and (r #>> '{by_channel,site}')::int = 1, 'canais: ' || r::text;
+  assert (r->>'reservations_total_cents')::bigint = 580000 and (r->>'confirmed_total_cents')::bigint = 500000
+    and (r->>'pre_total_cents')::bigint = 80000 and (r->>'canceled_total_cents')::bigint = 1000
+    and (r #>> '{by_channel_cents,site}')::bigint = 80000, 'valores em centavos: ' || r::text;
 end $$;
 select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-0000-0000-0000-000000000006","role":"authenticated"}', true);
 set role authenticated;

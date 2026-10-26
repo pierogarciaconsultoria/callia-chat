@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { bucketLabel, bucketTitle, compact, delta, duration, labeledCounts, niceTicks, percent, rangeFor, TOOL_LABELS, trimFuture } from "@/lib/dashboard";
+import { brl, bucketLabel, bucketTitle, compact, delta, duration, labeledCounts, niceTicks, percent, rangeFor, TOOL_LABELS, trimFuture } from "@/lib/dashboard";
 import { BarList, DataTable, StackedBar } from "@/components/charts";
 
 const today = new Date(2026, 9, 26, 15, 0);
@@ -27,6 +27,10 @@ describe("painel: indicadores", () => {
     expect(delta(null, 4)).toBeNull();
     expect(compact(1284)).toBe("1.284");
     expect(compact(12900)).toBe("12,9 mil");
+  });
+  it("valores das reservas em reais a partir de centavos", () => {
+    expect(brl(580000).replace(/\s/g, " ")).toBe("R$ 5.800,00");
+    expect(brl(0).replace(/\s/g, " ")).toBe("R$ 0,00");
   });
   it("durações legíveis", () => {
     expect(duration(8)).toBe("8 s");
