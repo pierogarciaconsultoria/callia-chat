@@ -2,7 +2,7 @@
 
 export interface PricePeriod { id: string; name: string; min_nights?: number | null; ranges: Array<[string, string]> }
 export interface PriceRate { guests: number; label?: string; max_adults?: number | null; child_max_age?: number | null; prices: Record<string, number> }
-export interface PriceUnit { name: string; product_ids: string[]; max_guests: number; rates: PriceRate[] }
+export interface PriceUnit { name: string; product_ids: string[]; pms_category_ids?: number[]; max_guests: number; rates: PriceRate[] }
 export interface ClosedPeriod { name: string; from: string; to: string }
 export interface PriceTableData { default_period: string; periods: PricePeriod[]; units: PriceUnit[]; notes: string[]; closed?: ClosedPeriod[] }
 export interface PriceTable { id: string; name: string; currency: string; updated_at: string; data: PriceTableData }
@@ -12,7 +12,7 @@ export interface PriceTable { id: string; name: string; currency: string; update
 // e os ids definitivos só são calculados ao salvar (ids de períodos existentes não mudam ao renomear).
 export interface EditorPeriod { key: string; id: string | null; name: string; min_nights: string; ranges: Array<[string, string]> }
 export interface EditorRate { key: string; guests: string; label: string; childRule: boolean; max_adults: string; child_max_age: string; prices: Record<string, string> }
-export interface EditorUnit { key: string; name: string; max_guests: string; product_ids: string[]; rates: EditorRate[] }
+export interface EditorUnit { key: string; name: string; max_guests: string; product_ids: string[]; pms_category_ids: number[]; rates: EditorRate[] }
 export interface EditorClosed { key: string; name: string; from: string; to: string }
 export interface EditorModel { name: string; defaultKey: string; periods: EditorPeriod[]; units: EditorUnit[]; notes: string[]; closed: EditorClosed[] }
 
@@ -56,6 +56,7 @@ export function toEditor(name: string, data: PriceTableData): EditorModel {
       name: u.name,
       max_guests: String(u.max_guests),
       product_ids: [...(u.product_ids ?? [])],
+      pms_category_ids: [...(u.pms_category_ids ?? [])],
       rates: u.rates.map((r) => ({
         key: newKey("r"),
         guests: String(r.guests),
@@ -78,7 +79,7 @@ export function starterEditor(): EditorModel {
     name: "Tabela de preços",
     defaultKey: period.key,
     periods: [period],
-    units: [{ key: newKey("u"), name: "", max_guests: "2", product_ids: [], rates: [emptyRate()] }],
+    units: [{ key: newKey("u"), name: "", max_guests: "2", product_ids: [], pms_category_ids: [], rates: [emptyRate()] }],
     notes: [],
     closed: [],
   };
@@ -163,7 +164,7 @@ export function fromEditor(model: EditorModel): { data: PriceTableData | null; i
         prices,
       });
     }
-    units.push({ name: u.name.trim(), product_ids: u.product_ids, max_guests: max ?? 1, rates });
+    units.push({ name: u.name.trim(), product_ids: u.product_ids, ...(u.pms_category_ids.length ? { pms_category_ids: u.pms_category_ids } : {}), max_guests: max ?? 1, rates });
   }
 
   if (issues.length) return { data: null, issues };

@@ -5,6 +5,7 @@ import { ApiError, invokeFunction } from "@/lib/functions";
 import { formatMoney } from "@/lib/format";
 import { useRequiredWorkspace } from "@/lib/workspace";
 import { useProducts } from "@/hooks/use-knowledge";
+import { findIntegration, useIntegrations } from "@/hooks/use-integrations";
 import {
   emptyRate, formatBRLInput, fromEditor, newKey, parseBRL, serverIssues, starterEditor, toEditor,
   type EditorModel, type EditorPeriod, type EditorRate, type EditorUnit, type PriceTable, type ServerIssue,
@@ -131,6 +132,9 @@ function PriceTableEditor({ workspaceId, currency, initial, creating, onClose }:
   const toast = useToast();
   const queryClient = useQueryClient();
   const products = useProducts(workspaceId);
+  const integrations = useIntegrations(workspaceId);
+  const hospedin = findIntegration(integrations.data, "hospedin");
+  const pmsCategories = hospedin?.status === "connected" ? ((hospedin.details as { categories?: Array<{ id: number; title: string }> }).categories ?? []) : [];
   const [model, setModel] = useState(initial);
   const [showErrors, setShowErrors] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -302,6 +306,17 @@ function PriceTableEditor({ workspaceId, currency, initial, creating, onClose }:
                   </div>
                 </div>
               ) : null}
+              {pmsCategories.length ? (
+                <div>
+                  <p className="mb-1.5 text-sm font-medium text-slate-700 dark:text-slate-300">Categorias no Hospedin <span className="font-normal text-slate-500">(a vaga vem de lá; o preço, desta tabela)</span></p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                    {pmsCategories.map((cat) => (
+                      <Checkbox key={cat.id} label={cat.title} checked={u.pms_category_ids.includes(cat.id)}
+                        onChange={(on) => patchUnit(u.key, { pms_category_ids: on ? [...u.pms_category_ids, cat.id] : u.pms_category_ids.filter((id) => id !== cat.id) })} />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               <div className="space-y-2">
                 {u.rates.map((r) => (
@@ -345,7 +360,7 @@ function PriceTableEditor({ workspaceId, currency, initial, creating, onClose }:
             </div>
           ))}
           {err("units") && <p className="text-sm text-red-600">{err("units")}</p>}
-          <Button size="sm" variant="secondary" onClick={() => patch((m) => ({ ...m, units: [...m.units, { key: newKey("u"), name: "", max_guests: "2", product_ids: [], rates: [emptyRate()] }] }))}>
+          <Button size="sm" variant="secondary" onClick={() => patch((m) => ({ ...m, units: [...m.units, { key: newKey("u"), name: "", max_guests: "2", product_ids: [], pms_category_ids: [], rates: [emptyRate()] }] }))}>
             <Plus className="h-4 w-4" /> Adicionar acomodação
           </Button>
         </section>

@@ -229,14 +229,15 @@ export async function fetchHospedinAvailability(
       ? new RuntimeError("upstream_unavailable", "Sistema de reservas indisponível.", { booking_link: bookingLink })
       : err;
   }
-  const fitting = placeTypes.filter((p) => !p.occupants || p.occupants >= guests).slice(0, 12);
+  const wanted = query.categoryIds?.length ? new Set(query.categoryIds.map(Number)) : null;
+  const fitting = (wanted ? placeTypes.filter((p) => wanted.has(Number(p.id))) : placeTypes.filter((p) => !p.occupants || p.occupants >= guests)).slice(0, 12);
   const unit = cfg.price_unit ?? "reais";
 
   const rooms: HbookRoom[] = [];
   await Promise.all(fitting.map(async (p) => {
     const rates = await client.rates(cfg.account_id, p.id, nights[0], nights[nights.length - 1]).catch(() => null);
     const quote = rates ? quoteStay(rates, nights, unit) : null;
-    if (quote) rooms.push({ name: p.title, rate: null, capacity: p.occupants ?? null, ...quote });
+    if (quote) rooms.push({ name: p.title, category_id: Number(p.id), rate: null, capacity: p.occupants ?? null, ...quote });
   }));
   rooms.sort((a, b) => a.total_price - b.total_price);
 

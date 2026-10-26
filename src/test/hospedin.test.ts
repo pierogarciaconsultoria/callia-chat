@@ -89,7 +89,7 @@ describe("Hospedin: cliente e consulta", () => {
       { today: new Date("2026-10-26T00:00:00Z") },
     );
     // Casal (2 lugares) não comporta 3 pessoas; chalé não tem tarifa no período; inativo é ignorado.
-    expect(out.rooms).toEqual([{ name: "Apto família", rate: null, capacity: 4, total_price: 1000, price_per_night: 500, available_units: 2 }]);
+    expect(out.rooms).toEqual([{ name: "Apto família", category_id: 2, rate: null, capacity: 4, total_price: 1000, price_per_night: 500, available_units: 2 }]);
     expect(out).toMatchObject({ provider: "hospedin", nights: 2, adults: 2, children: 1, sold_out: false });
     expect(out.booking_link).toBe("https://hbook.hsystem.com.br/Booking?companyId=abc&checkin=20%2F12%2F2026&checkout=22%2F12%2F2026&adults=2&children=1");
     expect(out.price_note).toMatch(/tarifa base/);

@@ -19,6 +19,8 @@ export const priceTableSchema = z.object({
   units: z.array(z.object({
     name: z.string().min(1).max(120),
     product_ids: z.array(z.string().uuid()).default([]),
+    /** Categorias do PMS (Hospedin) desta acomodação: a vaga vem de lá, o preço daqui. */
+    pms_category_ids: z.array(z.number().int().positive()).max(20).default([]),
     max_guests: z.number().int().min(1).max(30),
     rates: z.array(z.object({
       /** Até quantas pessoas esta linha vale. */
@@ -161,6 +163,7 @@ export function quoteStay(table: PriceTableData, q: QuoteQuery, currency = "BRL"
     options.push({
       acomodacao: unit.name,
       product_ids: unit.product_ids,
+      pms_category_ids: unit.pms_category_ids ?? [],
       tarifa: row.label ?? `até ${row.guests} pessoa(s)`,
       total,
       total_formatado: formatMoney(total, currency),
@@ -184,4 +187,49 @@ export function quoteStay(table: PriceTableData, q: QuoteQuery, currency = "BRL"
     ...(notFitting.length ? { nao_comportam: notFitting } : {}),
     observacao: "Valores calculados pela tabela de preços oficial do hotel. Informe-os exatamente como estão. Este cálculo NÃO confirma disponibilidade: a vaga é confirmada no site de reservas ou pela equipe.",
   };
+}
+
+interface PmsRoom { category_id?: number | null; available_units: number | null }
+type TableQuote = ReturnType<typeof quoteStay>;
+
+/**
+ * Vaga pelo PMS, preço pela tabela: cada opção da tabela recebe as unidades livres das suas categorias.
+ * Opções sem categoria vinculada ficam como "não verificadas" (o hóspede confirma no link).
+ */
+export function mergeAvailability(quote: TableQuote, rooms: PmsRoom[]) {
+  const opcoes = (quote as { opcoes?: Array<{ acomodacao: string; pms_category_ids?: number[] }> }).opcoes ?? [];
+  const free = new Map<number, number>();
+  for (const r of rooms) if (r.category_id) free.set(r.category_id, (free.get(r.category_id) ?? 0) + Math.max(0, r.available_units ?? 1));
+  const disponiveis = [];
+  const sem_vaga: string[] = [];
+  const nao_verificadas = [];
+  for (const { pms_category_ids: ids = [], ...o } of opcoes as Array<{ acomodacao: string; pms_category_ids?: number[] }>) {
+    if (!ids.length) {
+      nao_verificadas.push(o);
+      continue;
+    }
+    const units = ids.reduce((sum, id) => sum + (free.get(id) ?? 0), 0);
+    if (units > 0) disponiveis.push({ ...o, unidades_disponiveis: units });
+    else sem_vaga.push(o.acomodacao);
+  }
+  return {
+    ...quote,
+    opcoes: disponiveis,
+    disponibilidade_confirmada: disponiveis.length > 0,
+    ...(sem_vaga.length ? { sem_vaga } : {}),
+    ...(nao_verificadas.length ? { nao_verificadas } : {}),
+    observacao: disponiveis.length
+      ? "Vaga confirmada agora no sistema do hotel para as opcoes listadas; valores da tabela de preços oficial (informe exatamente como estão). As acomodações em sem_vaga estão lotadas nessas datas."
+      : "Nenhuma acomodação que comporta o grupo tem vaga nessas datas no sistema do hotel. Informe isso e sugira outras datas.",
+  };
+}
+
+/** Tira os ids de categoria do PMS do resultado mostrado à IA (só servem para o cruzamento). */
+export function stripPmsIds<T>(result: T): T {
+  const opcoes = (result as { opcoes?: unknown[] } | null)?.opcoes;
+  if (!Array.isArray(opcoes)) return result;
+  return { ...result, opcoes: opcoes.map((o) => {
+    const { pms_category_ids: _ids, ...rest } = o as { pms_category_ids?: unknown };
+    return rest;
+  }) } as T;
 }

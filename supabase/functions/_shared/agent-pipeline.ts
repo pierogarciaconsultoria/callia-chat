@@ -17,6 +17,7 @@ import {
 import { ExternalAgentError, type ExternalAgentPayload, type ExternalAgentReply } from "./external-agent.ts";
 import type { AvailabilityQuery, HbookAvailability } from "./hbook.ts";
 import { matchAlbum, mentionedAlbums } from "./media.ts";
+import { mergeAvailability, stripPmsIds } from "./pricing.ts";
 
 export interface PipelineInput {
   workspaceId: string;
@@ -363,8 +364,9 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
   // Trava: sem confirmação do sistema de reservas, a resposta não afirma vaga e o PIX vem com o aviso.
   const availabilityConfirmed = () =>
     outcome.toolCalls.some((t) => {
-      const r = t.result as { rooms?: unknown[]; sold_out?: boolean } | null;
-      return t.name === "consultar_disponibilidade" && Array.isArray(r?.rooms) && r.rooms.length > 0 && !r.sold_out;
+      const r = t.result as { rooms?: unknown[]; sold_out?: boolean; disponibilidade_confirmada?: boolean } | null;
+      return t.name === "consultar_disponibilidade" &&
+        (r?.disponibilidade_confirmada === true || (Array.isArray(r?.rooms) && r.rooms.length > 0 && !r.sold_out));
     });
   const stayContext = () => mentionsStayDates(customerText) || outcome.toolCalls.some((t) => (actionTools as string[]).includes(t.name));
   const claimsUnconfirmed = (text: string) => stayContext() && !availabilityConfirmed() && claimsAvailability(text);
@@ -445,7 +447,7 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
             ? hits.map((h) => ({ fonte: h.source_title, trecho: h.content }))
             : "Nada encontrado na base de conhecimento.";
         } else if (call.function.name === "calcular_valor" && deps.priceTable) {
-          toolResult = quoteFrom(args);
+          toolResult = stripPmsIds(quoteFrom(args));
         } else if (call.function.name === "enviar_fotos" && deps.photos) {
           const names = deps.photos.albums.map((a) => a.name);
           const album = matchAlbum(String(args.album ?? ""), names);
@@ -461,13 +463,22 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
             toolResult = sent ? { enviadas: sent, album } : { erro: "álbum sem fotos", album };
           }
         } else if (call.function.name === "consultar_disponibilidade" && deps.checkAvailability) {
+          // Com tabela de preços: fechamento primeiro, vaga pelo PMS (categorias vinculadas) e preço pela tabela.
+          const table = deps.priceTable ? quoteFrom(args) as { fechado?: boolean; erro?: string; opcoes?: Array<{ pms_category_ids?: number[] }> } : null;
+          const categoryIds = [...new Set((table?.opcoes ?? []).flatMap((o) => o.pms_category_ids ?? []))];
           try {
-            toolResult = await deps.checkAvailability({
-              checkin: String(args.checkin ?? ""),
-              checkout: String(args.checkout ?? ""),
-              adults: args.adultos === undefined ? undefined : Number(args.adultos),
-              childrenAges: Array.isArray(args.idades_criancas) ? args.idades_criancas.map(Number) : [],
-            });
+            if (table?.fechado || table?.erro) {
+              toolResult = stripPmsIds(table);
+            } else {
+              const found = await deps.checkAvailability({
+                checkin: String(args.checkin ?? ""),
+                checkout: String(args.checkout ?? ""),
+                adults: args.adultos === undefined ? undefined : Number(args.adultos),
+                childrenAges: Array.isArray(args.idades_criancas) ? args.idades_criancas.map(Number) : [],
+                ...(categoryIds.length ? { categoryIds } : {}),
+              });
+              toolResult = table && categoryIds.length ? mergeAvailability(table as never, found.rooms) : found;
+            }
           } catch (err) {
             const link = (err as { details?: { booking_link?: unknown } })?.details?.booking_link;
             toolResult = {
@@ -475,7 +486,7 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
               ...(typeof link === "string" ? { link_reserva: link } : {}),
               ...(deps.priceTable
                 ? {
-                  valores_tabela: quoteFrom(args),
+                  valores_tabela: stripPmsIds(table ?? quoteFrom(args)),
                   instrucao: "Consulta indisponível: informe os valores_tabela (já calculados pela tabela oficial) exatamente como estão e envie o link_reserva para confirmar. A disponibilidade NÃO foi confirmada: não diga que há vaga.",
                 }
                 : { instrucao: "Consulta indisponível: informe o valor pela tabela de preços da base de conhecimento, se houver, e envie o link_reserva para confirmar." }),

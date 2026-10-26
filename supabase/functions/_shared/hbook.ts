@@ -14,6 +14,8 @@ export interface HbookConfig {
 
 export interface HbookRoom {
   name: string;
+  /** Categoria no PMS (Hospedin place_type), para cruzar com a tabela de preços. */
+  category_id?: number | null;
   capacity?: number | null;
   rate: string | null;
   total_price: number;
@@ -63,6 +65,8 @@ export interface AvailabilityQuery {
   /** Quantidade; o motor exige também a idade de cada criança (childrenAges). */
   children?: number;
   childrenAges?: number[];
+  /** Só estas categorias do PMS, sem filtrar pela ocupação cadastrada lá (a capacidade vem da tabela de preços). */
+  categoryIds?: number[];
 }
 
 export function validateQuery(

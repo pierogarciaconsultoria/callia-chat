@@ -163,7 +163,7 @@ describe("pipeline do agente", () => {
     const out = await runAgentPipeline(input("tem quarto de 10 a 12/12?"), deps({ ai, checkAvailability }));
     expect(out.toolCalls[0].result).toMatchObject({ erro: "Motor de reservas indisponível.", link_reserva: "https://hbook.example/Booking?x=1", instrucao: expect.stringMatching(/tabela de preços/) });
     const system = (ai.calls[0] as { messages: Array<{ content: string }> }).messages[0].content;
-    expect(system).toContain("Sempre envie o booking_link");
+    expect(system).toContain("Sempre envie o link de reserva do resultado");
   });
 
   it("IA envia fotos do álbum certo, com limite por pedido", async () => {
@@ -343,6 +343,34 @@ describe("pipeline do agente", () => {
     const paymentInfo = { legal_name: null, cnpj: null, bank_name: null, bank_code: null, agency: null, account: null, account_type: null, payee_name: null, pix_key_type: null, pix_key: null, deposit_percent: 50, payment_instructions: null, pre_reservation_url: "https://pms.hospedin.com/pre-reserva/exemplo" };
     const out = await runAgentPipeline(input("como pago?"), deps({ ai, paymentInfo }));
     expect(out.reply).toBe("Cartão: pelo link de reserva. PIX: faça a pré-reserva pelo link de pré-reserva abaixo e a equipe confirma a vaga.\n\nPré-reserva para pagamento por PIX: https://pms.hospedin.com/pre-reserva/exemplo");
+  });
+
+  it("com tabela: consulta o Hospedin só nas categorias vinculadas e devolve o preço da tabela", async () => {
+    const quote = vi.fn(() => ({ noites: 5, opcoes: [{ acomodacao: "Apartamentos 205 e 206", total: 5000, pms_category_ids: [275] }, { acomodacao: "Kitnet", total: 2750, pms_category_ids: [276] }] }));
+    const checkAvailability = vi.fn(async () => ({ checkin: "", checkout: "", nights: 5, adults: 4, children: 0, children_ages: [], currency: "BRL", sold_out: false, booking_link: null,
+      rooms: [{ name: "Casal + 2", category_id: 275, rate: null, total_price: 3000, price_per_night: 600, available_units: 1 }] }));
+    const ai = fakeAi([
+      { toolCalls: [{ id: "t1", type: "function", function: { name: "consultar_disponibilidade", arguments: '{"checkin":"27/12/2026","checkout":"01/01/2027","adultos":4}' } }] },
+      { content: "Temos o 205 disponível: R$ 5.000,00." },
+    ]);
+    const out = await runAgentPipeline(input("205 de 27/12/2026 a 01/01/2027, somos 4"), deps({ ai, priceTable: { quote }, checkAvailability } as never));
+    expect(checkAvailability).toHaveBeenCalledWith(expect.objectContaining({ categoryIds: [275, 276] }));
+    const result = out.toolCalls[0].result as { opcoes: Array<Record<string, unknown>>; sem_vaga: string[]; disponibilidade_confirmada: boolean };
+    expect(result.disponibilidade_confirmada).toBe(true);
+    expect(result.opcoes).toEqual([{ acomodacao: "Apartamentos 205 e 206", total: 5000, unidades_disponiveis: 1 }]);
+    expect(result.sem_vaga).toEqual(["Kitnet"]);
+    expect(out.reply).toBe("Temos o 205 disponível: R$ 5.000,00.");
+  });
+
+  it("período fechado na tabela: nem consulta o Hospedin", async () => {
+    const quote = vi.fn(() => ({ fechado: true, periodos_fechados: "Inverno: 21/06/2027 a 22/09/2027", opcoes: [] }));
+    const checkAvailability = vi.fn();
+    const ai = fakeAi([
+      { toolCalls: [{ id: "t1", type: "function", function: { name: "consultar_disponibilidade", arguments: '{"checkin":"10/07/2027","checkout":"15/07/2027","adultos":2}' } }] },
+      { content: "O hotel estará fechado nessas datas." },
+    ]);
+    await runAgentPipeline(input("10/07/2027 a 15/07/2027, um casal"), deps({ ai, priceTable: { quote }, checkAvailability } as never));
+    expect(checkAvailability).not.toHaveBeenCalled();
   });
 
   it("com vaga confirmada pelo sistema de reservas, a resposta não é alterada", async () => {

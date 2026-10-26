@@ -286,10 +286,11 @@ export function buildSystemPrompt(ctx: PromptContext): string {
       "# Valores (tabela de preços oficial)",
       "- Para informar qualquer valor, use a ferramenta calcular_valor (ou os valores_tabela que vierem da consulta). Ela calcula noite a noite pelo período e pelo número de pessoas.",
       "- Informe os valores EXATAMENTE como a ferramenta devolveu (diária, total, período). Nunca refaça a conta, nunca arredonde e nunca troque o período.",
-      "- Apresente as opções que comportam o grupo (no máximo 3, da mais barata para a mais cara), diga que é o valor da tabela e envie o link_reserva que veio no resultado (nunca o endereço do site) para confirmar.",
+      "- Apresente até 3 opções do resultado, da mais barata para a mais cara, e envie o link_reserva que veio no resultado (nunca o endereço do site). Se houver mais opções, diga que há outras e pergunte se quer conhecê-las.",
+      "- Só diga que uma acomodação não comporta o grupo se ela estiver em nao_comportam, e que está sem vaga só se estiver em sem_vaga. Nunca invente o motivo de uma opção não ter sido mostrada.",
       "- Se atende_estadia_minima for falso, avise a estadia mínima antes do valor.",
       "- Se o resultado vier com fechado, informe que o hotel estará fechado nessas datas (periodos_fechados) e não cote nem ofereça reserva para elas.",
-      "- Valor da tabela NÃO confirma disponibilidade. Nunca diga que há vaga ou que a disponibilidade está confirmada, a menos que consultar_disponibilidade tenha retornado quartos disponíveis.",
+      "- Valor da tabela NÃO confirma disponibilidade. Nunca diga que há vaga ou que a disponibilidade está confirmada, a menos que consultar_disponibilidade tenha retornado disponibilidade_confirmada ou quartos disponíveis.",
     ].join("\n"));
   }
 
@@ -333,8 +334,13 @@ export function buildSystemPrompt(ctx: PromptContext): string {
         "- Para disponibilidade e preços de hospedagem, use a ferramenta consultar_disponibilidade. Se faltar data de entrada, data de saída ou número de hóspedes, pergunte antes.",
         "- Se houver crianças, pergunte a idade de cada uma antes de consultar: a tarifa depende da idade.",
         "- Nunca estime preços sem consultar. Informe valor total, número de noites e o que a tarifa inclui quando vier no resultado.",
-        "- Sempre envie o booking_link do resultado para o hóspede concluir a reserva.",
-        "- Se a consulta falhar, NÃO desista do valor: use a tabela de preços das informações oficiais fixas (ou da base de conhecimento), calcule noite a noite pelo período, informe a diária e o total como \"valor da tabela\" e envie o link_reserva para confirmar. Só sem valor em nenhuma fonte, envie apenas o link.",
+        "- Sempre envie o link de reserva do resultado (link_reserva ou booking_link) para o hóspede concluir a reserva.",
+        ...(ctx.hasPriceTable
+          ? [
+            "- Quando o resultado trouxer disponibilidade_confirmada, há vaga confirmada só para as opcoes listadas (unidades_disponiveis); as de sem_vaga estão lotadas nessas datas. Informe os valores dessas opções exatamente como vieram.",
+            "- Se a consulta falhar, use os valores_tabela do resultado e envie o link_reserva para confirmar a vaga.",
+          ]
+          : ["- Se a consulta falhar, NÃO desista do valor: use a tabela de preços das informações oficiais fixas (ou da base de conhecimento), calcule noite a noite pelo período, informe a diária e o total como \"valor da tabela\" e envie o link_reserva para confirmar. Só sem valor em nenhuma fonte, envie apenas o link."]),
       ].join("\n"),
     );
   }

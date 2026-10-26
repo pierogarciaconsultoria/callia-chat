@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { periodForNight, priceTableSchema, quoteStay } from "../../supabase/functions/_shared/pricing.ts";
+import { mergeAvailability, periodForNight, priceTableSchema, quoteStay } from "../../supabase/functions/_shared/pricing.ts";
 
 const table = priceTableSchema.parse(JSON.parse(readFileSync("scripts/data/morada-price-table.json", "utf8")));
 const best = (q: Parameters<typeof quoteStay>[1]) => {
@@ -113,5 +113,30 @@ describe("tabela de preços: períodos fechados", () => {
 
   it("rejeita fechamento com fim antes do início", () => {
     expect(priceTableSchema.safeParse({ ...table, closed: [{ name: "x", from: "2027-09-22", to: "2027-06-21" }] }).success).toBe(false);
+  });
+});
+
+describe("vaga pelo Hospedin, preço pela tabela", () => {
+  const mapped = priceTableSchema.parse({
+    ...table,
+    units: table.units.map((u) => ({ ...u, pms_category_ids: u.name.startsWith("Apartamentos 205") ? [275] : u.name === "Kitnet" ? [276] : [] })),
+  });
+
+  it("lista só as opções com vaga, com o preço da tabela; lotadas vão para sem_vaga", () => {
+    const quote = quoteStay(mapped, { checkin: "27/12/2026", checkout: "01/01/2027", adults: 2 });
+    const r = mergeAvailability(quote, [{ category_id: 275, available_units: 2 }, { category_id: 276, available_units: 0 }]) as {
+      opcoes: Array<{ acomodacao: string; total: number; unidades_disponiveis: number }>; disponibilidade_confirmada: boolean; sem_vaga?: string[]; nao_verificadas?: unknown[];
+    };
+    expect(r.disponibilidade_confirmada).toBe(true);
+    expect(r.opcoes).toEqual([expect.objectContaining({ acomodacao: "Apartamentos 205 e 206", total: 5000, unidades_disponiveis: 2 })]);
+    expect(r.sem_vaga).toEqual(["Kitnet"]);
+    expect(r.nao_verificadas?.length).toBeGreaterThan(0);
+  });
+
+  it("sem nenhuma vaga, não confirma disponibilidade", () => {
+    const quote = quoteStay(mapped, { checkin: "27/12/2026", checkout: "01/01/2027", adults: 4 });
+    const r = mergeAvailability(quote, [{ category_id: 275, available_units: 0 }]) as { disponibilidade_confirmada: boolean; opcoes: unknown[] };
+    expect(r.disponibilidade_confirmada).toBe(false);
+    expect(r.opcoes).toEqual([]);
   });
 });
