@@ -12,6 +12,6 @@ export function PlatformAdminRoute({ children }: { children: ReactNode }) {
   if (loading) return <PageLoader />;
   if (!user) return <Navigate to="/" replace state={{ from: location.pathname }} />;
   if (platformAdminLoading) return <PageLoader label="Verificando permissões…" />;
-  if (!isPlatformAdmin) return <Navigate to="/inbox" replace />;
+  if (!isPlatformAdmin) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }

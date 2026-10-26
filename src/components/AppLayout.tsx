@@ -69,7 +69,7 @@ export function AppLayout() {
 
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-2">
         {inConsole && workspace && (
-          <NavLink to="/inbox" onClick={() => setOpen(false)} className={linkClass({ isActive: false })}>
+          <NavLink to="/dashboard" onClick={() => setOpen(false)} className={linkClass({ isActive: false })}>
             <ArrowLeft className="h-4 w-4 shrink-0" />
             Voltar ao workspace
           </NavLink>

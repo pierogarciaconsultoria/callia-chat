@@ -7,6 +7,7 @@ import {
   Bot,
   BookOpen,
   KeyRound,
+  LayoutDashboard,
   MessagesSquare,
   Plug,
   ScrollText,
@@ -24,6 +25,7 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: NavItem[] = [
+  { to: "/dashboard", label: "Painel", icon: LayoutDashboard, adminOnly: false },
   { to: "/inbox", label: "Inbox", icon: MessagesSquare, adminOnly: false },
   { to: "/agent", label: "Agente de IA", icon: Bot, adminOnly: true },
   { to: "/knowledge-base", label: "Base de conhecimento", icon: BookOpen, adminOnly: true },

@@ -13,3 +13,31 @@ html, body, #root { height: 100%; }
 body {
   @apply bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
 }
+
+/* Gráficos do painel: paleta validada (fundo dos cartões #fff / slate-900). Cores só nas marcas; textos usam as cores de texto. */
+.viz {
+  --viz-1: #2a78d6;   /* hóspede / série única */
+  --viz-2: #eb6834;   /* MarIA */
+  --viz-3: #1baf7a;   /* equipe */
+  --viz-4: #eda100;   /* transferidas pela IA */
+  --viz-muted: #b6b4ad;
+  --viz-grid: #e2e8f0;
+  --viz-axis: #cbd5e1;
+  --viz-surface: #ffffff;
+  --viz-good: #006300;
+  --viz-bad: #d03b3b;
+}
+@media (prefers-color-scheme: dark) {
+  .viz {
+    --viz-1: #3987e5;
+    --viz-2: #d95926;
+    --viz-3: #199e70;
+    --viz-4: #c98500;
+    --viz-muted: #5b5a55;
+    --viz-grid: #1e293b;
+    --viz-axis: #334155;
+    --viz-surface: #0f172a;
+    --viz-good: #0ca30c;
+    --viz-bad: #e66767;
+  }
+}

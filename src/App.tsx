@@ -8,6 +8,7 @@ import { PageLoader } from "@/components/ui";
 const Login = lazy(() => import("@/pages/Login"));
 const SetPassword = lazy(() => import("@/pages/SetPassword"));
 const Inbox = lazy(() => import("@/pages/Inbox"));
+const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const Agent = lazy(() => import("@/pages/Agent"));
 const AgentSetup = lazy(() => import("@/pages/AgentSetup"));
 const KnowledgeBase = lazy(() => import("@/pages/KnowledgeBase"));
@@ -44,6 +45,7 @@ export default function App() {
               </ProtectedRoute>
             }
           >
+            <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/inbox" element={<Inbox />} />
             <Route path="/inbox/:conversationId" element={<Inbox />} />
             <Route path="/team" element={<Team />} />

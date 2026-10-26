@@ -149,7 +149,7 @@ export default function Login() {
   if (loading || (user && ws.loading)) return <PageLoader />;
   if (user && ws.workspaceId) {
     const from = (location.state as { from?: string } | null)?.from;
-    return <Navigate to={from && from !== "/" ? from : "/inbox"} replace />;
+    return <Navigate to={from && from !== "/" ? from : "/dashboard"} replace />;
   }
   if (user) return <Onboarding />;
 

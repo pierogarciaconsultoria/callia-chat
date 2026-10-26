@@ -116,6 +116,29 @@ do $$ begin
 exception when insufficient_privilege then null;
 end $$;
 
+-- 9. Painel de atendimentos: só membros (ou a plataforma) leem; o cálculo interno não é exposto.
+reset role;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-0000-0000-0000-000000000006","role":"authenticated"}', true);
+set role authenticated;
+do $$ begin
+  perform public.get_dashboard(current_setting('test.ws')::uuid, current_date - 6, current_date);
+  raise exception 'estranho não pode ler o painel';
+exception when insufficient_privilege then null;
+end $$;
+do $$ begin
+  perform public.dashboard_period_kpis(current_setting('test.ws')::uuid, now() - interval '1 day', now(), null);
+  raise exception 'cálculo interno não pode ser chamado direto';
+exception when insufficient_privilege then null;
+end $$;
+reset role;
+select set_config('request.jwt.claims', '', true);
+do $$
+declare d jsonb := public.get_dashboard(current_setting('test.ws')::uuid, current_date - 6, current_date);
+begin
+  assert (d #>> '{current,conversations}')::int = 0 and jsonb_array_length(d->'series') = 7 and jsonb_array_length(d->'by_hour') = 24, 'painel: ' || d::text;
+  assert jsonb_array_length(public.get_dashboard(current_setting('test.ws')::uuid, current_date, current_date)->'series') = 24, 'um dia = 24 horas';
+end $$;
+
 reset role;
 select 'Platform smoke OK' as result;
 rollback;
