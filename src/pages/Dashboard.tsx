@@ -6,12 +6,12 @@ import { supabase } from "@/lib/supabase";
 import { unwrap } from "@/lib/functions";
 import { cn } from "@/lib/cn";
 import { useRequiredWorkspace } from "@/lib/workspace";
-import { formatPhone } from "@/lib/format";
+import { formatDateTime, formatMoney, formatPhone } from "@/lib/format";
 import { useAgentConfig } from "@/hooks/use-agent-config";
 import { useWhatsAppInstances } from "@/hooks/use-whatsapp-instances";
 import {
   bucketLabel, bucketTitle, compact, delta, duration, HANDOFF_LABELS, labeledCounts, percent, RANGE_PRESETS, rangeFor,
-  TOOL_LABELS, trimFuture, waitingFor, type DashboardData, type RangePreset,
+  CHANNEL_LABELS, TOOL_LABELS, trimFuture, waitingFor, type DashboardData, type QuotesReservations as QuotesData, type RangePreset,
 } from "@/lib/dashboard";
 import { BarList, ChartCard, ColumnChart, DataTable, Legend, LineChart, StackedBar } from "@/components/charts";
 import { Badge, Card, CardBody, CardHeader, ErrorState, Input, PageHeader, Select, Spinner } from "@/components/ui";
@@ -37,6 +37,16 @@ export default function Dashboard() {
       unwrap(await supabase.rpc("get_dashboard", {
         p_workspace_id: workspaceId, p_from: range.from, p_to: range.to, p_instance_id: instanceId || null,
       })) as unknown as DashboardData,
+  });
+
+  const sales = useQuery({
+    queryKey: ["quotes-reservations", workspaceId, range.from, range.to, instanceId],
+    placeholderData: keepPreviousData,
+    refetchInterval: 60_000,
+    queryFn: async () =>
+      unwrap(await supabase.rpc("get_quotes_reservations", {
+        p_workspace_id: workspaceId, p_from: range.from, p_to: range.to, p_instance_id: instanceId || null,
+      })) as unknown as QuotesData,
   });
 
   return (
@@ -71,6 +81,7 @@ export default function Dashboard() {
         <div className={cn("space-y-5 transition-opacity", query.isFetching && query.isPlaceholderData && "opacity-60")}>
           <Waiting data={query.data} />
           <Kpis data={query.data} agent={agent} />
+          {sales.data && <QuotesReservations data={sales.data} agent={agent} />}
           <Activity data={query.data} agent={agent} />
           <div className="grid gap-5 lg:grid-cols-2">
             <PeakHours data={query.data} />
@@ -175,6 +186,50 @@ function Kpis({ data, agent }: { data: DashboardData; agent: string }) {
         <DeltaText current={c.unanswered} previous={p.unanswered} upIsGood={false} />
       </Tile>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- Orçamentos x reservas
+
+function QuotesReservations({ data, agent }: { data: QuotesData; agent: string }) {
+  const conversion = percent(data.from_quote, data.quoted_conversations);
+  const channels = labeledCounts(data.by_channel, CHANNEL_LABELS);
+  return (
+    <section className="space-y-3" aria-labelledby="quotes-title">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="quotes-title" className="text-base font-semibold text-slate-900 dark:text-slate-100">Orçamentos e reservas</h2>
+        {data.pms_connected && data.tracking_since && (
+          <p className="text-xs text-slate-500">Reservas contadas desde {formatDateTime(data.tracking_since)} (início da sincronização com o Hospedin)</p>
+        )}
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Tile label="Orçamentos realizados" value={compact(data.quotes)} hint={`${data.quoted_conversations} conversa(s) receberam orçamento da ${agent}`} />
+        {data.pms_connected ? (
+          <>
+            <Tile label="Reservas efetuadas" value={compact(data.reservations)}
+              hint={`${data.confirmed} confirmada(s) · ${data.pre_reservations} pré-reserva(s) · ${data.canceled} cancelada(s), todos os canais`} />
+            <Tile label="Reservas após orçamento" value={compact(data.from_quote)}
+              hint={data.from_quote ? `${formatMoney(data.from_quote_total_cents / 100)} em diárias · mesmo telefone, até 30 dias depois` : "hóspede com o mesmo telefone, até 30 dias depois do orçamento"} />
+            <Tile label="Conversão dos orçamentos" value={conversion === null ? "—" : `${conversion}%`}
+              hint={`${data.from_quote} reserva(s) de ${data.quoted_conversations} conversa(s) com orçamento`} />
+          </>
+        ) : (
+          <Card className="sm:col-span-1 lg:col-span-3">
+            <CardBody className="flex h-full items-center">
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                Conecte o Hospedin em <Link to="/integrations" className="font-medium text-brand hover:underline">Integrações</Link> para contar as reservas efetuadas e a conversão dos orçamentos.
+              </p>
+            </CardBody>
+          </Card>
+        )}
+      </div>
+      {data.pms_connected && (
+        <ChartCard title="Reservas por canal" description="Reservas confirmadas e pré-reservas do período, por canal de venda."
+          table={<DataTable head={["Canal", "Reservas"]} rows={channels.map((c) => [c.label, c.value])} />}>
+          <BarList items={channels} color={C.guest} empty="Nenhuma reserva nova no período." />
+        </ChartCard>
+      )}
+    </section>
   );
 }
 

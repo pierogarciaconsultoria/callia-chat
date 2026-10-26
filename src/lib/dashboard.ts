@@ -38,6 +38,28 @@ export interface DashboardData {
   waiting: WaitingConversation[];
 }
 
+export interface QuotesReservations {
+  pms_connected: boolean;
+  tracking_since: string | null;
+  quotes: number;
+  quoted_conversations: number;
+  reservations: number;
+  confirmed: number;
+  pre_reservations: number;
+  canceled: number;
+  from_quote: number;
+  from_quote_total_cents: number;
+  by_channel: Record<string, number>;
+}
+
+export const CHANNEL_LABELS: Record<string, string> = {
+  site: "Site de reservas (cartão)",
+  pre_reservation_form: "Formulário de pré-reserva (PIX)",
+  front_desk: "Balcão",
+  ota: "Booking, Airbnb e outras agências",
+  other: "Outros canais",
+};
+
 // ---------------------------------------------------------------- Período
 
 export type RangePreset = "today" | "7d" | "30d" | "90d" | "month" | "custom";

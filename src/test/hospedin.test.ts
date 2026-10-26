@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  accountFromClaims, decodeJwtPayload, detectPriceUnit, fetchHospedinAvailability, HospedinClient, quoteStay, stayNights,
+  accountFromClaims, decodeJwtPayload, detectPriceUnit, fetchHospedinAvailability, guestPhoneDigits, HospedinClient, quoteStay, stayNights,
 } from "../../supabase/functions/_shared/hospedin.ts";
 import { nextWeekend } from "../../supabase/functions/_shared/availability.ts";
 import { parseBrDate } from "../../supabase/functions/_shared/hbook.ts";
@@ -112,5 +112,15 @@ describe("Hospedin: cliente e consulta", () => {
     expect(await client.myAccount("morada")).toEqual({ name: "Morada do Sol" });
     const logins = fetchImpl.mock.calls.filter(([u]) => String(u).endsWith("/sessions")).length;
     expect(logins).toBe(2);
+  });
+});
+
+describe("Hospedin: telefone do hóspede", () => {
+  it("junta DDI e número, só dígitos, sem duplicar o DDI", () => {
+    expect(guestPhoneDigits("55", "(48) 99997-8131")).toBe("5548999978131");
+    expect(guestPhoneDigits("+55", "5548999978131")).toBe("5548999978131");
+    expect(guestPhoneDigits(null, "48 99997-8131")).toBe("5548999978131");
+    expect(guestPhoneDigits("351", "912 345 678")).toBe("351912345678");
+    expect(guestPhoneDigits("55", "123")).toBeNull();
   });
 });

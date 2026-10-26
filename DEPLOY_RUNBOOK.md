@@ -35,7 +35,7 @@ openssl rand -base64 48   # INTERNAL_FUNCTION_SECRET, CALLIA_ENCRYPTION_KEY, API
 Copie `supabase/functions/*` (incluindo `_shared`) para o volume de functions do stack do Callia.
 O `_shared` entra no bundle de cada function: ao alterá-lo, republique as que o importam.
 
-No edge-runtime: `NO_VERIFY_JWT_FUNCTIONS=whatsapp-webhook,public-api,process-message,webhook-dispatcher,mcp`
+No edge-runtime: `NO_VERIFY_JWT_FUNCTIONS=whatsapp-webhook,public-api,process-message,webhook-dispatcher,mcp,pms-sync`
 (essas autenticam por token próprio, `x-api-key` ou segredo interno; ver `supabase/config.toml`).
 
 ## 5. Cron do dispatcher
@@ -80,7 +80,7 @@ Para o fluxo OAuth de ChatGPT/Claude, habilite o servidor OAuth 2.1 do Supabase 
 | Supabase | `/opt/supabase-callia` (containers `callia-*`, Envoy em `127.0.0.1:8300`, pooler `127.0.0.1:5462/6573`) |
 | Segredos | `/opt/supabase-callia/.env` (stack) e `/opt/supabase-callia/functions.env` (functions) |
 | Evolution | `/opt/callia-evolution` (`callia-evolution`, sem porta publicada; rede `callia_default`) |
-| Cron | `callia-webhook-dispatcher` em `cron.job` do banco `callia-db` |
+| Cron | `callia-webhook-dispatcher` (1 min) e `callia-pms-sync` (15 min, [supabase/sql/cron_pms_sync.sql](supabase/sql/cron_pms_sync.sql)) em `cron.job` do banco `callia-db` |
 | Certificado | Let's Encrypt via Certbot (renovação automática) |
 
 - Redeploy: `bash scripts/deploy.sh` (ou `frontend` / `functions`).

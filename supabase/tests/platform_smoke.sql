@@ -139,6 +139,43 @@ begin
   assert jsonb_array_length(public.get_dashboard(current_setting('test.ws')::uuid, current_date, current_date)->'series') = 24, 'um dia = 24 horas';
 end $$;
 
+-- 10. Orçamentos x reservas: reserva do mesmo telefone após orçamento da IA conta como conversão.
+reset role;
+select set_config('request.jwt.claims', '', true);
+do $$
+declare
+  ws uuid := current_setting('test.ws')::uuid;
+  conv uuid;
+  msg uuid;
+  r jsonb;
+begin
+  assert public.phone_key('554899978131') = public.phone_key('(48) 99997-8131'), 'WhatsApp sem o 9º dígito casa com o cadastro';
+  insert into conversations (workspace_id, channel, contact_phone) values (ws, 'whatsapp', '554899978131') returning id into conv;
+  insert into messages (workspace_id, conversation_id, direction, sender, type, content) values (ws, conv, 'inbound', 'customer', 'text', 'quanto fica?') returning id into msg;
+  insert into agent_runs (workspace_id, conversation_id, trigger_message_id, status, usage, created_at)
+    values (ws, conv, msg, 'replied', '{"tool_calls": ["calcular_valor"]}', now() - interval '2 days');
+  insert into pms_reservations (workspace_id, provider, external_id, status, sale_channel, guest_phone, total_cents, baseline, first_seen_at) values
+    (ws, 'hospedin', 1, 'reservation', 'Formulário pré-reservas', '5548999978131', 500000, false, now() - interval '1 hour'),
+    (ws, 'hospedin', 2, 'pre_reservation', 'HBOOK', '5511988887777', 80000, false, now() - interval '1 hour'),
+    (ws, 'hospedin', 3, 'canceled', 'Balcão', '5548999978131', 1000, false, now() - interval '1 hour'),
+    (ws, 'hospedin', 4, 'reservation', 'Balcão', '5548999978131', 1000, true, now() - interval '1 hour');
+  r := public.get_quotes_reservations(ws, current_date - 6, current_date);
+  assert (r->>'quotes')::int = 1 and (r->>'quoted_conversations')::int = 1, 'orçamentos: ' || r::text;
+  assert (r->>'reservations')::int = 2 and (r->>'confirmed')::int = 1 and (r->>'pre_reservations')::int = 1 and (r->>'canceled')::int = 1, 'reservas (sem base e sem canceladas): ' || r::text;
+  assert (r->>'from_quote')::int = 1 and (r->>'from_quote_total_cents')::bigint = 500000, 'conversão pelo telefone: ' || r::text;
+  assert (r #>> '{by_channel,pre_reservation_form}')::int = 1 and (r #>> '{by_channel,site}')::int = 1, 'canais: ' || r::text;
+end $$;
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-0000-0000-0000-000000000006","role":"authenticated"}', true);
+set role authenticated;
+do $$ begin
+  perform public.get_quotes_reservations(current_setting('test.ws')::uuid, current_date - 6, current_date);
+  raise exception 'estranho não pode ler orçamentos x reservas';
+exception when insufficient_privilege then null;
+end $$;
+do $$ begin
+  assert (select count(*) from public.pms_reservations) = 0, 'estranho não vê reservas de outro workspace';
+end $$;
+
 reset role;
 select 'Platform smoke OK' as result;
 rollback;

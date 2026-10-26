@@ -35,9 +35,28 @@ export interface DailyRate {
   availability: number | null;
 }
 
+export interface HospedinReservation {
+  id: number;
+  searchable_code?: string | null;
+  status: string;
+  sale_channel?: string | null;
+  check_in?: string | null;
+  check_out?: string | null;
+  place_type_id?: number | null;
+  total_daily_cents?: number | null;
+}
+
 // ---------------------------------------------------------------------------
 // Funções puras
 // ---------------------------------------------------------------------------
+/** DDI + telefone do cadastro do hóspede → só dígitos com DDI (ex.: "5548999978131"). */
+export function guestPhoneDigits(ddi: unknown, phone: unknown): string | null {
+  const p = String(phone ?? "").replace(/\D/g, "");
+  if (p.length < 8) return null;
+  const d = String(ddi ?? "").replace(/\D/g, "") || "55";
+  return p.startsWith(d) && p.length > 11 ? p : `${d}${p}`;
+}
+
 function b64urlDecode(part: string): string {
   const pad = part.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((part.length + 3) % 4);
   return atob(pad);
@@ -192,6 +211,25 @@ export class HospedinClient {
       if (Array.isArray(body) || page >= last || !items.length) break;
     }
     return out.filter((p) => p.status !== false);
+  }
+
+  /** Página da lista de reservas (a mais recente primeiro). */
+  async reservations(account: string, page = 1, limit = 100): Promise<{ items: HospedinReservation[]; last: number }> {
+    const body = await this.get(`/api/v2/${encodeURIComponent(account)}/reservations?page=${page}&limit=${limit}`);
+    return { items: Array.isArray(body) ? body : body?.data ?? [], last: Number(body?.pagination?.last ?? 1) };
+  }
+
+  async reservationDetail(account: string, id: number): Promise<{ guest_id: number | null; adults: number | null; children: number | null }> {
+    const body = await this.get(`/api/v2/${encodeURIComponent(account)}/reservations/${id}`);
+    const d = body?.data ?? body;
+    return { guest_id: d?.guest_id ?? null, adults: d?.adults ?? null, children: d?.children ?? null };
+  }
+
+  /** Telefone do hóspede (DDI + número), só dígitos; null se não houver. */
+  async guestPhone(account: string, guestId: number): Promise<string | null> {
+    const body = await this.get(`/api/v2/${encodeURIComponent(account)}/guests/${guestId}`);
+    const c = (body?.data ?? body)?.contact;
+    return guestPhoneDigits(c?.ddi, c?.phone) ?? guestPhoneDigits(c?.extra_ddi, c?.extra_phone);
   }
 
   async rates(account: string, placeTypeId: string | number, begin: string, end: string): Promise<DailyRate[]> {
