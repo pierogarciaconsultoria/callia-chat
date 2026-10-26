@@ -1,23 +1,22 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react-swc";
-import path from "path";
-import { componentTagger } from "lovable-tagger";
-import { mcpPlugin } from "@lovable.dev/mcp-js/stacks/supabase/vite";
+import react from "@vitejs/plugin-react";
+import path from "node:path";
 
-// https://vitejs.dev/config/
-export default defineConfig(({ mode }) => ({
-  server: {
-    host: "::",
-    port: 8085,
-    hmr: {
-      overlay: false,
-    },
-  },
-  plugins: [react(), mcpPlugin(), mode === "development" && componentTagger()].filter(Boolean),
+export default defineConfig({
+  plugins: [react()],
   resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-    },
-    dedupe: ["react", "react-dom", "react/jsx-runtime", "react/jsx-dev-runtime", "@tanstack/react-query", "@tanstack/query-core"],
+    alias: [
+      { find: "@", replacement: path.resolve(__dirname, "src") },
+      // Os módulos _shared das edge functions importam pacotes com especificador Deno (npm:pkg@x).
+      { find: /^npm:(@?[^@]+)@[^/]+$/, replacement: "$1" },
+    ],
   },
-}));
+  server: { port: 8080 },
+  build: { sourcemap: false, chunkSizeWarningLimit: 700 },
+  test: {
+    environment: "node",
+    include: ["src/test/**/*.test.ts", "src/test/**/*.test.tsx"],
+    environmentMatchGlobs: [["src/test/**/*.test.tsx", "jsdom"]],
+  },
+});

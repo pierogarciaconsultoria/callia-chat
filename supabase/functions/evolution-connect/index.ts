@@ -1,277 +1,179 @@
-// @ts-nocheck
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { corsHeaders, jsonResponse, requireAdminContext } from "../_shared/auth.ts";
-import {
-  evolutionRequest,
-  extractQrCode,
-  mapEvolutionStatus,
-  type EvolutionInstanceRecord,
-} from "../_shared/evolution.ts";
+// Gestão de instâncias na Evolution: criar, conectar (QR), sincronizar, desconectar, excluir, padrão e token.
+import { createHandler, json, readJson, RuntimeError } from "../_shared/http.ts";
+import { assertActive, assertCanAdd, loadEntitlements } from "../_shared/entitlements.ts";
+import { randomToken, sha256Hex } from "../_shared/crypto.ts";
+import { evolutionFor } from "../_shared/channel.ts";
+import { normalizePhone } from "../_shared/evolution.ts";
+import { adminDb, audit, type Db, functionUrl, optionalEnv, requireUser, requireWorkspaceRole } from "../_shared/supabase.ts";
 
-type FormPayload = {
-  display_name?: string;
-  instance_name?: string;
-  evolution_base_url?: string;
-  provider_secret_ref?: string;
-  phone_number?: string;
-  is_default?: boolean;
-};
+const PUBLIC_COLUMNS =
+  "id, workspace_id, name, instance_name, provider, status, qr_code, qr_updated_at, phone_number, profile_name, is_default, last_connected_at, last_error, webhook_token_rotated_at, created_at, updated_at";
 
-type Action = "create_instance" | "connect_instance" | "refresh_status" | "disconnect_instance";
-
-function getWebhookUrl(instance: EvolutionInstanceRecord) {
-  const supabaseUrl =
-    (globalThis as { Deno?: { env?: { get: (key: string) => string | undefined } } }).Deno?.env?.get(
-      "SUPABASE_URL",
-    ) ?? "";
-
-  return `${supabaseUrl.replace(/\/+$/, "")}/functions/v1/whatsapp-webhook?instance_id=${instance.id}&token=${instance.webhook_token}`;
+interface Body {
+  action?: string;
+  workspace_id?: string;
+  instance_id?: string;
+  name?: string;
+  make_default?: boolean;
+  /** DDD + número: conecta por código de pareamento em vez de QR. */
+  phone?: string;
 }
 
-function normalizePayload(payload: unknown) {
-  const value = (payload ?? {}) as FormPayload;
-  return {
-    display_name: value.display_name?.trim() || null,
-    instance_name: value.instance_name?.trim() || "",
-    evolution_base_url: value.evolution_base_url?.trim() || null,
-    provider_secret_ref: value.provider_secret_ref?.trim() || null,
-    phone_number: value.phone_number?.trim() || null,
-    is_default: Boolean(value.is_default),
-  };
+function pairingPhone(phone: unknown): string | null {
+  if (phone === undefined || phone === null || phone === "") return null;
+  const normalized = normalizePhone(String(phone));
+  if (!normalized) throw new RuntimeError("invalid_request", "Número inválido. Use DDD + número, ex.: (48) 99999-0000.");
+  return normalized;
 }
 
-async function loadInstance(
-  supabase: Awaited<ReturnType<typeof requireAdminContext>>["supabase"],
-  workspaceId: string,
-  instanceId: string,
-) {
-  const { data } = await supabase
+function webhookUrl(instanceId: string, token: string): string {
+  // A Evolution precisa alcançar esta URL; em self-host costuma ser o endereço público do Supabase.
+  const base = optionalEnv("EVOLUTION_WEBHOOK_BASE_URL")?.replace(/\/$/, "") ?? functionUrl("whatsapp-webhook").replace(/\/whatsapp-webhook$/, "");
+  return `${base}/whatsapp-webhook?instance=${instanceId}&token=${token}`;
+}
+
+function toDataUrl(base64: string | undefined | null): string | null {
+  if (!base64) return null;
+  return base64.startsWith("data:") ? base64 : `data:image/png;base64,${base64}`;
+}
+
+Deno.serve(createHandler("evolution-connect", async ({ req, correlationId }) => {
+  if (req.method !== "POST") throw new RuntimeError("invalid_request", "Use POST.");
+  const user = await requireUser(req);
+  const body = await readJson<Body>(req);
+  const db = adminDb();
+
+  if (body.action === "create") {
+    await requireWorkspaceRole(user.id, body.workspace_id);
+    const name = body.name?.trim() ?? "";
+    if (name.length < 2 || name.length > 60) throw new RuntimeError("invalid_request", "Nome deve ter entre 2 e 60 caracteres.");
+    const workspaceId = body.workspace_id as string;
+    const entitlements = await loadEntitlements(db, workspaceId);
+    assertActive(entitlements);
+    assertCanAdd(entitlements, "instances");
+    const { count } = await db.from("whatsapp_instances").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId);
+    const makeDefault = body.make_default === true || (count ?? 0) === 0;
+    const token = randomToken(40);
+    const instanceName = `callia-${workspaceId.slice(0, 8)}-${randomToken(6).toLowerCase()}`;
+
+    if (makeDefault) await db.from("whatsapp_instances").update({ is_default: false }).eq("workspace_id", workspaceId).eq("is_default", true);
+    const { data: row, error } = await db.from("whatsapp_instances").insert({
+      workspace_id: workspaceId,
+      name,
+      instance_name: instanceName,
+      webhook_token_hash: await sha256Hex(token),
+      webhook_token_rotated_at: new Date().toISOString(),
+      is_default: makeDefault,
+      status: "connecting",
+    }).select("id, provider_secret_ref").single();
+    if (error) throw new RuntimeError("internal_error", "Falha ao criar instância.", { db: error.message });
+
+    const phone = pairingPhone(body.phone);
+    let pairingCode: string | null = null;
+    try {
+      const evo = evolutionFor(row);
+      const created = await evo.createInstance(instanceName, webhookUrl(row.id, token));
+      let qr = toDataUrl(created?.qrcode?.base64);
+      if (phone) {
+        const paired = await evo.connect(instanceName, phone);
+        pairingCode = paired?.pairingCode ?? null;
+        qr = toDataUrl(paired?.base64) ?? qr;
+      }
+      await db.from("whatsapp_instances").update({
+        status: qr || pairingCode ? "qr" : "connecting",
+        qr_code: qr,
+        qr_updated_at: qr ? new Date().toISOString() : null,
+      }).eq("id", row.id);
+    } catch (err) {
+      await db.from("whatsapp_instances").delete().eq("id", row.id);
+      throw err;
+    }
+    await audit(db, { workspace_id: workspaceId, actor_user_id: user.id, action: "whatsapp.instance.created", entity: "whatsapp_instance", entity_id: row.id, details: { by: phone ? "pairing_code" : "qr" }, correlation_id: correlationId });
+    const instance = await publicRow(db, row.id);
+    return json({ instance, qr_code: instance?.qr_code ?? null, pairing_code: pairingCode });
+  }
+
+  // Demais ações operam sobre uma instância existente.
+  if (typeof body.instance_id !== "string") throw new RuntimeError("invalid_request", "instance_id obrigatório.");
+  const { data: inst } = await db
     .from("whatsapp_instances")
-    .select("*")
-    .eq("workspace_id", workspaceId)
-    .eq("id", instanceId)
+    .select("id, workspace_id, instance_name, provider_secret_ref, status, is_default")
+    .eq("id", body.instance_id)
     .maybeSingle();
+  if (!inst) throw new RuntimeError("not_found", "Instância não encontrada.");
+  await requireWorkspaceRole(user.id, inst.workspace_id);
+  const evo = evolutionFor(inst);
+  const log = (action: string, details: Record<string, unknown> = {}) =>
+    audit(db, { workspace_id: inst.workspace_id, actor_user_id: user.id, action, entity: "whatsapp_instance", entity_id: inst.id, details, correlation_id: correlationId });
 
-  if (!data) {
-    throw new Error("instance_not_found");
-  }
-
-  return data as unknown as EvolutionInstanceRecord;
-}
-
-async function persistInstanceUpdate(
-  supabase: Awaited<ReturnType<typeof requireAdminContext>>["supabase"],
-  instanceId: string,
-  update: Record<string, unknown>,
-) {
-  const { data, error } = await supabase
-    .from("whatsapp_instances")
-    .update(update)
-    .eq("id", instanceId)
-    .select("*")
-    .single();
-
-  if (error) throw error;
-  return data as unknown as EvolutionInstanceRecord;
-}
-
-async function configureInstanceWebhook(
-  supabase: Awaited<ReturnType<typeof requireAdminContext>>["supabase"],
-  instance: EvolutionInstanceRecord,
-) {
-  const response = await evolutionRequest({
-    instance,
-    path: `/webhook/set/${instance.instance_name}`,
-    method: "POST",
-    body: {
-      enabled: true,
-      url: getWebhookUrl(instance),
-      webhookByEvents: false,
-      webhookBase64: true,
-      events: [
-        "QRCODE_UPDATED",
-        "CONNECTION_UPDATE",
-        "MESSAGES_UPSERT",
-        "MESSAGES_UPDATE",
-        "MESSAGES_DELETE",
-        "SEND_MESSAGE",
-      ],
-    },
-  });
-
-  return persistInstanceUpdate(supabase, instance.id, {
-    connection_metadata: {
-      ...(instance.connection_metadata ?? {}),
-      webhook_url: getWebhookUrl(instance),
-      last_webhook_response: response,
-    },
-  });
-}
-
-serve(async (request) => {
-  if (request.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
-
-  try {
-    const { workspaceId, supabase, body } = await requireAdminContext(request);
-    const action = body.action as Action | undefined;
-    const instanceId = typeof body.instanceId === "string" ? body.instanceId : null;
-    const payload = normalizePayload(body.payload);
-
-    if (!action) {
-      return jsonResponse({ error: "action_required" }, { status: 400 });
+  switch (body.action) {
+    case "connect": {
+      assertActive(await loadEntitlements(db, inst.workspace_id));
+      const res = await evo.connect(inst.instance_name, pairingPhone(body.phone) ?? undefined);
+      const qr = toDataUrl(res?.base64);
+      const state = qr || res?.pairingCode ? "qr" : await evo.connectionState(inst.instance_name);
+      await db.from("whatsapp_instances").update({ status: state, qr_code: qr, qr_updated_at: qr ? new Date().toISOString() : null })
+        .eq("id", inst.id);
+      await log("whatsapp.instance.connect");
+      return json({ instance: await publicRow(db, inst.id), qr_code: qr, pairing_code: res?.pairingCode ?? null });
     }
-
-    if (action === "create_instance") {
-      if (!payload.instance_name || !payload.evolution_base_url || !payload.provider_secret_ref) {
-        return jsonResponse({ error: "invalid_payload" }, { status: 400 });
+    case "refresh": {
+      const state = await evo.connectionState(inst.instance_name);
+      const patch: Record<string, unknown> = {};
+      if (state === "open") {
+        const info = await evo.fetchInstance(inst.instance_name).catch(() => ({ phone: null, profileName: null }));
+        Object.assign(patch, { status: "open", qr_code: null, last_error: null });
+        if (inst.status !== "open") patch.last_connected_at = new Date().toISOString();
+        if (info.phone) patch.phone_number = info.phone;
+        if (info.profileName) patch.profile_name = info.profileName;
+      } else if (!(state === "connecting" && inst.status === "qr")) {
+        // Enquanto há QR na tela, "connecting" não deve apagar o QR.
+        patch.status = state;
       }
-
-      const { data: created, error } = await supabase
-        .from("whatsapp_instances")
-        .insert({
-          workspace_id: workspaceId,
-          instance_name: payload.instance_name,
-          display_name: payload.display_name,
-          evolution_base_url: payload.evolution_base_url,
-          provider_secret_ref: payload.provider_secret_ref,
-          phone_number: payload.phone_number,
-          provider_type: "evolution",
-          status: "connecting",
-          connection_metadata: {
-            source: "evolution-connect",
-          },
-        })
-        .select("*")
-        .single();
-
-      if (error) throw error;
-
-      let instance = created as unknown as EvolutionInstanceRecord;
-
-      if (payload.is_default) {
-        await supabase.rpc("set_default_whatsapp_instance", {
-          p_workspace_id: workspaceId,
-          p_instance_id: instance.id,
-        });
-        instance = await loadInstance(supabase, workspaceId, instance.id);
+      if (Object.keys(patch).length) await db.from("whatsapp_instances").update(patch).eq("id", inst.id);
+      return json({ instance: await publicRow(db, inst.id) });
+    }
+    case "disconnect": {
+      await evo.logout(inst.instance_name).catch(() => null);
+      await db.from("whatsapp_instances").update({ status: "close", qr_code: null }).eq("id", inst.id);
+      await log("whatsapp.instance.disconnected");
+      return json({ instance: await publicRow(db, inst.id) });
+    }
+    case "delete": {
+      await evo.logout(inst.instance_name).catch(() => null);
+      await evo.deleteInstance(inst.instance_name).catch(() => null);
+      await db.from("whatsapp_instances").delete().eq("id", inst.id);
+      if (inst.is_default) {
+        const { data: next } = await db.from("whatsapp_instances").select("id").eq("workspace_id", inst.workspace_id)
+          .order("created_at").limit(1).maybeSingle();
+        if (next) await db.from("whatsapp_instances").update({ is_default: true }).eq("id", next.id);
       }
-
-      const createResponse = await evolutionRequest({
-        instance,
-        path: "/instance/create",
-        method: "POST",
-        body: {
-          instanceName: instance.instance_name,
-          qrcode: true,
-          integration: "WHATSAPP-BAILEYS",
-        },
-      });
-
-      instance = await configureInstanceWebhook(supabase, instance);
-
-      const connectResponse = await evolutionRequest({
-        instance,
-        path: `/instance/connect/${instance.instance_name}`,
-      });
-
-      const qrCode = extractQrCode(connectResponse) ?? extractQrCode(createResponse);
-
-      instance = await persistInstanceUpdate(supabase, instance.id, {
-        status: qrCode ? "qr" : "connecting",
-        qr_code: qrCode,
-        last_seen_at: new Date().toISOString(),
-        connection_metadata: {
-          ...(instance.connection_metadata ?? {}),
-          last_create_response: createResponse,
-          last_connect_response: connectResponse,
-        },
-      });
-
-      return jsonResponse({ instance }, { status: 200 });
+      await log("whatsapp.instance.deleted", { instance_name: inst.instance_name });
+      return json({ deleted: true });
     }
-
-    if (!instanceId) {
-      return jsonResponse({ error: "instance_required" }, { status: 400 });
+    case "set_default": {
+      await db.from("whatsapp_instances").update({ is_default: false }).eq("workspace_id", inst.workspace_id).eq("is_default", true);
+      await db.from("whatsapp_instances").update({ is_default: true }).eq("id", inst.id);
+      await log("whatsapp.instance.set_default");
+      return json({ instance: await publicRow(db, inst.id) });
     }
-
-    let instance = await loadInstance(supabase, workspaceId, instanceId);
-
-    if (action === "connect_instance") {
-      instance = await configureInstanceWebhook(supabase, instance);
-
-      const raw = await evolutionRequest({
-        instance,
-        path: `/instance/connect/${instance.instance_name}`,
-      });
-
-      const qrCode = extractQrCode(raw);
-      const status = qrCode ? "qr" : mapEvolutionStatus(raw);
-      const updated = await persistInstanceUpdate(supabase, instance.id, {
-        status,
-        qr_code: qrCode,
-        last_seen_at: new Date().toISOString(),
-        connection_metadata: {
-          ...(instance.connection_metadata ?? {}),
-          last_connect_response: raw,
-        },
-      });
-
-      return jsonResponse({ instance: updated }, { status: 200 });
+    case "rotate_token": {
+      const token = randomToken(40);
+      // Reconfigura a Evolution primeiro: se falhar, o token antigo continua válido.
+      await evo.setWebhook(inst.instance_name, webhookUrl(inst.id, token));
+      await db.from("whatsapp_instances").update({
+        webhook_token_hash: await sha256Hex(token),
+        webhook_token_rotated_at: new Date().toISOString(),
+      }).eq("id", inst.id);
+      await log("whatsapp.instance.token_rotated");
+      return json({ instance: await publicRow(db, inst.id) });
     }
-
-    if (action === "refresh_status") {
-      const raw = await evolutionRequest({
-        instance,
-        path: `/instance/connectionState/${instance.instance_name}`,
-      });
-
-      const updated = await persistInstanceUpdate(supabase, instance.id, {
-        status: mapEvolutionStatus(raw),
-        qr_code: mapEvolutionStatus(raw) === "connected" ? null : instance.qr_code,
-        last_seen_at: new Date().toISOString(),
-        connection_metadata: {
-          ...(instance.connection_metadata ?? {}),
-          last_status_response: raw,
-        },
-      });
-
-      return jsonResponse({ instance: updated }, { status: 200 });
-    }
-
-    if (action === "disconnect_instance") {
-      const raw = await evolutionRequest({
-        instance,
-        path: `/instance/logout/${instance.instance_name}`,
-        method: "DELETE",
-      });
-
-      const updated = await persistInstanceUpdate(supabase, instance.id, {
-        status: "disconnected",
-        qr_code: null,
-        last_seen_at: new Date().toISOString(),
-        connection_metadata: {
-          ...(instance.connection_metadata ?? {}),
-          last_disconnect_response: raw,
-        },
-      });
-
-      return jsonResponse({ instance: updated }, { status: 200 });
-    }
-
-    return jsonResponse({ error: "unsupported_action" }, { status: 400 });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "unexpected_error";
-    const status =
-      message === "unauthorized"
-        ? 401
-        : message === "forbidden"
-          ? 403
-          : message === "instance_not_found" || message === "workspace_required"
-            ? 404
-            : 500;
-
-    return jsonResponse({ error: message }, { status });
+    default:
+      throw new RuntimeError("invalid_request", "Ação desconhecida.");
   }
-});
+}));
+
+async function publicRow(db: Db, id: string) {
+  const { data } = await db.from("whatsapp_instances").select(PUBLIC_COLUMNS).eq("id", id).single();
+  return data;
+}

@@ -1,150 +1,94 @@
 # Callia Chat
 
-Hub SaaS multi-tenant para atendimento no WhatsApp com agente de IA, inbox humano, API pública, webhooks de saída e trilha operacional para piloto real.
+Atendimento via WhatsApp com agente de IA, inbox humana, API pública e webhooks de saída, oferecido como SaaS multi-tenant:
+cada cliente (workspace) tem dados, chaves, base de conhecimento e logs isolados por RLS, e a plataforma é administrada por um console central.
 
-## Status atual
+## Camada SaaS
 
-- Fases `0` a `9` implementadas no repositório
-- Frontend em `React + Vite + TypeScript`
-- Backend operacional em `Supabase + Edge Functions`
-- Integração principal de canal via `Evolution API`
-- Estrutura pronta para piloto controlado
+| Peça | Como funciona |
+|---|---|
+| Console central (`/admin`) | Só para `user_roles.role = 'platform_admin'`. Visão geral, clientes, planos, usuários, auditoria e configurações. Backend: function `platform-admin`. |
+| Clientes | Criados pela plataforma (dono existente ou convidado por e-mail). Autoatendimento desligado por padrão (`platform_settings`). |
+| Planos | Limites de instâncias, membros, mensagens automáticas/mês e fontes; IA, agente externo e conectores por plano. Override por cliente em `workspaces.limit_overrides`. |
+| Ciclo de vida | `trial` → `active` → `suspended`/`canceled`. Trial vencido ou suspenso: mensagens recebidas são guardadas, mas bot, envios, API e criação de recursos param. |
+| Cota mensal | Conta envios do bot e da API (não da equipe). Esgotada: API responde 429 e conversas novas vão para a equipe. |
+| Suporte | O admin da plataforma entra num cliente de forma explícita (`is_support`) e tudo fica em `audit_logs` (`platform.*`). |
+| Aplicação dos limites | No backend (`_shared/entitlements.ts` + `get_workspace_entitlements`), não só na tela. |
 
-## Principais capacidades do MVP
+## Assistente de configuração (`/agent/setup`)
 
-- Multi-tenant por `workspace`
-- Branding por workspace com `custom_domain` preparado
-- Múltiplas instâncias de WhatsApp por workspace
-- Webhook inbound com idempotência
-- Pipeline de IA com FAQ, produtos, guardrails, áudio, imagem e handoff
-- Inbox humano com realtime e assumir/devolver conversa
-- API pública autenticada por `x-api-key`
-- Webhooks de saída com assinatura HMAC e retries
-- Logs operacionais e auditoria administrativa
+A persona e as instruções do agente são montadas a partir do que a empresa já publicou:
+site (rastreado no próprio domínio, respeitando robots.txt), Instagram (dados públicos ou texto colado), documentos e texto livre.
+A IA (`AI_SETUP_MODEL`, padrão em produção `gpt-4.1`) gera um rascunho com persona, regras, horário, transferência,
+perguntas frequentes, catálogo e **o que faltou nas fontes**; o admin revisa e aplica por seção. As fontes também
+entram na base de conhecimento usada nas respostas. Backend: function `agent-setup`.
 
-## Stack
+## Integrações (`/integrations`)
 
-- `React 18`
-- `Vite 5`
-- `TypeScript`
-- `Tailwind CSS`
-- `Supabase Auth / Postgres / Realtime / Edge Functions`
-- `Vitest`
+Cartões de autoatendimento para o cliente do SaaS, com o mínimo de campos:
+- **WhatsApp**: QR Code ou código de 8 dígitos (sem QR, pelo celular); o Callia cria a instância e o webhook.
+- **Hospedin (PMS)**: só e-mail e senha de um usuário do Hospedin; o Callia descobre a conta, importa as categorias,
+  detecta reais/centavos e mostra um teste de valores. Credenciais cifradas em `workspace_connectors.secret_ciphertext`.
+- **Link de reservas**: URL do motor (hbook ou outro), enviado ao hóspede já com datas e hóspedes.
 
-## Estrutura principal
+A ferramenta de disponibilidade do agente usa o provedor conectado (Hospedin → hbook) via `_shared/availability.ts`;
+novos PMS entram como mais um provedor sem mudar o agente. Backend: function `integrations`.
 
-- `src/pages`: telas do painel
-- `src/hooks`: hooks operacionais do frontend
-- `src/lib`: helpers e contratos do app
-- `supabase/migrations`: evolução do schema
-- `supabase/functions`: edge functions operacionais
-- `src/data/project-board.ts`: board público de fases (gerado a partir do `PROJECT_BOARD.md`)
+## Fotos (Base de conhecimento → Fotos)
 
-## Rotas principais
+Álbuns por acomodação/área no bucket público `media`. Fontes: pasta do Google Drive compartilhada por link
+(subpastas = álbuns; fotos baixadas em até 1600 px, HEIC convertido), fotos das categorias do Hospedin e upload no painel.
+O agente recebe a ferramenta `enviar_fotos` (até 5 por pedido) quando há fotos. Backend: function `media`.
 
-- `/inbox`: operação humana
-- `/agent`: configuração do agente
-- `/whatsapp`: instâncias e conexão
-- `/api-keys`: gestão da API pública
-- `/webhooks`: gestão de callbacks externos
-- `/logs`: auditoria e rastreio
-- `/settings`: branding e configuração do workspace
-- `/acompanhamento`: acompanhamento público temporário do projeto
+## Como o agente responde
 
-## Setup local
+```text
+WhatsApp ─► Evolution API ─► whatsapp-webhook ─► record_message (conversa + mensagem + não lidas, idempotente)
+                                   │
+                                   └─► process-message (em segundo plano)
+                                         1. só age em conversa "bot" e uma vez por mensagem (agent_runs)
+                                         2. debounce: rajada de mensagens → uma resposta
+                                         3. áudio → transcrição · imagem → descrição
+                                         4. palavra-chave de handoff → humano
+                                         5. agente externo (n8n…) se ativo; falhou → segue interno
+                                         6. IA interna: persona + guardrails + RAG + ferramentas
+                                            (transferir_para_atendente, buscar_conhecimento, consultar_disponibilidade)
+                                         7. sem IA configurada → melhor FAQ ou handoff
+                                   └─► sendOutbound ─► Evolution ─► cliente  (+ webhook message.sent)
+```
 
-### 1. Instalar dependências
+A equipe assume pela inbox (ou respondendo pelo celular, o que também pausa o bot) e devolve ao bot quando quiser.
+
+## Estrutura
+
+| Caminho | Conteúdo |
+|---|---|
+| `src/` | Painel React (inbox, agente, base de conhecimento, WhatsApp, API keys, webhooks, logs, equipe, configurações) |
+| `supabase/migrations/` | Schema, RLS, privilégios por coluna, RPCs e busca híbrida |
+| `supabase/functions/_shared/` | Runtime comum: erros, Evolution, IA, pipeline do agente, canal, webhooks, hbook, conhecimento |
+| `supabase/functions/*/` | 15 edge functions (contratos em [docs/EDGE_CONTRACTS.md](docs/EDGE_CONTRACTS.md)) |
+| `supabase/tests/*.sql` | Testes de isolamento, permissões, planos, limites e status do tenant |
+| `scripts/e2e/` | Teste ponta a ponta descartável com functions reais |
+
+## Desenvolvimento
 
 ```bash
 npm install
+cp .env.example .env          # VITE_SUPABASE_URL e VITE_SUPABASE_PUBLISHABLE_KEY
+npm run dev                   # painel em http://localhost:8080
 ```
 
-### 2. Configurar variáveis do frontend
+## Testes
 
-Copie `.env.example` para `.env` e preencha:
+| Comando | O que valida | Requer |
+|---|---|---|
+| `npm test` | Testes unitários (pipeline, Evolution, hbook, chunking, webhooks, cripto, UI) | Node |
+| `npm run typecheck:functions` | Tipos das edge functions | Deno |
+| `npm run test:sql` | Migrations + RLS + camada SaaS em Postgres descartável | Docker |
+| `DENO=$(which deno) npm run test:e2e` | Ponta a ponta com functions reais e GoTrue: webhook → IA → envio, debounce, eco, handoff, API pública, webhooks assinados, console da plataforma, limites, suspensão e cota | Docker + Deno |
 
-```bash
-cp .env.example .env
-```
+O e2e sobe Postgres, PostgREST e o edge-runtime com as functions reais, mais um container com Evolution e OpenAI falsas. Tudo é removido no fim.
 
-Variáveis mínimas:
+## Deploy
 
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_PUBLISHABLE_KEY`
-
-### 3. Rodar o painel
-
-```bash
-npm run dev
-```
-
-### 4. Rodar testes
-
-```bash
-npm run test
-```
-
-### 5. Gerar build local
-
-```bash
-npm run build
-```
-
-## Secrets esperados nas Edge Functions
-
-Necessários conforme o ambiente e as features habilitadas:
-
-- `SUPABASE_URL`
-- `SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `EVOLUTION_BASE_URL`
-- `EVOLUTION_API_KEY`
-- `AI_COMPAT_API_KEY`
-- `AI_COMPAT_BASE_URL`
-- `OPENAI_API_KEY`
-- `AI_DEFAULT_MODEL`
-- `STT_MODEL`
-- `VISION_MODEL`
-
-## Fluxo operacional resumido
-
-1. Workspace é criado e ganha branding/configuração base
-2. Admin conecta uma ou mais instâncias de WhatsApp
-3. Webhook inbound persiste eventos, conversas e mensagens
-4. `process-message` decide entre resposta automática e handoff
-5. Inbox humana assume ou devolve conversas ao bot
-6. API pública e webhooks de saída conectam sistemas externos
-7. Logs consolidam auditoria, outbound, requests e entregas
-
-## Deploy operacional
-
-Fluxo recomendado:
-
-1. Aplicar migrations do Supabase
-2. Publicar edge functions
-3. Configurar secrets de ambiente
-4. Validar instância padrão do WhatsApp
-5. Gerar primeira API key
-6. Configurar pelo menos um webhook de teste
-7. Executar checklist de piloto
-
-Consulte:
-
-- `PILOT_GO_LIVE_CHECKLIST.md`
-- `DEPLOY_RUNBOOK.md`
-- `RLS_TEST_PLAN.md`
-
-## Documentos das fases
-
-- `PHASE_0_FOUNDATION.md`
-- `PHASE_1_BACKEND_ADAPTERS.md`
-- `PHASE_5_PIPELINE.md`
-- `PHASE_6_INBOX.md`
-- `PHASE_7_PUBLIC_API.md`
-- `PHASE_8_WEBHOOKS_LOGS.md`
-- `PHASE_9_GO_LIVE.md`
-
-## Observações finais
-
-- O repositório está pronto para piloto, mas a ativação real ainda depende de aplicar migrations e publicar as edge functions no projeto Supabase alvo.
-- Os secrets de provedores permanecem no backend; o frontend não deve receber credenciais sensíveis.
+Ver [DEPLOY_RUNBOOK.md](DEPLOY_RUNBOOK.md) e [PILOT_GO_LIVE_CHECKLIST.md](PILOT_GO_LIVE_CHECKLIST.md).

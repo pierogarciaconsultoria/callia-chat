@@ -1,270 +1,250 @@
-import { useMemo, useState } from "react";
-import { toast } from "sonner";
-import { Copy, KeyRound, RefreshCcw, ShieldCheck, Trash2 } from "lucide-react";
-import { useApiKeys } from "@/hooks/use-api-keys";
+import { useState, type FormEvent } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, KeyRound, Plus, RotateCw, Ban } from "lucide-react";
+import { useRequiredWorkspace } from "@/lib/workspace";
+import { supabase, PUBLIC_API_BASE } from "@/lib/supabase";
+import { invokeFunction, unwrap } from "@/lib/functions";
+import { formatDateTime } from "@/lib/format";
+import type { ApiKey } from "@/lib/database.types";
 import {
-  buildPublicApiBaseUrl,
-  getApiKeyStatusLabel,
-  getApiKeyStatusTone,
-  maskStoredApiKey,
-} from "@/lib/public-api";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+  Badge,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  CodeBlock,
+  ConfirmButton,
+  CopyButton,
+  EmptyState,
+  ErrorState,
+  Input,
+  Modal,
+  PageHeader,
+  Spinner,
+  Table,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+  useToast,
+} from "@/components/ui";
 
-function formatDateTime(value: string | null | undefined) {
-  if (!value) return "Nunca";
+const COLUMNS = "id, workspace_id, name, prefix, last4, scopes, created_by, created_at, last_used_at, expires_at, revoked_at";
 
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(new Date(value));
+function keyState(k: ApiKey): { label: string; tone: "green" | "red" | "neutral" } {
+  if (k.revoked_at) return { label: "Revogada", tone: "red" };
+  if (k.expires_at && new Date(k.expires_at) < new Date()) return { label: "Expirada", tone: "neutral" };
+  return { label: "Ativa", tone: "green" };
 }
 
-export default function ApiKeysPage() {
-  const {
-    currentWorkspace,
-    canEdit,
-    loading,
-    submitting,
-    keys,
-    revealedKey,
-    setRevealedKey,
-    createKey,
-    rotateKey,
-    revokeKey,
-  } = useApiKeys();
+export default function ApiKeys() {
+  const { workspaceId } = useRequiredWorkspace();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const key = ["api_keys", workspaceId];
+  const keys = useQuery({
+    queryKey: key,
+    queryFn: async () =>
+      unwrap(
+        await supabase.from("api_keys").select(COLUMNS).eq("workspace_id", workspaceId).order("created_at", { ascending: false }),
+      ) as unknown as ApiKey[],
+  });
+  const mutate = useMutation({
+    mutationFn: (body: Record<string, unknown>) => invokeFunction<{ api_key: ApiKey; raw_key?: string }>("manage-api-keys", body),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: key }),
+  });
+
+  const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const baseUrl = buildPublicApiBaseUrl();
+  const [expires, setExpires] = useState("");
+  const [revealed, setRevealed] = useState<{ name: string; raw: string } | null>(null);
 
-  const curlExample = useMemo(() => {
-    const sampleKey = revealedKey || "ah_live_SUA_CHAVE_AQUI";
-    return `curl -X POST "${baseUrl}/messages" \\
-  -H "Content-Type: application/json" \\
-  -H "x-api-key: ${sampleKey}" \\
-  -d '{
-    "phoneNumber": "5511999999999",
-    "text": "Olá! Esta é uma mensagem proativa via API pública.",
-    "idempotencyKey": "msg-demo-001"
-  }'`;
-  }, [baseUrl, revealedKey]);
-
-  const copyText = async (value: string, successMessage: string) => {
+  async function submit(e: FormEvent) {
+    e.preventDefault();
     try {
-      await navigator.clipboard.writeText(value);
-      toast.success(successMessage);
-    } catch {
-      toast.error("Nao foi possivel copiar para a area de transferencia.");
-    }
-  };
-
-  const handleCreate = async () => {
-    if (!name.trim()) {
-      toast.error("Informe um nome para a chave.");
-      return;
-    }
-
-    try {
-      await createKey({
+      const res = await mutate.mutateAsync({
+        action: "create",
+        workspace_id: workspaceId,
         name: name.trim(),
-        description: description.trim() || undefined,
+        expires_at: expires ? new Date(`${expires}T23:59:59`).toISOString() : undefined,
       });
+      setCreating(false);
       setName("");
-      setDescription("");
-      toast.success("Chave criada com sucesso.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Nao foi possivel criar a chave.");
+      setExpires("");
+      if (res.raw_key) setRevealed({ name: res.api_key.name, raw: res.raw_key });
+    } catch (err) {
+      toast.error(err);
     }
-  };
-
-  const handleRotate = async (apiKeyId: string) => {
-    try {
-      await rotateKey(apiKeyId);
-      toast.success("Chave rotacionada com sucesso.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Nao foi possivel rotacionar a chave.");
-    }
-  };
-
-  const handleRevoke = async (apiKeyId: string) => {
-    try {
-      await revokeKey(apiKeyId);
-      toast.success("Chave revogada.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Nao foi possivel revogar a chave.");
-    }
-  };
-
-  if (!currentWorkspace) {
-    return <div className="p-8 text-sm text-muted-foreground">Selecione um workspace para continuar.</div>;
   }
 
+  async function rotate(k: ApiKey) {
+    try {
+      const res = await mutate.mutateAsync({ action: "rotate", key_id: k.id });
+      if (res.raw_key) setRevealed({ name: res.api_key.name, raw: res.raw_key });
+    } catch (err) {
+      toast.error(err);
+    }
+  }
+
+  const base = PUBLIC_API_BASE;
+
   return (
-    <div className="space-y-6 p-8">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">API Keys</h1>
-          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Gere e administre credenciais da API pública para envio proativo, eventos e leitura de conversas do workspace.
-          </p>
-        </div>
-        <Badge variant="outline" className="w-fit gap-1">
-          <ShieldCheck className="h-3.5 w-3.5" />
-          Workspace: {currentWorkspace.name}
-        </Badge>
-      </div>
+    <>
+      <PageHeader
+        title="Chaves de API"
+        description="Autenticam sistemas externos (ERP, CRM, n8n) na API pública. Cada chave só acessa este workspace."
+        actions={<Button onClick={() => setCreating(true)}><Plus className="h-4 w-4" /> Nova chave</Button>}
+      />
 
-      {!canEdit && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Seu perfil atual pode visualizar esta area, mas apenas `owner` e `admin` podem gerar, rotacionar ou revogar chaves.
-        </div>
-      )}
-
-      {revealedKey ? (
-        <Card className="border-emerald-300 bg-emerald-50">
-          <CardHeader>
-            <CardTitle>Chave gerada</CardTitle>
-            <CardDescription>
-              Esta chave aparece apenas agora. Copie e armazene em local seguro antes de sair desta tela.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Textarea value={revealedKey} readOnly className="min-h-[100px] font-mono text-sm" />
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={() => copyText(revealedKey, "Chave copiada.")}>
-                <Copy className="h-4 w-4" />
-                Copiar chave
-              </Button>
-              <Button variant="outline" onClick={() => setRevealedKey(null)}>
-                Fechar
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      <div className="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
+      <div className="space-y-6">
         <Card>
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <KeyRound className="h-5 w-5 text-primary" />
-              <div>
-                <CardTitle>Nova chave</CardTitle>
-                <CardDescription>Crie uma credencial para integrar sistemas externos ao workspace.</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="apiKeyName">Nome da chave</Label>
-              <Input
-                id="apiKeyName"
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                disabled={!canEdit || submitting}
-                placeholder="ERP principal"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="apiKeyDescription">Descricao</Label>
-              <Textarea
-                id="apiKeyDescription"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                disabled={!canEdit || submitting}
-                placeholder="Uso em mensagens proativas do CRM"
-              />
-            </div>
-            <Button onClick={handleCreate} disabled={!canEdit || submitting || !name.trim()}>
-              <KeyRound className="h-4 w-4" />
-              Criar chave
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Endpoint base</CardTitle>
-            <CardDescription>
-              Use este endpoint para `POST /messages`, `POST /events`, `GET /conversations` e `GET /conversations/:id/messages`.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex gap-2">
-              <Input value={baseUrl} readOnly className="font-mono text-xs" />
-              <Button variant="outline" onClick={() => copyText(baseUrl, "Endpoint copiado.")}>
-                <Copy className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="space-y-2">
-              <Label>Exemplo de envio proativo</Label>
-              <Textarea value={curlExample} readOnly className="min-h-[180px] font-mono text-xs" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Chaves do workspace</CardTitle>
-          <CardDescription>Monitore status, ultimo uso e gerencie rotacao/revogacao das chaves publicas.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {loading ? (
-            <div className="text-sm text-muted-foreground">Carregando chaves...</div>
-          ) : keys.length === 0 ? (
-            <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-              Nenhuma chave cadastrada ainda. Gere a primeira credencial para liberar a API pública.
-            </div>
+          {keys.isLoading ? (
+            <CardBody className="flex justify-center"><Spinner /></CardBody>
+          ) : keys.error ? (
+            <CardBody><ErrorState error={keys.error} onRetry={() => void keys.refetch()} /></CardBody>
+          ) : keys.data?.length === 0 ? (
+            <EmptyState icon={KeyRound} title="Nenhuma chave criada" description="Crie uma chave para integrar seu sistema à API pública." />
           ) : (
-            keys.map((key) => (
-              <div key={key.id} className="rounded-xl border p-4">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="space-y-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="font-medium">{key.name}</div>
-                      <Badge variant="outline" className={getApiKeyStatusTone(key)}>
-                        {getApiKeyStatusLabel(key)}
-                      </Badge>
-                    </div>
-                    <div className="font-mono text-sm text-muted-foreground">{maskStoredApiKey(key)}</div>
-                    <div className="grid gap-2 text-sm text-muted-foreground lg:grid-cols-2">
-                      <div>Criada em: {formatDateTime(key.created_at)}</div>
-                      <div>Ultimo uso: {formatDateTime(key.last_used_at)}</div>
-                      <div>IP mais recente: {key.last_used_ip || "Nao registrado"}</div>
-                      <div>
-                        Descricao: {typeof key.metadata?.description === "string" ? key.metadata.description : "Sem descricao"}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={() => handleRotate(key.id)}
-                      disabled={!canEdit || submitting || Boolean(key.revoked_at)}
-                    >
-                      <RefreshCcw className="h-4 w-4" />
-                      Rotacionar
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => handleRevoke(key.id)}
-                      disabled={!canEdit || submitting || Boolean(key.revoked_at)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Revogar
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            ))
+            <Table>
+              <THead><tr><TH>Nome</TH><TH>Chave</TH><TH>Status</TH><TH>Criada</TH><TH>Último uso</TH><TH>Expira</TH><TH className="text-right">Ações</TH></tr></THead>
+              <TBody>
+                {keys.data?.map((k) => {
+                  const st = keyState(k);
+                  const active = st.label === "Ativa";
+                  return (
+                    <TR key={k.id}>
+                      <TD className="font-medium text-slate-900 dark:text-slate-100">{k.name}</TD>
+                      <TD><code className="whitespace-nowrap text-xs">{k.prefix}…{k.last4}</code></TD>
+                      <TD><Badge tone={st.tone}>{st.label}</Badge></TD>
+                      <TD className="whitespace-nowrap">{formatDateTime(k.created_at)}</TD>
+                      <TD className="whitespace-nowrap">{formatDateTime(k.last_used_at)}</TD>
+                      <TD className="whitespace-nowrap">{k.expires_at ? formatDateTime(k.expires_at) : "Nunca"}</TD>
+                      <TD className="text-right">
+                        {active && (
+                          <div className="flex justify-end gap-1">
+                            <ConfirmButton
+                              size="sm"
+                              variant="ghost"
+                              danger={false}
+                              title="Rotacionar chave?"
+                              description="A chave atual é revogada na hora e uma nova é gerada com o mesmo nome. Atualize o sistema que a usa."
+                              confirmLabel="Rotacionar"
+                              onConfirm={() => rotate(k)}
+                            >
+                              <RotateCw className="h-4 w-4" /> Rotacionar
+                            </ConfirmButton>
+                            <ConfirmButton
+                              size="sm"
+                              variant="ghost"
+                              title="Revogar chave?"
+                              description="Chamadas com esta chave passam a receber 403 imediatamente."
+                              confirmLabel="Revogar"
+                              onConfirm={() =>
+                                mutate.mutateAsync({ action: "revoke", key_id: k.id }).then(
+                                  () => toast.success("Chave revogada."),
+                                  (e) => toast.error(e),
+                                )
+                              }
+                            >
+                              <Ban className="h-4 w-4" /> Revogar
+                            </ConfirmButton>
+                          </div>
+                        )}
+                      </TD>
+                    </TR>
+                  );
+                })}
+              </TBody>
+            </Table>
           )}
-        </CardContent>
-      </Card>
-    </div>
+        </Card>
+
+        <Card>
+          <CardHeader title="Como usar" description="Envie a chave no header x-api-key. O workspace é sempre o da chave." />
+          <CardBody className="space-y-4">
+            <div className="space-y-1.5">
+              <p className="text-sm font-medium">Enviar mensagem (usa a instância padrão se não informar instanceId)</p>
+              <CodeBlock
+                code={`curl -X POST "${base}/messages" \\
+  -H "x-api-key: ck_live_..." \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "to": { "phone": "+5511999999999", "name": "Ana" },
+    "type": "text",
+    "text": "Sua reserva está confirmada!",
+    "externalId": "pedido-123"
+  }'`}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-sm font-medium">Espelhar conversa de outro canal na inbox (não envia nada)</p>
+              <CodeBlock
+                code={`curl -X POST "${base}/messages/ingest" \\
+  -H "x-api-key: ck_live_..." \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "externalId": "wamid.HBgN...",
+    "channel": "whatsapp_cloud",
+    "direction": "inbound",
+    "sender": "customer",
+    "contact": { "phone": "+5511999999999", "name": "Ana" },
+    "type": "text",
+    "content": "Oi, qual o horário de vocês?",
+    "timestamp": "2026-10-12T12:00:00Z"
+  }'`}
+              />
+            </div>
+            <p className="text-xs text-slate-500">
+              Outros endpoints: <code>GET /conversations</code>, <code>GET /conversations/:id/messages</code>, <code>POST /events</code>,{" "}
+              <code>GET /knowledge/search?q=</code>, <code>GET /agent/context</code>, <code>GET /connectors/hbook/availability</code>.
+            </p>
+          </CardBody>
+        </Card>
+      </div>
+
+      <Modal
+        open={creating}
+        onClose={() => setCreating(false)}
+        title="Nova chave de API"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setCreating(false)}>Cancelar</Button>
+            <Button type="submit" form="key-form" loading={mutate.isPending}>Gerar chave</Button>
+          </>
+        }
+      >
+        <form id="key-form" onSubmit={submit} className="space-y-4">
+          <Input label="Nome" required value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: ERP produção" />
+          <Input
+            label="Expira em (opcional)"
+            type="date"
+            value={expires}
+            min={new Date().toISOString().slice(0, 10)}
+            onChange={(e) => setExpires(e.target.value)}
+          />
+        </form>
+      </Modal>
+
+      <Modal
+        open={Boolean(revealed)}
+        onClose={() => setRevealed(null)}
+        title={`Chave "${revealed?.name ?? ""}"`}
+        footer={<Button onClick={() => setRevealed(null)}>Já copiei</Button>}
+      >
+        {revealed && (
+          <div className="space-y-4">
+            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              Esta é a única vez que a chave aparece. Guardamos apenas o hash — se perder, rotacione.
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <code className="min-w-0 flex-1 break-all rounded-lg bg-slate-100 px-3 py-2 text-sm dark:bg-slate-800">{revealed.raw}</code>
+              <CopyButton value={revealed.raw} />
+            </div>
+          </div>
+        )}
+      </Modal>
+    </>
   );
 }

@@ -1,114 +1,98 @@
-// @ts-nocheck
-// Pure helpers for delegating replies to an external agent webhook (e.g. n8n).
+// Agente externo por workspace (n8n, LangChain, Flowise, Make...).
+import { z } from "npm:zod@3.23.8";
 
-export const EXTERNAL_AGENT_MIN_TIMEOUT_MS = 1000;
-export const EXTERNAL_AGENT_MAX_TIMEOUT_MS = 60000;
-const MEDIA_TYPES = ["image", "video", "audio", "document"];
+export const SECRET_REF_PATTERN = /^EXTERNAL_AGENT_[A-Z0-9_]+$/;
 
-// Only secrets with this prefix may be forwarded, so platform secrets can never leak to a webhook.
-export const EXTERNAL_AGENT_SECRET_PREFIX = "EXTERNAL_AGENT_";
-export function isAllowedSecretRef(value) {
-  return typeof value === "string" && /^EXTERNAL_AGENT_[A-Z0-9_]{1,200}$/.test(value);
+export interface ExternalAgentPayload {
+  workspace_id: string;
+  conversation_id: string;
+  message_id: string;
+  contact: { name: string | null; phone: string };
+  message: { type: string; text: string | null; media_url: string | null };
+  history: Array<{ role: "customer" | "bot" | "agent" | "system"; type: string; text: string | null; at: string }>;
+  timestamp: string;
 }
 
-export function clampTimeout(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return 25000;
-  return Math.min(EXTERNAL_AGENT_MAX_TIMEOUT_MS, Math.max(EXTERNAL_AGENT_MIN_TIMEOUT_MS, Math.round(n)));
+const mediaItem = z.object({
+  type: z.enum(["image", "video", "document", "audio"]),
+  url: z.string().url(),
+  caption: z.string().max(1024).optional(),
+  file_name: z.string().max(200).optional(),
+  mimetype: z.string().max(100).optional(),
+});
+
+export const externalAgentResponseSchema = z.object({
+  reply: z.string().max(4096).nullish(),
+  handoff: z.boolean().optional().default(false),
+  media: z.array(mediaItem).max(10).optional().default([]),
+});
+
+export type ExternalAgentReply = z.infer<typeof externalAgentResponseSchema>;
+
+export class ExternalAgentError extends Error {
+  constructor(readonly reason: "timeout" | "http_error" | "invalid_response" | "network" | "misconfigured", message: string, readonly status?: number) {
+    super(message);
+    this.name = "ExternalAgentError";
+  }
 }
 
-export function isValidExternalAgentUrl(value) {
+/** Resolve o segredo pelo nome de referência, aceitando só o prefixo controlado. */
+export function resolveExternalSecret(ref: string | null | undefined, getEnv: (name: string) => string | undefined): string | null {
+  if (!ref) return null;
+  if (!SECRET_REF_PATTERN.test(ref)) throw new ExternalAgentError("misconfigured", "Referência de segredo fora do padrão EXTERNAL_AGENT_*.");
+  const value = getEnv(ref);
+  if (!value) throw new ExternalAgentError("misconfigured", `Segredo ${ref} não está definido no backend.`);
+  return value;
+}
+
+export async function callExternalAgent(args: {
+  url: string;
+  secret: string | null;
+  payload: ExternalAgentPayload;
+  timeoutMs: number;
+  correlationId: string;
+  fetchImpl?: typeof fetch;
+}): Promise<ExternalAgentReply> {
+  if (!/^https:\/\//.test(args.url)) throw new ExternalAgentError("misconfigured", "URL do agente externo deve usar HTTPS.");
+  const doFetch = args.fetchImpl ?? fetch;
+  let res: Response;
   try {
-    const url = new URL(String(value ?? ""));
-    return url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
-export function buildExternalAgentPayload(input) {
-  const msgType = input.message?.type === "audio" || input.message?.type === "image" ? input.message.type : "text";
-  return {
-    workspace_id: input.workspaceId,
-    conversation_id: input.conversationId,
-    message_id: input.message?.id ?? null,
-    contact: {
-      name: input.conversation?.customer_name ?? null,
-      phone: input.conversation?.customer_phone ?? null,
-    },
-    message: {
-      type: msgType,
-      text: input.messageText ?? "",
-      media_url: input.message?.media_url ?? null,
-    },
-    history: (input.history ?? [])
-      .filter((m) => m.id !== input.message?.id)
-      .slice(-20)
-      .map((m) => ({
-        role: m.direction === "inbound" ? "user" : "assistant",
-        content: m.content ?? m.transcription ?? "",
-      })),
-    timestamp: input.timestamp ?? new Date().toISOString(),
-  };
-}
-
-export function parseExternalAgentResponse(raw) {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return { ok: false, error: "invalid_response_shape" };
-  }
-  const reply = typeof raw.reply === "string" ? raw.reply.trim() : "";
-  const handoff = raw.handoff === true;
-  if (raw.reply !== undefined && raw.reply !== null && typeof raw.reply !== "string") {
-    return { ok: false, error: "invalid_reply_type" };
-  }
-  if (raw.media !== undefined && raw.media !== null && !Array.isArray(raw.media)) {
-    return { ok: false, error: "invalid_media_type" };
-  }
-  const media = [];
-  for (const item of raw.media ?? []) {
-    if (!item || typeof item !== "object") return { ok: false, error: "invalid_media_item" };
-    if (!MEDIA_TYPES.includes(item.type)) return { ok: false, error: "invalid_media_item_type" };
-    if (!isValidExternalAgentUrl(item.url)) return { ok: false, error: "invalid_media_item_url" };
-    media.push({ type: item.type, url: item.url, caption: typeof item.caption === "string" ? item.caption : null });
-  }
-  if (!reply && media.length === 0 && !handoff) {
-    return { ok: false, error: "empty_response" };
-  }
-  return { ok: true, value: { reply, handoff, media } };
-}
-
-export async function callExternalAgent(input, fetchImpl = fetch) {
-  const controller = new AbortController();
-  const timeoutMs = clampTimeout(input.timeoutMs);
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  const startedAt = Date.now();
-  try {
-    const response = await fetchImpl(input.url, {
+    res = await doFetch(args.url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-callia-secret": input.secret ?? "" },
-      body: JSON.stringify(input.payload),
-      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        "x-callia-correlation-id": args.correlationId,
+        "x-callia-message-id": args.payload.message_id,
+        ...(args.secret ? { "x-callia-secret": args.secret } : {}),
+      },
+      body: JSON.stringify(args.payload),
+      signal: AbortSignal.timeout(args.timeoutMs),
     });
-    const text = await response.text();
-    const durationMs = Date.now() - startedAt;
-    if (!response.ok) {
-      return { ok: false, error: `http_${response.status}`, status: response.status, body: text.slice(0, 2000), durationMs };
+  } catch (err) {
+    const name = (err as Error)?.name;
+    if (name === "TimeoutError" || name === "AbortError") {
+      throw new ExternalAgentError("timeout", `Agente externo não respondeu em ${args.timeoutMs} ms.`);
     }
-    let json = null;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      return { ok: false, error: "invalid_json", status: response.status, body: text.slice(0, 2000), durationMs };
-    }
-    const parsed = parseExternalAgentResponse(json);
-    if (!parsed.ok) {
-      return { ok: false, error: parsed.error, status: response.status, body: text.slice(0, 2000), durationMs };
-    }
-    return { ok: true, status: response.status, value: parsed.value, body: text.slice(0, 2000), durationMs };
-  } catch (error) {
-    const aborted = error?.name === "AbortError";
-    return { ok: false, error: aborted ? "timeout" : "network_error", status: null, body: null, durationMs: Date.now() - startedAt };
-  } finally {
-    clearTimeout(timer);
+    throw new ExternalAgentError("network", `Falha de rede no agente externo: ${String(err)}`);
   }
+  if (!res.ok) throw new ExternalAgentError("http_error", `Agente externo respondeu HTTP ${res.status}.`, res.status);
+
+  let body: unknown;
+  try {
+    const text = await res.text();
+    body = text ? JSON.parse(text) : {};
+  } catch {
+    throw new ExternalAgentError("invalid_response", "Agente externo retornou JSON inválido.");
+  }
+  // n8n costuma devolver [ { ... } ] no nó "Respond to Webhook".
+  if (Array.isArray(body) && body.length === 1) body = body[0];
+  const parsed = externalAgentResponseSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new ExternalAgentError("invalid_response", `Resposta fora do contrato: ${parsed.error.issues.map((i) => i.path.join(".") + " " + i.message).join("; ")}`);
+  }
+  const reply = parsed.data;
+  if (!reply.reply?.trim() && !reply.handoff && reply.media.length === 0) {
+    throw new ExternalAgentError("invalid_response", "Resposta vazia (sem reply, media ou handoff).");
+  }
+  return reply;
 }

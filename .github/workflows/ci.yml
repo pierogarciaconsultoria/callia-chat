@@ -1,0 +1,56 @@
+# Testes do Callia Chat a cada push e pull request.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: Unitários, tipos e build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.1.4
+      - name: Tipos das edge functions
+        run: deno check --no-lock supabase/functions/*/index.ts
+        env:
+          DENO_NO_PACKAGE_JSON: "1"
+
+  sql:
+    name: Migrations, RLS e camada SaaS
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/test-sql.sh
+
+  e2e:
+    name: Ponta a ponta (functions reais)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [app, sql]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.1.4
+      - name: Cenário ponta a ponta
+        run: DENO="$(command -v deno)" bash scripts/e2e/run.sh

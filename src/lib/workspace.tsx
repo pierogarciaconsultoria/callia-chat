@@ -1,98 +1,141 @@
-import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "./supabase";
 import { useAuth } from "./auth";
+import { unwrap } from "./functions";
+import { readLocal, writeLocal } from "./storage";
+import { applyBranding } from "./branding";
+import type { Workspace, WorkspaceBranding, WorkspaceRole } from "./database.types";
 
-export type Workspace = { id: string; name: string; slug: string; owner_id: string };
-export type Role = "owner" | "admin" | "agent";
+const STORAGE_KEY = "callia.workspace";
+// Consultas que não pertencem a um workspace e sobrevivem à troca.
+const KEEP_ON_SWITCH = new Set(["workspaces", "platform-admin", "platform-settings", "admin"]);
 
-interface WorkspaceCtx {
-  workspaces: Workspace[];
-  currentWorkspace: Workspace | null;
-  role: Role | null;
-  canManage: boolean;
+export interface WorkspaceWithRole extends Workspace {
+  role: WorkspaceRole;
+}
+
+interface WorkspaceState {
+  workspaces: WorkspaceWithRole[];
+  workspace: WorkspaceWithRole | null;
+  workspaceId: string | null;
+  role: WorkspaceRole | null;
+  isAdmin: boolean;
+  isOwner: boolean;
+  /** Administrador da plataforma (user_roles.platform_admin), acima dos tenants. */
+  isPlatformAdmin: boolean;
+  platformAdminLoading: boolean;
+  branding: WorkspaceBranding | null;
   loading: boolean;
-  setCurrentWorkspaceId: (id: string) => void;
+  error: unknown;
+  selectWorkspace: (id: string) => void;
   refresh: () => Promise<void>;
 }
 
-const Ctx = createContext<WorkspaceCtx>({
-  workspaces: [],
-  currentWorkspace: null,
-  role: null,
-  canManage: false,
-  loading: true,
-  setCurrentWorkspaceId: () => {},
-  refresh: async () => {},
-});
-
-const STORAGE_KEY = "aih.currentWorkspaceId";
+const WorkspaceContext = createContext<WorkspaceState | null>(null);
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [rolesById, setRolesById] = useState<Record<string, Role>>({});
-  const [currentId, setCurrentId] = useState<string | null>(() => localStorage.getItem(STORAGE_KEY));
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const [selectedId, setSelectedId] = useState<string | null>(() => readLocal(STORAGE_KEY));
 
-  const refresh = useCallback(async () => {
-    if (!user) {
-      setWorkspaces([]);
-      setRolesById({});
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    const { data: members } = await (supabase as any)
-      .from("workspace_members")
-      .select("role, workspace:workspaces(id, name, slug, owner_id)")
-      .eq("user_id", user.id);
+  const listQuery = useQuery({
+    queryKey: ["workspaces", user?.id],
+    enabled: Boolean(user),
+    queryFn: async () => {
+      // RLS já restringe aos workspaces do usuário; o papel vem de workspace_members.
+      const members = unwrap(
+        await supabase.from("workspace_members").select("workspace_id, role").eq("user_id", user!.id),
+      ) as { workspace_id: string; role: WorkspaceRole }[];
+      if (members.length === 0) return [] as WorkspaceWithRole[];
+      const rows = unwrap(
+        await supabase
+          .from("workspaces")
+          .select("*")
+          .in(
+            "id",
+            members.map((m) => m.workspace_id),
+          )
+          .order("name"),
+      ) as Workspace[];
+      const roleById = new Map(members.map((m) => [m.workspace_id, m.role]));
+      return rows.map((w) => ({ ...w, role: roleById.get(w.id) ?? "agent" }));
+    },
+  });
 
-    const rows = (members ?? []).filter((m: any) => m.workspace);
-    setWorkspaces(rows.map((m: any) => m.workspace));
-    setRolesById(
-      rows.reduce((acc: Record<string, Role>, m: any) => {
-        acc[m.workspace.id] = m.role as Role;
-        return acc;
-      }, {}),
-    );
-    setCurrentId((prev) => {
-      const next = rows.some((m: any) => m.workspace.id === prev) ? prev : rows[0]?.workspace?.id ?? null;
-      if (next) localStorage.setItem(STORAGE_KEY, next);
-      return next;
-    });
-    setLoading(false);
-  }, [user]);
+  const platformQuery = useQuery({
+    queryKey: ["platform-admin", user?.id],
+    enabled: Boolean(user),
+    staleTime: 5 * 60_000,
+    queryFn: async () => Boolean(unwrap(await supabase.rpc("is_platform_admin"))),
+  });
+
+  const workspaces = listQuery.data ?? [];
+  const workspace = workspaces.find((w) => w.id === selectedId) ?? workspaces[0] ?? null;
+  const workspaceId = workspace?.id ?? null;
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    if (workspaceId && workspaceId !== selectedId) {
+      setSelectedId(workspaceId);
+      writeLocal(STORAGE_KEY, workspaceId);
+    }
+  }, [workspaceId, selectedId]);
 
-  const currentWorkspace = workspaces.find((w) => w.id === currentId) ?? null;
+  const brandingQuery = useQuery({
+    queryKey: ["branding", workspaceId],
+    enabled: Boolean(workspaceId),
+    queryFn: async () =>
+      unwrap(
+        await supabase.from("workspace_branding").select("*").eq("workspace_id", workspaceId!).maybeSingle(),
+      ) as WorkspaceBranding | null,
+  });
 
-  // workspaces.owner_id is the database's own authority (policy ws_delete), so a
-  // missing membership row must not silently downgrade the real owner to read-only.
-  const role: Role | null = currentWorkspace
-    ? rolesById[currentWorkspace.id] ?? (currentWorkspace.owner_id === user?.id ? "owner" : null)
-    : null;
+  const branding = brandingQuery.data ?? null;
 
-  return (
-    <Ctx.Provider
-      value={{
-        workspaces,
-        currentWorkspace,
-        role,
-        canManage: role === "owner" || role === "admin",
-        loading,
-        setCurrentWorkspaceId: (id: string) => {
-          setCurrentId(id);
-          localStorage.setItem(STORAGE_KEY, id);
-        },
-        refresh,
-      }}
-    >
-      {children}
-    </Ctx.Provider>
-  );
+  useEffect(() => {
+    applyBranding(branding?.primary_color, branding?.secondary_color);
+    const title = branding?.display_name || workspace?.name;
+    document.title = title ? `${title} · Callia Chat` : "Callia Chat";
+  }, [branding?.primary_color, branding?.secondary_color, branding?.display_name, workspace?.name]);
+
+  const value = useMemo<WorkspaceState>(() => {
+    const role = workspace?.role ?? null;
+    return {
+      workspaces,
+      workspace,
+      workspaceId,
+      role,
+      isAdmin: role === "owner" || role === "admin",
+      isOwner: role === "owner",
+      isPlatformAdmin: platformQuery.data === true,
+      platformAdminLoading: platformQuery.isLoading,
+      branding,
+      loading: listQuery.isLoading,
+      error: listQuery.error,
+      selectWorkspace(id) {
+        setSelectedId(id);
+        writeLocal(STORAGE_KEY, id);
+        // Dados de outro workspace não podem vazar para a tela nova.
+        queryClient.removeQueries({ predicate: (q) => !KEEP_ON_SWITCH.has(String(q.queryKey[0])) });
+      },
+      async refresh() {
+        await queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+      },
+    };
+  }, [workspaces, workspace, workspaceId, branding, listQuery.isLoading, listQuery.error, queryClient, platformQuery.data, platformQuery.isLoading]);
+
+  return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
 }
 
-export const useWorkspace = () => useContext(Ctx);
+export function useWorkspace(): WorkspaceState {
+  const ctx = useContext(WorkspaceContext);
+  if (!ctx) throw new Error("useWorkspace fora do WorkspaceProvider");
+  return ctx;
+}
+
+// Para páginas dentro do shell, onde o workspace já foi garantido pelo ProtectedRoute.
+export function useRequiredWorkspace() {
+  const ctx = useWorkspace();
+  if (!ctx.workspaceId) throw new Error("Nenhum workspace selecionado");
+  return { ...ctx, workspaceId: ctx.workspaceId };
+}

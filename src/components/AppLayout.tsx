@@ -1,177 +1,160 @@
-import { ReactNode, useEffect, useState } from "react";
-import { NavLink, Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Suspense, useState } from "react";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { ArrowLeft, LogOut, Menu, MessageCircle, ShieldCheck, X } from "lucide-react";
+import { cn } from "@/lib/cn";
 import { useAuth } from "@/lib/auth";
 import { useWorkspace } from "@/lib/workspace";
-import { useWorkspaceBranding } from "@/hooks/use-workspace-branding";
-import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import {
-  Inbox,
-  Bot,
-  MessageSquare,
-  KeyRound,
-  Webhook,
-  Users,
-  ScrollText,
-  Settings,
-  LogOut,
-  Sparkles,
-  ChevronRight,
-  Library,
-} from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { PageLoader } from "@/components/ui";
+import { NAV_ITEMS, PLATFORM_NAV_ITEMS } from "./nav";
+import { PlanBanner } from "./PlanBanner";
 
-type NavEntry = { to: string; label: string; icon: any };
-
-const mainNav: NavEntry[] = [
-  { to: "/inbox", label: "Inbox", icon: Inbox },
-];
-
-const settingsNav: NavEntry[] = [
-  { to: "/settings", label: "Workspace", icon: Settings },
-  { to: "/agent", label: "Agente IA", icon: Bot },
-  { to: "/knowledge-base", label: "Base de conhecimento", icon: Library },
-  { to: "/whatsapp", label: "WhatsApp", icon: MessageSquare },
-  { to: "/api-keys", label: "API Keys", icon: KeyRound },
-  { to: "/webhooks", label: "Webhooks", icon: Webhook },
-  { to: "/team", label: "Time", icon: Users },
-  { to: "/logs", label: "Logs", icon: ScrollText },
-];
-
-function NavItem({ to, label, icon: Icon }: NavEntry) {
-  return (
-    <NavLink
-      to={to}
-      className={({ isActive }) =>
-        `flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors ${
-          isActive
-            ? "bg-secondary text-secondary-foreground font-medium"
-            : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
-        }`
-      }
-    >
-      <Icon className="h-4 w-4 shrink-0" />
-      {label}
-    </NavLink>
+const linkClass = ({ isActive }: { isActive: boolean }) =>
+  cn(
+    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+    isActive
+      ? "bg-brand/10 text-brand dark:bg-brand/20"
+      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100",
   );
-}
 
-function NavTree({ label, icon: Icon, items }: { label: string; icon: any; items: NavEntry[] }) {
-  const location = useLocation();
-  const isChildActive = items.some((item) => location.pathname.startsWith(item.to));
-  const [open, setOpen] = useState(isChildActive);
+const ROLE_LABEL = { owner: "Proprietário", admin: "Administrador", agent: "Atendente" } as const;
 
-  useEffect(() => {
-    if (isChildActive) setOpen(true);
-  }, [isChildActive]);
-
-  return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger
-        className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors ${
-          isChildActive
-            ? "text-foreground"
-            : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
-        }`}
-      >
-        <Icon className="h-4 w-4 shrink-0" />
-        {label}
-        <ChevronRight
-          className={`ml-auto h-4 w-4 shrink-0 transition-transform ${open ? "rotate-90" : ""}`}
-        />
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className="mt-1 ml-5 space-y-1 border-l pl-2">
-          {items.map((item) => (
-            <NavItem key={item.to} {...item} />
-          ))}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
-  );
-}
-
-export function AppLayout({ children }: { children?: ReactNode }) {
+export function AppLayout() {
   const { user, signOut } = useAuth();
-  const { workspaces, currentWorkspace, setCurrentWorkspaceId, canManage, loading } = useWorkspace();
-  const { branding, displayName } = useWorkspaceBranding();
-  const navigate = useNavigate();
+  const { workspaces, workspace, selectWorkspace, isAdmin, isPlatformAdmin, branding, role } = useWorkspace();
+  const [open, setOpen] = useState(false);
   const location = useLocation();
+  const isInbox = location.pathname.startsWith("/inbox");
+  const inConsole = location.pathname.startsWith("/admin");
+  const items = workspace ? NAV_ITEMS.filter((i) => isAdmin || !i.adminOnly) : [];
+  const title = inConsole ? "Console da plataforma" : branding?.display_name || workspace?.name || "Callia Chat";
 
-  const handleSignOut = async () => {
-    await signOut();
-    navigate("/login");
-  };
+  const sidebar = (
+    <div className="flex h-full flex-col">
+      <div className="flex items-center gap-3 px-4 py-4">
+        {branding?.logo_url ? (
+          <img src={branding.logo_url} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover" />
+        ) : (
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand text-brand-fg">
+            <MessageCircle className="h-5 w-5" />
+          </div>
+        )}
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold">{title}</p>
+          <p className="truncate text-xs text-slate-500 dark:text-slate-400">Callia Chat</p>
+        </div>
+      </div>
 
-  if (!loading && !canManage && location.pathname !== "/inbox") {
-    return <Navigate to="/inbox" replace />;
-  }
+      {workspaces.length > 1 && !inConsole && (
+        <div className="px-3 pb-2">
+          <label className="sr-only" htmlFor="ws-switcher">
+            Workspace
+          </label>
+          <select
+            id="ws-switcher"
+            value={workspace?.id ?? ""}
+            onChange={(e) => {
+              selectWorkspace(e.target.value);
+              setOpen(false);
+            }}
+            className="h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm dark:border-slate-700 dark:bg-slate-900"
+          >
+            {workspaces.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-2">
+        {inConsole && workspace && (
+          <NavLink to="/inbox" onClick={() => setOpen(false)} className={linkClass({ isActive: false })}>
+            <ArrowLeft className="h-4 w-4 shrink-0" />
+            Voltar ao workspace
+          </NavLink>
+        )}
+        {!inConsole &&
+          items.map((item) => (
+            <NavLink key={item.to} to={item.to} onClick={() => setOpen(false)} className={linkClass}>
+              <item.icon className="h-4 w-4 shrink-0" />
+              {item.label}
+            </NavLink>
+          ))}
+        {isPlatformAdmin && (
+          <div className={cn(!inConsole && "mt-4 border-t border-slate-200 pt-3 dark:border-slate-800")}>
+            <p className="flex items-center gap-1.5 px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+              <ShieldCheck className="h-3.5 w-3.5" /> Plataforma
+            </p>
+            {(inConsole ? PLATFORM_NAV_ITEMS : PLATFORM_NAV_ITEMS.slice(0, 1)).map((item) => (
+              <NavLink key={item.to} to={item.to} end={item.end} onClick={() => setOpen(false)} className={linkClass}>
+                <item.icon className="h-4 w-4 shrink-0" />
+                {inConsole ? item.label : "Console da plataforma"}
+              </NavLink>
+            ))}
+          </div>
+        )}
+      </nav>
+
+      <div className="border-t border-slate-200 px-3 py-3 dark:border-slate-800">
+        <p className="truncate px-1 text-xs text-slate-500 dark:text-slate-400" title={user?.email ?? ""}>
+          {user?.email}
+        </p>
+        {role && !inConsole && <p className="px-1 text-xs text-slate-400">{ROLE_LABEL[role]}</p>}
+        {inConsole && <p className="px-1 text-xs text-slate-400">Administrador da plataforma</p>}
+        <button
+          type="button"
+          onClick={() => void signOut()}
+          className="mt-2 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+        >
+          <LogOut className="h-4 w-4" /> Sair
+        </button>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <aside className="w-64 border-r bg-card flex flex-col">
-        <div className="p-4 border-b">
-          <div className="flex items-center gap-2 mb-3">
-            <Avatar
-              className="h-9 w-9 rounded-md"
-              style={{ backgroundColor: branding?.primary_color ?? undefined }}
-            >
-              {branding?.logo_url ? (
-                <AvatarImage src={branding.logo_url} alt={displayName} />
-              ) : null}
-              <AvatarFallback className="rounded-md text-white">
-                <Sparkles className="h-4 w-4" />
-              </AvatarFallback>
-            </Avatar>
-            <div className="min-w-0">
-              <div className="truncate font-semibold">{displayName}</div>
-              <div className="truncate text-xs text-muted-foreground">
-                {branding?.custom_domain || currentWorkspace?.slug || "Workspace"}
-              </div>
-            </div>
-          </div>
-          {workspaces.length > 0 && (
-            <Select
-              value={currentWorkspace?.id}
-              onValueChange={(v) => setCurrentWorkspaceId(v)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Workspace" />
-              </SelectTrigger>
-              <SelectContent>
-                {workspaces.map((w) => (
-                  <SelectItem key={w.id} value={w.id}>
-                    {w.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </div>
-        <nav className="flex-1 p-2 space-y-1">
-          {mainNav.map((n) => (
-            <NavItem key={n.to} {...n} />
-          ))}
-          {canManage && <NavTree label="Configurações" icon={Settings} items={settingsNav} />}
-        </nav>
-        <div className="p-3 border-t">
-          <div className="text-xs text-muted-foreground truncate mb-2">{user?.email}</div>
-          <Button variant="ghost" size="sm" className="w-full justify-start" onClick={handleSignOut}>
-            <LogOut className="h-4 w-4 mr-2" />
-            Sair
-          </Button>
-        </div>
+    <div className="flex h-full min-h-screen">
+      <aside className="hidden w-60 shrink-0 border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 lg:block">
+        <div className="sticky top-0 h-screen">{sidebar}</div>
       </aside>
-      <main className="flex-1 overflow-auto">{children ?? <Outlet />}</main>
+
+      {open && (
+        <div className="fixed inset-0 z-40 lg:hidden">
+          <div className="absolute inset-0 bg-slate-950/50" onClick={() => setOpen(false)} />
+          <aside className="relative h-full w-72 max-w-[85vw] bg-white shadow-xl dark:bg-slate-900">
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="absolute right-2 top-3 rounded-md p-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
+              aria-label="Fechar menu"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            {sidebar}
+          </aside>
+        </div>
+      )}
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-slate-200 bg-white/90 px-4 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90 lg:hidden">
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="rounded-md p-1.5 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+            aria-label="Abrir menu"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+          <span className="truncate text-sm font-semibold">{title}</span>
+        </header>
+        {workspace && !inConsole && <PlanBanner />}
+        <main className={cn("min-w-0 flex-1", isInbox ? "" : "mx-auto w-full max-w-6xl px-4 py-6 sm:px-6")}>
+          <Suspense fallback={<PageLoader />}>
+            <Outlet />
+          </Suspense>
+        </main>
+      </div>
     </div>
   );
 }
-
-export default AppLayout;

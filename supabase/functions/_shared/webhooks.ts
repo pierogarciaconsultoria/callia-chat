@@ -1,279 +1,119 @@
-// @ts-nocheck
-import { createServiceClient } from "./auth.ts";
+// Webhooks de saída: assinatura HMAC-SHA256, entregas persistidas e retentativas com backoff.
+import { decryptSecret, hmacSha256Hex } from "./crypto.ts";
 
-const MAX_WEBHOOK_ATTEMPTS = 3;
+export const WEBHOOK_EVENTS = ["message.received", "message.sent", "conversation.handoff", "public_api.event.received"] as const;
+export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number] | "webhook.test";
 
-function getEnv(name: string) {
-  return (globalThis as { Deno?: { env?: { get: (key: string) => string | undefined } } }).Deno?.env?.get(name);
+/** x-callia-signature = sha256=<hex HMAC-SHA256(secret, `${timestamp}.${body}`)> */
+export async function signWebhook(secret: string, timestamp: string, body: string): Promise<string> {
+  return `sha256=${await hmacSha256Hex(secret, `${timestamp}.${body}`)}`;
 }
 
-function textToHex(buffer: ArrayBuffer) {
-  return Array.from(new Uint8Array(buffer))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+/** Atraso antes da tentativa n+1 (n = tentativas já feitas): 30s, 2min, 10min, 30min, 1h, 2h... */
+export function retryDelaySeconds(attemptsMade: number): number {
+  const table = [30, 120, 600, 1800, 3600];
+  return attemptsMade <= table.length ? table[Math.max(0, attemptsMade - 1)] : 7200;
 }
 
-export async function signWebhookPayload(input: {
-  secret: string;
-  timestamp: string;
-  payload: string;
-}) {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(input.secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-
-  const signatureBuffer = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(`${input.timestamp}.${input.payload}`),
-  );
-
-  return `sha256=${textToHex(signatureBuffer)}`;
+export function buildEnvelope(event: WebhookEvent, workspaceId: string, data: Record<string, unknown>, deliveryId: string) {
+  return { id: deliveryId, event, workspace_id: workspaceId, created_at: new Date().toISOString(), data };
 }
 
-export function maskWebhookSecret(secret: string | null | undefined) {
-  if (!secret) return "nao_definido";
-  return `${secret.slice(0, 6)}****${secret.slice(-6)}`;
-}
+// deno-lint-ignore no-explicit-any
+type Db = any;
 
-export async function createAuditLog(supabase, input) {
-  await supabase.from("audit_logs").insert({
-    workspace_id: input.workspaceId,
-    actor_type: input.actorType,
-    actor_id: input.actorId ?? null,
-    action: input.action,
-    target: input.target ?? null,
-    metadata: input.metadata ?? {},
+/**
+ * Cria uma entrega por webhook ativo inscrito no evento e já tenta enviar.
+ * Falhas ficam em `retrying` e são retomadas pelo webhook-dispatcher (cron).
+ */
+export async function emitEvent(
+  db: Db,
+  args: { workspaceId: string; event: WebhookEvent; data: Record<string, unknown>; correlationId?: string; masterKey?: string; onlyWebhookId?: string },
+): Promise<string[]> {
+  let query = db.from("webhooks").select("id, events").eq("workspace_id", args.workspaceId).eq("active", true);
+  if (args.onlyWebhookId) query = query.eq("id", args.onlyWebhookId);
+  const { data: hooks, error } = await query;
+  if (error || !hooks?.length) return [];
+  const targets = args.onlyWebhookId ? hooks : hooks.filter((h: { events: string[] }) => h.events.includes(args.event));
+  if (!targets.length) return [];
+
+  const rows = targets.map((h: { id: string }) => {
+    const id = crypto.randomUUID();
+    return {
+      id,
+      workspace_id: args.workspaceId,
+      webhook_id: h.id,
+      event: args.event,
+      payload: buildEnvelope(args.event, args.workspaceId, args.data, id),
+      correlation_id: args.correlationId ?? null,
+    };
   });
-}
-
-export async function enqueueWebhookDeliveries(supabase, input) {
-  const { data: webhooks } = await supabase
-    .from("webhooks")
-    .select("*")
-    .eq("workspace_id", input.workspaceId)
-    .eq("is_active", true)
-    .contains("events", [input.event]);
-
-  if (!webhooks || webhooks.length === 0) {
+  const { error: insertError } = await db.from("webhook_deliveries").insert(rows);
+  if (insertError) {
+    console.error(JSON.stringify({ level: "error", msg: "webhook_delivery_insert_failed", error: insertError.message }));
     return [];
   }
+  if (args.masterKey) {
+    await Promise.all(rows.map((r: { id: string }) => deliverWebhook(db, r.id, args.masterKey!)));
+  }
+  return rows.map((r: { id: string }) => r.id);
+}
 
-  const deliveries = webhooks.map((webhook) => ({
-    webhook_id: webhook.id,
-    workspace_id: input.workspaceId,
-    event: input.event,
-    payload: input.payload,
-    attempted_at: new Date().toISOString(),
-    last_attempt_at: new Date().toISOString(),
-    attempt_number: 1,
-    retry_count: 0,
-    correlation_id: input.correlationId ?? crypto.randomUUID(),
-    delivery_status: "pending",
-    webhook_url: webhook.url,
-    request_headers: webhook.headers ?? {},
-  }));
-
-  const { data, error } = await supabase
+export async function deliverWebhook(db: Db, deliveryId: string, masterKey: string, fetchImpl: typeof fetch = fetch) {
+  const { data: delivery } = await db
     .from("webhook_deliveries")
-    .insert(deliveries)
-    .select("*");
-
-  if (error) throw error;
-  return data ?? [];
-}
-
-function getRetryDate(attemptNumber: number) {
-  const delaySeconds = attemptNumber === 1 ? 30 : attemptNumber === 2 ? 120 : 300;
-  return new Date(Date.now() + delaySeconds * 1000).toISOString();
-}
-
-export async function dispatchWebhookDelivery(supabase, delivery) {
-  const { data: webhook } = await supabase
-    .from("webhooks")
-    .select("*")
-    .eq("id", delivery.webhook_id)
+    .select("id, workspace_id, webhook_id, event, payload, attempts, status, correlation_id, webhooks(url, secret_ciphertext, max_attempts, active)")
+    .eq("id", deliveryId)
     .maybeSingle();
+  if (!delivery || delivery.status === "success") return delivery;
+  const hook = delivery.webhooks;
+  const attempt = delivery.attempts + 1;
+  const body = JSON.stringify(delivery.payload);
+  const timestamp = String(Math.floor(Date.now() / 1000));
 
-  if (!webhook || !webhook.is_active) {
-    await supabase
-      .from("webhook_deliveries")
-      .update({
-        delivery_status: "failed",
-        error: "webhook_inactive_or_missing",
-        last_attempt_at: new Date().toISOString(),
-      })
-      .eq("id", delivery.id);
-    return;
-  }
-
-  const payloadText = JSON.stringify(delivery.payload ?? {});
-  const timestamp = new Date().toISOString();
-  const signature = await signWebhookPayload({
-    secret: webhook.secret,
-    timestamp,
-    payload: payloadText,
-  });
-
-  const headers = {
-    "Content-Type": "application/json",
-    "User-Agent": "CalliaChat-Webhooks/1.0",
-    "x-callia-event": delivery.event,
-    "x-callia-delivery-id": delivery.id,
-    "x-callia-correlation-id": delivery.correlation_id,
-    "x-callia-attempt": String(delivery.attempt_number ?? 1),
-    "x-callia-timestamp": timestamp,
-    "x-callia-signature": signature,
-    ...((webhook.headers as Record<string, string> | null) ?? {}),
-  };
-
-  try {
-    const response = await fetch(webhook.url, {
-      method: "POST",
-      headers,
-      body: payloadText,
-    });
-
-    const responseBody = await response.text().catch(() => "");
-    const responseHeaders = Object.fromEntries(response.headers.entries());
-
-    if (response.ok) {
-      await supabase
-        .from("webhook_deliveries")
-        .update({
-          delivery_status: "delivered",
-          response_status: response.status,
-          response_body: responseBody,
-          response_headers: responseHeaders,
-          request_headers: headers,
-          delivered_at: new Date().toISOString(),
-          last_attempt_at: new Date().toISOString(),
-          next_retry_at: null,
-          error: null,
-          webhook_url: webhook.url,
-        })
-        .eq("id", delivery.id);
-
-      await supabase
-        .from("webhooks")
-        .update({
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", webhook.id);
-
-      return;
-    }
-
-    const nextAttempt = (delivery.attempt_number ?? 1) + 1;
-    const exhausted = nextAttempt > MAX_WEBHOOK_ATTEMPTS;
-
-    await supabase
-      .from("webhook_deliveries")
-      .update({
-        delivery_status: exhausted ? "failed" : "pending",
-        response_status: response.status,
-        response_body: responseBody,
-        response_headers: responseHeaders,
-        request_headers: headers,
-        error: `http_${response.status}`,
-        attempt_number: nextAttempt,
-        retry_count: nextAttempt - 1,
-        next_retry_at: exhausted ? null : getRetryDate(nextAttempt - 1),
-        last_attempt_at: new Date().toISOString(),
-        webhook_url: webhook.url,
-      })
-      .eq("id", delivery.id);
-  } catch (error) {
-    const nextAttempt = (delivery.attempt_number ?? 1) + 1;
-    const exhausted = nextAttempt > MAX_WEBHOOK_ATTEMPTS;
-
-    await supabase
-      .from("webhook_deliveries")
-      .update({
-        delivery_status: exhausted ? "failed" : "pending",
-        error: error instanceof Error ? error.message : "network_error",
-        request_headers: headers,
-        attempt_number: nextAttempt,
-        retry_count: nextAttempt - 1,
-        next_retry_at: exhausted ? null : getRetryDate(nextAttempt - 1),
-        last_attempt_at: new Date().toISOString(),
-        webhook_url: webhook.url,
-      })
-      .eq("id", delivery.id);
-  }
-}
-
-export async function processPendingWebhookDeliveries(supabase, input: {
-  deliveryId?: string | null;
-  workspaceId?: string | null;
-  limit?: number;
-}) {
-  const limit = input.limit ?? 20;
-  let query = supabase
-    .from("webhook_deliveries")
-    .select("*")
-    .in("delivery_status", ["pending"])
-    .order("attempted_at", { ascending: true })
-    .limit(limit);
-
-  if (input.deliveryId) {
-    query = query.eq("id", input.deliveryId);
+  let statusCode: number | null = null;
+  let errorText: string | null = null;
+  if (!hook?.active) {
+    errorText = "webhook inativo";
   } else {
-    query = query.or(`next_retry_at.is.null,next_retry_at.lte.${new Date().toISOString()}`);
+    try {
+      const secret = await decryptSecret(hook.secret_ciphertext, masterKey);
+      const res = await fetchImpl(hook.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": "CalliaChat-Webhooks/1.0",
+          "x-callia-event": delivery.event,
+          "x-callia-delivery-id": delivery.id,
+          "x-callia-correlation-id": delivery.correlation_id ?? delivery.id,
+          "x-callia-attempt": String(attempt),
+          "x-callia-timestamp": timestamp,
+          "x-callia-signature": await signWebhook(secret, timestamp, body),
+        },
+        body,
+        signal: AbortSignal.timeout(10_000),
+        redirect: "manual",
+      });
+      statusCode = res.status;
+      await res.body?.cancel();
+      if (res.status < 200 || res.status >= 300) errorText = `HTTP ${res.status}`;
+    } catch (err) {
+      errorText = (err as Error)?.name === "TimeoutError" ? "timeout (10s)" : String(err).slice(0, 300);
+    }
   }
 
-  if (input.workspaceId) {
-    query = query.eq("workspace_id", input.workspaceId);
-  }
-
-  const { data, error } = await query;
-  if (error) throw error;
-
-  for (const delivery of data ?? []) {
-    await dispatchWebhookDelivery(supabase, delivery);
-  }
-
-  return data ?? [];
-}
-
-export async function triggerWebhookDispatch(input: {
-  workspaceId: string;
-  event: string;
-  payload: Record<string, unknown>;
-  correlationId?: string;
-}) {
-  const supabaseUrl = getEnv("SUPABASE_URL");
-  const serviceRoleKey = getEnv("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceRoleKey) return;
-
-  await fetch(`${supabaseUrl.replace(/\/+$/, "")}/functions/v1/webhook-dispatcher`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${serviceRoleKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(input),
-  }).catch(() => null);
-}
-
-export async function triggerPendingWebhookDispatch(workspaceId?: string | null) {
-  const supabaseUrl = getEnv("SUPABASE_URL");
-  const serviceRoleKey = getEnv("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceRoleKey) return;
-
-  await fetch(`${supabaseUrl.replace(/\/+$/, "")}/functions/v1/webhook-dispatcher`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${serviceRoleKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      workspaceId: workspaceId ?? null,
-      processPendingOnly: true,
-    }),
-  }).catch(() => null);
+  const ok = errorText === null;
+  const exhausted = attempt >= (hook?.max_attempts ?? 6) || !hook?.active;
+  const update = {
+    attempts: attempt,
+    last_status_code: statusCode,
+    last_error: errorText,
+    status: ok ? "success" : exhausted ? "failed" : "retrying",
+    delivered_at: ok ? new Date().toISOString() : null,
+    next_attempt_at: new Date(Date.now() + retryDelaySeconds(attempt) * 1000).toISOString(),
+  };
+  const { data: updated } = await db.from("webhook_deliveries").update(update).eq("id", delivery.id).select(
+    "id, webhook_id, event, status, attempts, last_status_code, last_error, created_at, delivered_at, next_attempt_at",
+  ).maybeSingle();
+  return updated;
 }

@@ -1,226 +1,68 @@
-// @ts-nocheck
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { corsHeaders, jsonResponse, requireAdminContext } from "../_shared/auth.ts";
-import {
-  generateRawApiKey,
-  getApiKeyLast4,
-  getApiKeyPrefix,
-  sanitizeApiKeyRecord,
-  sha256Hex,
-} from "../_shared/api-keys.ts";
-import { createAuditLog } from "../_shared/webhooks.ts";
+// CRUD de API keys. A chave bruta só existe na resposta de create/rotate; o banco guarda hash, prefixo e last4.
+import { createHandler, json, readJson, RuntimeError } from "../_shared/http.ts";
+import { generateApiKey } from "../_shared/crypto.ts";
+import { adminDb, audit, type Db, optionalEnv, requireUser, requireWorkspaceRole } from "../_shared/supabase.ts";
+import { assertActive, loadEntitlements } from "../_shared/entitlements.ts";
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+const PUBLIC_COLUMNS = "id, workspace_id, name, prefix, last4, scopes, created_by, created_at, last_used_at, expires_at, revoked_at";
+
+async function insertKey(db: Db, workspaceId: string, name: string, expiresAt: string | null, userId: string) {
+  const key = await generateApiKey(optionalEnv("API_KEY_PEPPER") ?? "");
+  const { data, error } = await db.from("api_keys").insert({
+    workspace_id: workspaceId,
+    name,
+    prefix: key.prefix,
+    key_hash: key.hash,
+    last4: key.last4,
+    expires_at: expiresAt,
+    created_by: userId,
+  }).select(PUBLIC_COLUMNS).single();
+  if (error) throw new RuntimeError("internal_error", "Falha ao criar chave.", { db: error.message });
+  return { api_key: data, raw_key: key.raw };
 }
 
-function normalizeName(value: unknown) {
-  return typeof value === "string" ? value.trim() : "";
-}
+Deno.serve(createHandler("manage-api-keys", async ({ req, correlationId }) => {
+  if (req.method !== "POST") throw new RuntimeError("invalid_request", "Use POST.");
+  const user = await requireUser(req);
+  const body = await readJson<{ action?: string; workspace_id?: string; key_id?: string; name?: string; expires_at?: string | null }>(req);
+  const db = adminDb();
 
-async function createApiKeyRecord(supabase, input) {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const rawKey = generateRawApiKey();
-    const keyHash = await sha256Hex(rawKey);
-
-    const { data, error } = await supabase
-      .from("api_keys")
-      .insert({
-        workspace_id: input.workspaceId,
-        name: input.name,
-        prefix: getApiKeyPrefix(),
-        key_hash: keyHash,
-        last4: getApiKeyLast4(rawKey),
-        created_by: input.userId,
-        metadata: input.metadata ?? {},
-      })
-      .select("*")
-      .single();
-
-    if (!error) {
-      return {
-        rawKey,
-        record: data,
-      };
+  if (body.action === "create") {
+    await requireWorkspaceRole(user.id, body.workspace_id);
+    assertActive(await loadEntitlements(db, body.workspace_id as string));
+    const name = body.name?.trim() ?? "";
+    if (name.length < 2 || name.length > 80) throw new RuntimeError("invalid_request", "Nome deve ter entre 2 e 80 caracteres.");
+    let expiresAt: string | null = null;
+    if (body.expires_at) {
+      const d = new Date(body.expires_at);
+      if (Number.isNaN(d.getTime()) || d <= new Date()) throw new RuntimeError("invalid_request", "expires_at deve ser uma data futura.");
+      expiresAt = d.toISOString();
     }
-
-    if (error.code !== "23505") {
-      throw error;
-    }
+    const result = await insertKey(db, body.workspace_id as string, name, expiresAt, user.id);
+    await audit(db, { workspace_id: body.workspace_id as string, actor_user_id: user.id, action: "api_key.created", entity: "api_key", entity_id: result.api_key.id, details: { name, prefix: result.api_key.prefix }, correlation_id: correlationId });
+    return json(result);
   }
 
-  throw new Error("api_key_generation_failed");
-}
+  if (typeof body.key_id !== "string") throw new RuntimeError("invalid_request", "key_id obrigatório.");
+  const { data: existing } = await db.from("api_keys").select(PUBLIC_COLUMNS).eq("id", body.key_id).maybeSingle();
+  if (!existing) throw new RuntimeError("not_found", "Chave não encontrada.");
+  await requireWorkspaceRole(user.id, existing.workspace_id);
 
-serve(async (request) => {
-  if (request.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+  if (body.action === "revoke") {
+    const { data } = await db.from("api_keys").update({ revoked_at: existing.revoked_at ?? new Date().toISOString() })
+      .eq("id", existing.id).select(PUBLIC_COLUMNS).single();
+    await audit(db, { workspace_id: existing.workspace_id, actor_user_id: user.id, action: "api_key.revoked", entity: "api_key", entity_id: existing.id, correlation_id: correlationId });
+    return json({ api_key: data });
   }
 
-  try {
-    const {
-      userId,
-      workspaceId,
-      supabase,
-      body,
-    } = await requireAdminContext(request);
-    const action = typeof body.action === "string" ? body.action : "list";
-
-    if (action === "list") {
-      const { data, error } = await supabase
-        .from("api_keys")
-        .select("*")
-        .eq("workspace_id", workspaceId)
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-
-      return jsonResponse(
-        {
-          ok: true,
-          keys: (data ?? []).map(sanitizeApiKeyRecord),
-        },
-        { status: 200 },
-      );
-    }
-
-    if (action === "create") {
-      const name = normalizeName(body.name);
-      if (!name) {
-        return jsonResponse({ error: "name_required" }, { status: 400 });
-      }
-
-      const created = await createApiKeyRecord(supabase, {
-        workspaceId,
-        userId,
-        name,
-        metadata: asRecord(body.metadata) ?? {},
-      });
-
-      await createAuditLog(supabase, {
-        workspaceId,
-        actorType: "user",
-        actorId: userId,
-        action: "api_key.created",
-        target: created.record.id,
-        metadata: {
-          name,
-          prefix: created.record.prefix,
-          last4: created.record.last4,
-        },
-      });
-
-      return jsonResponse(
-        {
-          ok: true,
-          key: sanitizeApiKeyRecord(created.record),
-          rawKey: created.rawKey,
-        },
-        { status: 201 },
-      );
-    }
-
-    const apiKeyId = typeof body.apiKeyId === "string" ? body.apiKeyId : null;
-    if (!apiKeyId) {
-      return jsonResponse({ error: "api_key_id_required" }, { status: 400 });
-    }
-
-    const { data: existing } = await supabase
-      .from("api_keys")
-      .select("*")
-      .eq("workspace_id", workspaceId)
-      .eq("id", apiKeyId)
-      .maybeSingle();
-
-    if (!existing) {
-      return jsonResponse({ error: "api_key_not_found" }, { status: 404 });
-    }
-
-    if (action === "revoke") {
-      const { data, error } = await supabase
-        .from("api_keys")
-        .update({
-          revoked_at: new Date().toISOString(),
-          revoked_by: userId,
-        })
-        .eq("id", apiKeyId)
-        .select("*")
-        .single();
-
-      if (error) throw error;
-
-      await createAuditLog(supabase, {
-        workspaceId,
-        actorType: "user",
-        actorId: userId,
-        action: "api_key.revoked",
-        target: apiKeyId,
-        metadata: {
-          name: data.name,
-          last4: data.last4,
-        },
-      });
-
-      return jsonResponse(
-        {
-          ok: true,
-          key: sanitizeApiKeyRecord(data),
-        },
-        { status: 200 },
-      );
-    }
-
-    if (action === "rotate") {
-      await supabase
-        .from("api_keys")
-        .update({
-          revoked_at: new Date().toISOString(),
-          revoked_by: userId,
-        })
-        .eq("id", apiKeyId);
-
-      const created = await createApiKeyRecord(supabase, {
-        workspaceId,
-        userId,
-        name: existing.name,
-        metadata: existing.metadata ?? {},
-      });
-
-      await createAuditLog(supabase, {
-        workspaceId,
-        actorType: "user",
-        actorId: userId,
-        action: "api_key.rotated",
-        target: created.record.id,
-        metadata: {
-          previous_api_key_id: existing.id,
-          name: existing.name,
-          last4: created.record.last4,
-        },
-      });
-
-      return jsonResponse(
-        {
-          ok: true,
-          rotatedFrom: sanitizeApiKeyRecord(existing),
-          key: sanitizeApiKeyRecord(created.record),
-          rawKey: created.rawKey,
-        },
-        { status: 200 },
-      );
-    }
-
-    return jsonResponse({ error: "unsupported_action" }, { status: 400 });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "unexpected_error";
-    const status =
-      message === "unauthorized" ? 401 :
-      message === "forbidden" ? 403 :
-      message === "workspace_required" ? 400 :
-      500;
-
-    return jsonResponse({ error: message }, { status });
+  if (body.action === "rotate") {
+    assertActive(await loadEntitlements(db, existing.workspace_id));
+    if (existing.revoked_at) throw new RuntimeError("conflict", "Chave já revogada; crie uma nova.");
+    const result = await insertKey(db, existing.workspace_id, existing.name, existing.expires_at, user.id);
+    await db.from("api_keys").update({ revoked_at: new Date().toISOString() }).eq("id", existing.id);
+    await audit(db, { workspace_id: existing.workspace_id, actor_user_id: user.id, action: "api_key.rotated", entity: "api_key", entity_id: existing.id, details: { new_key_id: result.api_key.id }, correlation_id: correlationId });
+    return json(result);
   }
-});
+
+  throw new RuntimeError("invalid_request", "Ação desconhecida.");
+}));

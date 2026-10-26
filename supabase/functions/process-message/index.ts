@@ -1,516 +1,282 @@
-// @ts-nocheck
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { corsHeaders, createServiceClient, jsonResponse } from "../_shared/auth.ts";
+// Pipeline de IA: idempotência, debounce, mídia, handoff, agente externo/interno e envio da resposta.
+import { createHandler, json, type Logger, readJson, RuntimeError, sleep } from "../_shared/http.ts";
+import type { HistoryItem } from "../_shared/agent-core.ts";
+import { type PipelineInput, runAgentPipeline } from "../_shared/agent-pipeline.ts";
 import {
-  analyzeImage,
-  buildFallbackReply,
-  buildSystemPrompt,
-  buildUserPrompt,
-  generateAiReply,
-  shouldTriggerHandoff,
-  transcribeAudio,
-} from "../_shared/agent.ts";
-import { createOutboundMessageRecord, deliverOutboundMessage, resolveSendingInstance } from "../_shared/outbound.ts";
-import { buildExternalAgentPayload, callExternalAgent, isAllowedSecretRef } from "../_shared/external-agent.ts";
-import { triggerPendingWebhookDispatch, triggerWebhookDispatch } from "../_shared/webhooks.ts";
+  aiFromEnv,
+  buildPipelineDeps,
+  loadAgentConfig,
+  loadBusinessName,
+  loadProducts,
+  preprocessMedia,
+  synthesizeVoice,
+} from "../_shared/agent-runtime.ts";
+import { type InstanceRow, sendOutbound } from "../_shared/channel.ts";
+import { adminDb, type Db, isInternalCall, optionalEnv, requireUser, requireWorkspaceRole } from "../_shared/supabase.ts";
+import { emitEvent } from "../_shared/webhooks.ts";
+import { assertActive, hasFeature, loadEntitlements, monthlyMessagesLeft } from "../_shared/entitlements.ts";
 
-function getEnv(name: string) {
-  return (globalThis as { Deno?: { env?: { get: (key: string) => string | undefined } } }).Deno?.env?.get(name);
+Deno.serve(createHandler("process-message", async ({ req, correlationId, log }) => {
+  if (req.method !== "POST") throw new RuntimeError("invalid_request", "Use POST.");
+  const body = await readJson<{ action?: string; message_id?: string; workspace_id?: string; messages?: unknown }>(req);
+
+  if (body.action === "simulate") return json(await simulate(req, body, correlationId, log));
+  if (!isInternalCall(req)) throw new RuntimeError("unauthorized", "Chamada interna apenas.");
+  if (typeof body.message_id !== "string") throw new RuntimeError("invalid_request", "message_id obrigatório.");
+  return json(await processMessage(adminDb(), body.message_id, correlationId, log));
+}));
+
+interface ConversationRow {
+  id: string;
+  workspace_id: string;
+  instance_id: string | null;
+  channel: string;
+  contact_phone: string;
+  contact_name: string | null;
+  mode: "bot" | "human" | "closed";
 }
 
-function buildHistorySnippet(messages) {
-  return (messages ?? [])
-    .slice(-12)
-    .map((message) => {
-      const actor =
-        message.direction === "inbound"
-          ? "Cliente"
-          : message.sender === "agent"
-            ? "Atendente"
-            : message.sender === "system"
-              ? "Sistema"
-              : "Bot";
-      const content = message.content ?? message.transcription ?? "[sem conteúdo]";
-      return `${actor}: ${content}`;
-    })
-    .join("\n");
-}
-
-async function updateConversationForHandoff(supabase, conversation, reason) {
-  const { data, error } = await supabase
-    .from("conversations")
-    .update({
-      mode: "human",
-      metadata: {
-        ...((conversation.metadata as Record<string, unknown> | null) ?? {}),
-        handoff_reason: reason,
-        handoff_at: new Date().toISOString(),
-      },
-    })
-    .eq("id", conversation.id)
-    .select("*")
-    .single();
-
-  if (error) throw error;
-  return data;
-}
-
-async function markOutboundFailure(supabase, outboundId, message) {
-  await supabase
-    .from("outbound_messages")
-    .update({
-      delivery_status: "failed",
-      last_error: message,
-      retry_count: 1,
-    })
-    .eq("id", outboundId);
-}
-
-async function logWorkspaceEvent(supabase, workspaceId, action, target, metadata) {
-  await supabase
-    .from("audit_logs")
-    .insert({ workspace_id: workspaceId, actor_type: "system", actor_id: "process-message", action, target, metadata })
-    .then(() => null, () => null);
-}
-
-// Returns a response body when the external agent handled the message, or null to fall back
-// to the internal pipeline. Never throws for agent failures.
-async function tryExternalAgent(supabase, ctx) {
-  const { workspaceId, conversation, message, agentConfig, history, messageText, correlationId } = ctx;
-  const baseMeta = (message.metadata as Record<string, unknown> | null) ?? {};
-
-  // Idempotency: claim the message atomically so the agent is called at most once per message_id.
-  const attemptedAt = new Date().toISOString();
-  const { data: claimed } = await supabase
+async function processMessage(db: Db, messageId: string, correlationId: string, log: Logger) {
+  const started = Date.now();
+  const { data: msg } = await db
     .from("messages")
-    .update({ metadata: { ...baseMeta, external_agent: { status: "calling", attempted_at: attemptedAt } } })
-    .eq("id", message.id)
-    .is("metadata->external_agent", null)
-    .select("id");
+    .select("id, seq, workspace_id, conversation_id, direction, sender, type, content, media_url, media_mime, metadata, created_at")
+    .eq("id", messageId)
+    .maybeSingle();
+  if (!msg) throw new RuntimeError("not_found", "Mensagem não encontrada.");
+  if (msg.direction !== "inbound" || msg.sender !== "customer") return { skipped: "not_customer_message" };
 
-  if (!claimed || claimed.length === 0) {
-    const { data: existingReply } = await supabase
+  const loadConversation = async () =>
+    (await db
+      .from("conversations")
+      .select("id, workspace_id, instance_id, channel, contact_phone, contact_name, mode")
+      .eq("id", msg.conversation_id)
+      .single()).data as ConversationRow;
+  let conversation = await loadConversation();
+  if (conversation.channel !== "whatsapp") return { skipped: "external_channel" };
+  if (conversation.mode !== "bot") return { skipped: `mode_${conversation.mode}` };
+
+  const config = await loadAgentConfig(db, msg.workspace_id);
+  if (!config.enabled) return { skipped: "agent_disabled" };
+  // Tenant suspenso, cancelado ou com trial vencido: a mensagem fica guardada, o bot não responde.
+  const entitlements = await loadEntitlements(db, msg.workspace_id);
+  if (!entitlements.active) return { skipped: `tenant_${entitlements.effective_status}` };
+
+  // Idempotência: uma execução por mensagem gatilho.
+  const { data: run, error: runError } = await db.from("agent_runs").insert({
+    workspace_id: msg.workspace_id,
+    conversation_id: conversation.id,
+    trigger_message_id: msg.id,
+    correlation_id: correlationId,
+  }).select("id").single();
+  if (runError?.code === "23505") return { skipped: "already_processed" };
+  if (runError) throw new RuntimeError("internal_error", "Falha ao registrar execução.", { db: runError.message });
+
+  const finishRun = (patch: Record<string, unknown>) =>
+    db.from("agent_runs").update({ ...patch, latency_ms: Date.now() - started, finished_at: new Date().toISOString() }).eq("id", run.id);
+
+  try {
+    // Debounce: se o cliente mandar outra mensagem logo em seguida, quem responde é a execução da última.
+    if (config.reply_debounce_ms > 0) await sleep(config.reply_debounce_ms);
+    const { data: newer } = await db
       .from("messages")
       .select("id")
       .eq("conversation_id", conversation.id)
-      .eq("direction", "outbound")
-      .eq("metadata->>source_message_id", message.id)
-      .limit(1)
-      .maybeSingle();
-    if (existingReply) {
-      return { ok: true, skipped: "already_processed", conversationId: conversation.id, replyMessageId: existingReply.id };
+      .eq("direction", "inbound")
+      .eq("sender", "customer")
+      .gt("seq", msg.seq)
+      .limit(1);
+    if (newer?.length) {
+      await finishRun({ status: "superseded", reason: "newer_customer_message" });
+      return { skipped: "superseded" };
     }
-    return null; // already attempted without reply: use internal pipeline, do not call agent again
-  }
 
-  const setStatus = async (status, extra = {}) => {
-    await supabase
-      .from("messages")
-      .update({ metadata: { ...baseMeta, external_agent: { status, attempted_at: attemptedAt, ...extra } } })
-      .eq("id", message.id);
-  };
-
-  const fail = async (error, details = {}) => {
-    await setStatus("failed", { error });
-    await logWorkspaceEvent(supabase, workspaceId, "external_agent.failed", message.id, {
-      error,
-      conversation_id: conversation.id,
-      correlation_id: correlationId,
-      ...details,
-    });
-    return null;
-  };
-
-  const secretRef = agentConfig.external_agent_secret_ref;
-  const secret = secretRef && isAllowedSecretRef(secretRef) ? getEnv(secretRef) : null;
-  if (!agentConfig.external_agent_url) return await fail("missing_url");
-  if (secretRef && !isAllowedSecretRef(secretRef)) return await fail("secret_ref_not_allowed", { secret_ref: secretRef });
-  if (secretRef && !secret) return await fail("secret_not_found", { secret_ref: secretRef });
-
-  const payload = buildExternalAgentPayload({
-    workspaceId,
-    conversationId: conversation.id,
-    conversation,
-    message,
-    messageText,
-    history,
-  });
-
-  const result = await callExternalAgent({
-    url: agentConfig.external_agent_url,
-    secret: secret ?? "",
-    timeoutMs: agentConfig.external_agent_timeout_ms ?? 25000,
-    payload,
-  });
-
-  if (!result.ok) {
-    return await fail(result.error, { status: result.status, duration_ms: result.durationMs, body: result.body });
-  }
-
-  const { reply, handoff, media } = result.value;
-  const instance = await resolveSendingInstance(supabase, {
-    workspaceId,
-    conversationId: conversation.id,
-    instanceId: conversation.whatsapp_instance_id,
-  });
-  const instanceId = instance?.id ?? conversation.whatsapp_instance_id;
-  const sentIds = [];
-
-  const send = async (item) => {
-    const outbound = await createOutboundMessageRecord(supabase, {
-      workspaceId,
-      conversationId: conversation.id,
-      instanceId,
-      content: item.text || null,
-      mediaUrl: item.mediaUrl ?? null,
-      mimeType: item.mediaType ?? null,
-      type: item.mediaType ?? "text",
-      sender: "bot",
-      correlationId,
-      metadata: { generated_by: "external-agent", source_message_id: message.id },
-    });
-    sentIds.push(outbound.message.id);
-    try {
-      await deliverOutboundMessage(supabase, {
-        workspaceId,
-        conversationId: conversation.id,
-        instanceId,
-        phoneNumber: conversation.customer_phone,
-        text: item.text ?? "",
-        mediaUrl: item.mediaUrl ?? null,
-        mimeType: item.mediaType ?? null,
-        messageId: outbound.message.id,
-        outboundMessageId: outbound.outbound.id,
-        messageMetadata: outbound.message.metadata,
-        outboundPayload: outbound.outbound.payload,
+    // Cota mensal esgotada: a conversa passa para a equipe em vez de o cliente ficar sem resposta.
+    if (monthlyMessagesLeft(entitlements) === 0) {
+      await db.from("conversations").update({ mode: "human", handoff_at: new Date().toISOString() }).eq("id", conversation.id);
+      await emitEvent(db, {
+        workspaceId: msg.workspace_id,
+        event: "conversation.handoff",
+        correlationId,
+        masterKey: optionalEnv("CALLIA_ENCRYPTION_KEY"),
+        data: { conversation_id: conversation.id, reason: "quota_exceeded", contact_phone: conversation.contact_phone },
       });
-    } catch (error) {
-      await markOutboundFailure(supabase, outbound.outbound.id, error instanceof Error ? error.message : "send_failed");
+      await finishRun({ status: "skipped", reason: "quota_exceeded" });
+      return { skipped: "quota_exceeded" };
     }
-  };
 
-  if (reply) await send({ text: reply });
-  for (const item of media) {
-    await send({ text: item.caption ?? "", mediaUrl: item.url, mediaType: item.type });
-  }
+    const { data: instance } = conversation.instance_id
+      ? await db.from("whatsapp_instances").select("id, workspace_id, name, instance_name, provider_secret_ref, status, is_default")
+        .eq("id", conversation.instance_id).maybeSingle()
+      : { data: null };
 
-  if (handoff) {
-    const updated = await updateConversationForHandoff(supabase, conversation, "external_agent");
-    await triggerWebhookDispatch({
-      workspaceId,
-      event: "conversation.handoff",
-      payload: {
-        workspaceId,
-        conversationId: updated.id,
-        whatsappInstanceId: updated.whatsapp_instance_id,
-        customerPhone: updated.customer_phone,
-        customerName: updated.customer_name,
-        mode: updated.mode,
-        reason: "external_agent",
-        handoffAt: new Date().toISOString(),
-      },
+    const ai = hasFeature(entitlements, "ai_enabled") ? aiFromEnv() : null;
+    const { data: recent } = await db
+      .from("messages")
+      .select("id, direction, sender, type, content, media_mime, metadata, created_at")
+      .eq("conversation_id", conversation.id)
+      .order("created_at", { ascending: false })
+      .order("seq", { ascending: false })
+      .limit(20);
+    const chronological = (recent ?? []).reverse();
+
+    // Mensagens do cliente desde a última resposta (nossa ou da equipe).
+    const lastOutboundIdx = chronological.map((m: { direction: string }) => m.direction).lastIndexOf("outbound");
+    const pending = chronological.slice(lastOutboundIdx + 1).filter((m: { sender: string }) => m.sender === "customer");
+    const history: HistoryItem[] = [];
+    for (const m of chronological) {
+      const isPending = pending.some((p: { id: string }) => p.id === m.id);
+      const text = isPending ? await preprocessMedia(db, ai, instance as InstanceRow | null, m, config.language) : textForHistory(m);
+      history.push({ direction: m.direction, sender: m.sender, type: m.type, content: text, created_at: m.created_at });
+    }
+    const pendingText = history.slice(history.length - pending.length).map((h) => h.content).filter(Boolean).join("\n") ||
+      msg.content || "";
+
+    const input: PipelineInput = {
+      workspaceId: msg.workspace_id,
+      businessName: await loadBusinessName(db, msg.workspace_id),
+      conversation: { id: conversation.id, contact_name: conversation.contact_name, contact_phone: conversation.contact_phone },
+      trigger: { id: msg.id, type: msg.type, text: pendingText, media_url: msg.media_url, created_at: msg.created_at },
+      pendingText,
+      history,
+      products: await loadProducts(db, msg.workspace_id),
+    };
+    const deps = await buildPipelineDeps(db, { workspaceId: msg.workspace_id, config, ai, entitlements, correlationId, log: log.info });
+    const outcome = await runAgentPipeline(input, deps);
+
+    // A equipe pode ter assumido enquanto a IA pensava.
+    conversation = await loadConversation();
+    if (conversation.mode !== "bot") {
+      await finishRun({ status: "skipped", engine: outcome.engine, reason: "mode_changed_during_run", usage: outcome.usage });
+      return { skipped: "mode_changed" };
+    }
+
+    if (outcome.action === "handoff") {
+      await db.from("conversations").update({ mode: "human", handoff_at: new Date().toISOString() }).eq("id", conversation.id);
+      await emitEvent(db, {
+        workspaceId: msg.workspace_id,
+        event: "conversation.handoff",
+        correlationId,
+        masterKey: optionalEnv("CALLIA_ENCRYPTION_KEY"),
+        data: { conversation_id: conversation.id, reason: outcome.handoffReason, contact_phone: conversation.contact_phone },
+      });
+    }
+
+    const sendBase = {
+      workspaceId: msg.workspace_id,
+      origin: "bot" as const,
+      sender: "bot" as const,
+      conversation,
       correlationId,
+      metadata: { agent_run_id: run.id, engine: outcome.engine },
+    };
+    const sends: string[] = [];
+    if (outcome.reply) {
+      const useVoice = config.voice_enabled && msg.type === "audio" && ai && outcome.action === "reply";
+      let sent = false;
+      if (useVoice) {
+        try {
+          const audioBase64 = await synthesizeVoice(ai!, outcome.reply, config.voice_id);
+          const r = await sendOutbound(db, { ...sendBase, type: "audio", audioBase64, text: outcome.reply, mimetype: "audio/ogg" });
+          sent = r.status === "sent";
+          sends.push(r.status);
+        } catch (err) {
+          log.warn("voice_reply_failed", { error: String(err) });
+        }
+      }
+      if (!sent) sends.push((await sendOutbound(db, { ...sendBase, type: "text", text: outcome.reply })).status);
+    }
+    for (const media of outcome.media) {
+      const r = await sendOutbound(db, {
+        ...sendBase,
+        type: media.type,
+        mediaUrl: media.url,
+        text: media.caption ?? null,
+        fileName: media.file_name ?? null,
+        mimetype: media.mimetype ?? null,
+      });
+      sends.push(r.status);
+    }
+
+    const failed = sends.filter((s) => s === "failed").length;
+    await finishRun({
+      status: failed && failed === sends.length ? "failed" : outcome.action === "handoff" ? "handoff" : "replied",
+      engine: outcome.engine,
+      reason: outcome.handoffReason,
+      error: [outcome.externalError && `externo: ${outcome.externalError}`, outcome.aiError && `ia: ${outcome.aiError}`,
+        failed ? `${failed} envio(s) falharam` : null].filter(Boolean).join(" | ") || null,
+      usage: { ...outcome.usage, tool_calls: outcome.toolCalls.map((t) => t.name), knowledge_hits: outcome.knowledge.length },
     });
-    await triggerPendingWebhookDispatch(workspaceId);
+    return { ok: true, action: outcome.action, engine: outcome.engine, sends };
+  } catch (err) {
+    await finishRun({ status: "failed", error: err instanceof Error ? err.message.slice(0, 500) : String(err) });
+    throw err;
   }
-
-  await setStatus("succeeded", { duration_ms: result.durationMs, reply_message_ids: sentIds, handoff });
-
-  return {
-    ok: true,
-    conversationId: conversation.id,
-    sourceMessageId: message.id,
-    replyMessageIds: sentIds,
-    handoff,
-    usedExternalAgent: true,
-  };
 }
 
-serve(async (request) => {
-  if (request.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+function textForHistory(m: { type: string; content: string | null; metadata: Record<string, unknown> | null }): string | null {
+  const meta = m.metadata ?? {};
+  if (m.type === "audio" && typeof meta.transcript === "string") return meta.transcript;
+  if (m.type === "image" && typeof meta.image_description === "string") {
+    return [m.content, `[imagem: ${meta.image_description}]`].filter(Boolean).join("\n");
   }
+  return m.content;
+}
 
-  try {
-    const body = (await request.json()) as Record<string, unknown>;
-    const workspaceId = typeof body.workspaceId === "string" ? body.workspaceId : null;
-    const conversationId = typeof body.conversationId === "string" ? body.conversationId : null;
-    const messageId = typeof body.messageId === "string" ? body.messageId : null;
-    const correlationId =
-      typeof body.correlationId === "string" ? body.correlationId : crypto.randomUUID();
-
-    if (!workspaceId || !conversationId || !messageId) {
-      return jsonResponse({ error: "invalid_payload" }, { status: 400 });
-    }
-
-    const supabase = createServiceClient();
-
-    const [{ data: conversation }, { data: message }, { data: agentConfig }, { data: faqs }, { data: products }] =
-      await Promise.all([
-        supabase.from("conversations").select("*").eq("id", conversationId).maybeSingle(),
-        supabase.from("messages").select("*").eq("id", messageId).maybeSingle(),
-        supabase.from("agent_configs").select("*").eq("workspace_id", workspaceId).maybeSingle(),
-        supabase.from("faqs").select("*").eq("workspace_id", workspaceId).eq("is_active", true),
-        supabase.from("products").select("*").eq("workspace_id", workspaceId).eq("is_active", true),
-      ]);
-
-    if (!conversation || !message || !agentConfig) {
-      return jsonResponse({ error: "not_found" }, { status: 404 });
-    }
-
-    if (conversation.mode === "human") {
-      return jsonResponse({ ok: true, skipped: "conversation_in_human_mode" }, { status: 200 });
-    }
-
-    const { data: history } = await supabase
-      .from("messages")
-      .select("*")
-      .eq("conversation_id", conversationId)
-      .order("created_at", { ascending: true });
-
-    let mediaSummary = null;
-    let messageText = message.content ?? "";
-    let transcription = message.transcription ?? null;
-
-    if (message.type === "audio" && message.media_url) {
-      const transcriptionResult = await transcribeAudio(message.media_url);
-      if (transcriptionResult?.text) {
-        transcription = transcriptionResult.text;
-        messageText = transcriptionResult.text;
-        await supabase
-          .from("messages")
-          .update({ transcription: transcriptionResult.text })
-          .eq("id", message.id);
-      }
-    }
-
-    if (message.type === "image" && message.media_url) {
-      const imageAnalysis = await analyzeImage(
-        message.media_url,
-        "Descreva a imagem com foco em atendimento comercial, produto, texto visível e intenção do cliente.",
-      );
-      if (imageAnalysis?.text) {
-        mediaSummary = imageAnalysis.text;
-        if (!messageText) {
-          messageText = imageAnalysis.text;
-        }
-      }
-    }
-
-    if (!messageText) {
-      messageText = transcription ?? mediaSummary ?? "";
-    }
-
-    const shouldHandoff = shouldTriggerHandoff(
-      `${messageText} ${mediaSummary ?? ""}`.trim(),
-      agentConfig.handoff_keywords ?? [],
-    );
-
-    if (shouldHandoff) {
-      const updatedConversation = await updateConversationForHandoff(
-        supabase,
-        conversation,
-        "keyword_match",
-      );
-
-      await triggerWebhookDispatch({
-        workspaceId,
-        event: "conversation.handoff",
-        payload: {
-          workspaceId,
-          conversationId: updatedConversation.id,
-          whatsappInstanceId: updatedConversation.whatsapp_instance_id,
-          customerPhone: updatedConversation.customer_phone,
-          customerName: updatedConversation.customer_name,
-          mode: updatedConversation.mode,
-          reason: "keyword_match",
-          handoffAt: new Date().toISOString(),
-        },
-        correlationId,
-      });
-
-      const outbound = await createOutboundMessageRecord(supabase, {
-        workspaceId,
-        conversationId,
-        instanceId: updatedConversation.whatsapp_instance_id,
-        content:
-          "Vou encaminhar seu atendimento para um atendente humano para te ajudar melhor.",
-        type: "text",
-        sender: "bot",
-        correlationId,
-        metadata: {
-          generated_by: "handoff-rule",
-        },
-      });
-
-      try {
-        await deliverOutboundMessage(supabase, {
-          workspaceId,
-          conversationId,
-          instanceId: updatedConversation.whatsapp_instance_id,
-          phoneNumber: conversation.customer_phone,
-          text: outbound.message.content,
-          messageId: outbound.message.id,
-          outboundMessageId: outbound.outbound.id,
-          messageMetadata: outbound.message.metadata,
-          outboundPayload: outbound.outbound.payload,
-        });
-      } catch (error) {
-        await markOutboundFailure(
-          supabase,
-          outbound.outbound.id,
-          error instanceof Error ? error.message : "handoff_delivery_failed",
-        );
-      }
-
-      await triggerPendingWebhookDispatch(workspaceId);
-
-      return jsonResponse(
-        {
-          ok: true,
-          handoff: true,
-          conversationId,
-          messageId: outbound.message.id,
-        },
-        { status: 200 },
-      );
-    }
-
-    if (agentConfig.external_agent_enabled === true) {
-      try {
-        const externalResult = await tryExternalAgent(supabase, {
-          workspaceId,
-          conversation,
-          message,
-          agentConfig,
-          history: history ?? [],
-          messageText,
-          correlationId,
-        });
-        if (externalResult) {
-          return jsonResponse(externalResult, { status: 200 });
-        }
-      } catch (error) {
-        await logWorkspaceEvent(supabase, workspaceId, "external_agent.failed", messageId, {
-          error: error instanceof Error ? error.message : "unexpected_error",
-          conversation_id: conversationId,
-          correlation_id: correlationId,
-        });
-        const { data: partialReply } = await supabase
-          .from("messages")
-          .select("id")
-          .eq("conversation_id", conversationId)
-          .eq("metadata->>source_message_id", messageId)
-          .limit(1)
-          .maybeSingle();
-        if (partialReply) {
-          return jsonResponse({ ok: true, conversationId, replyMessageId: partialReply.id, partial: true }, { status: 200 });
-        }
-      }
-    }
-
-    const systemPrompt = buildSystemPrompt({
-      personaPrompt: agentConfig.persona_prompt,
-      faqs: faqs ?? [],
-      products: products ?? [],
-      paymentLinks: agentConfig.payment_links ?? [],
-      websiteUrl: agentConfig.website_url,
-      businessHours: agentConfig.business_hours,
-    });
-
-    const userPrompt = buildUserPrompt({
-      historySnippet: buildHistorySnippet(history ?? []),
-      messageText: messageText || "[mensagem sem texto reconhecido]",
-      mediaSummary,
-    });
-
-    const aiReply = await generateAiReply({
-      model: agentConfig.ai_model ?? getEnv("AI_DEFAULT_MODEL") ?? "gpt-4o-mini",
-      systemPrompt,
-      userPrompt,
-    });
-
-    const replyText =
-      aiReply?.text?.trim() ||
-      buildFallbackReply({
-        messageText,
-        messageType: message.type,
-        faqs: faqs ?? [],
-        products: products ?? [],
-        paymentLinks: agentConfig.payment_links ?? [],
-        mediaSummary,
-      });
-
-    const targetInstance = await resolveSendingInstance(supabase, {
-      workspaceId,
-      conversationId,
-      instanceId: conversation.whatsapp_instance_id,
-    });
-
-    const outbound = await createOutboundMessageRecord(supabase, {
-      workspaceId,
-      conversationId,
-      instanceId: targetInstance?.id ?? conversation.whatsapp_instance_id,
-      content: replyText,
-      type: "text",
-      sender: "bot",
-      aiModel: aiReply?.model ?? null,
-      tokensUsed: aiReply?.tokensUsed ?? null,
-      correlationId,
-      metadata: {
-        generated_by: aiReply ? "ai-provider" : "fallback-rules",
-        media_summary: mediaSummary,
-        source_message_id: message.id,
-      },
-    });
-
-    try {
-      const delivered = await deliverOutboundMessage(supabase, {
-        workspaceId,
-        conversationId,
-        instanceId: targetInstance?.id ?? conversation.whatsapp_instance_id,
-        phoneNumber: conversation.customer_phone,
-        text: replyText,
-        messageId: outbound.message.id,
-        outboundMessageId: outbound.outbound.id,
-        messageMetadata: outbound.message.metadata,
-        outboundPayload: outbound.outbound.payload,
-      });
-
-      await supabase
-        .from("conversations")
-        .update({
-          whatsapp_instance_id: delivered.instance.id,
-          last_message_at: new Date().toISOString(),
-          metadata: {
-            ...((conversation.metadata as Record<string, unknown> | null) ?? {}),
-            last_bot_reply_at: new Date().toISOString(),
-            last_ai_model: aiReply?.model ?? "fallback-rules",
-          },
-        })
-        .eq("id", conversationId);
-    } catch (error) {
-      await markOutboundFailure(
-        supabase,
-        outbound.outbound.id,
-        error instanceof Error ? error.message : "send_failed",
-      );
-      throw error;
-    }
-
-    return jsonResponse(
-      {
-        ok: true,
-        conversationId,
-        sourceMessageId: messageId,
-        replyMessageId: outbound.message.id,
-        handoff: false,
-        usedAi: Boolean(aiReply),
-      },
-      { status: 200 },
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "unexpected_error";
-    return jsonResponse({ error: message }, { status: 500 });
+/** Simulador do painel: roda o pipeline com mensagens fictícias, sem enviar nem gravar nada. */
+async function simulate(
+  req: Request,
+  body: { workspace_id?: string; messages?: unknown },
+  correlationId: string,
+  log: Logger,
+) {
+  const user = await requireUser(req);
+  await requireWorkspaceRole(user.id, body.workspace_id);
+  const workspaceId = body.workspace_id as string;
+  const items = Array.isArray(body.messages) ? body.messages.slice(-20) : [];
+  const parsed = items
+    .filter((m): m is { role: string; text: string } => typeof m?.text === "string" && m.text.trim().length > 0)
+    .map((m) => ({ role: m.role === "bot" ? "bot" : "customer", text: m.text.trim().slice(0, 2000) }));
+  if (!parsed.length || parsed[parsed.length - 1].role !== "customer") {
+    throw new RuntimeError("invalid_request", "A última mensagem da simulação deve ser do cliente.");
   }
-});
+  const db = adminDb();
+  const config = await loadAgentConfig(db, workspaceId);
+  const entitlements = await loadEntitlements(db, workspaceId);
+  assertActive(entitlements);
+  const now = new Date().toISOString();
+  const history: HistoryItem[] = parsed.map((m) => ({
+    direction: m.role === "bot" ? "outbound" : "inbound",
+    sender: m.role === "bot" ? "bot" : "customer",
+    type: "text",
+    content: m.text,
+    created_at: now,
+  }));
+  let tail = history.length;
+  while (tail > 0 && history[tail - 1].direction === "inbound") tail--;
+  const pendingText = history.slice(tail).map((h) => h.content).join("\n");
+  const ai = hasFeature(entitlements, "ai_enabled") ? aiFromEnv() : null;
+  const outcome = await runAgentPipeline(
+    {
+      workspaceId,
+      businessName: await loadBusinessName(db, workspaceId),
+      conversation: { id: "simulation", contact_name: "Cliente (simulação)", contact_phone: "0000000000000" },
+      trigger: { id: `simulation-${correlationId}`, type: "text", text: pendingText, media_url: null, created_at: now },
+      pendingText,
+      history,
+      products: await loadProducts(db, workspaceId),
+    },
+    await buildPipelineDeps(db, { workspaceId, config, ai, entitlements, correlationId, log: log.info }),
+  );
+  return {
+    reply: outcome.reply,
+    handoff: outcome.action === "handoff",
+    handoff_reason: outcome.handoffReason,
+    engine: outcome.engine,
+    media: outcome.media,
+    knowledge: outcome.knowledge.map((k) => ({ source_title: k.source_title, content: k.content, score: k.score })),
+    tool_calls: outcome.toolCalls,
+    errors: { external: outcome.externalError, ai: outcome.aiError },
+    ai_configured: Boolean(ai),
+  };
+}

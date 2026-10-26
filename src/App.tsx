@@ -1,72 +1,80 @@
-import { lazy, Suspense } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { lazy, Suspense, type ReactElement } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
-import { Toaster as Sonner } from "@/components/ui/sonner";
-import { Toaster } from "@/components/ui/toaster";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import AppErrorBoundary from "./components/AppErrorBoundary";
-import RouteLoader from "./components/RouteLoader";
-import { AuthProvider } from "./lib/auth";
-import { WorkspaceProvider } from "./lib/workspace";
-import ProtectedRoute from "./components/ProtectedRoute";
-import AppLayout from "./components/AppLayout";
+import { AppLayout } from "@/components/AppLayout";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { PlatformAdminRoute } from "@/components/PlatformAdminRoute";
+import { PageLoader } from "@/components/ui";
 
-const NotFound = lazy(() => import("./pages/NotFound.tsx"));
-const Index = lazy(() => import("./pages/Index.tsx"));
-const Login = lazy(() => import("./pages/Login.tsx"));
-const Signup = lazy(() => import("./pages/Signup.tsx"));
-const Onboarding = lazy(() => import("./pages/Onboarding.tsx"));
-const AgentPage = lazy(() => import("./pages/Agent.tsx"));
-const KnowledgeBasePage = lazy(() => import("./pages/KnowledgeBase.tsx"));
-const ApiKeysPage = lazy(() => import("./pages/ApiKeys.tsx"));
-const InboxPage = lazy(() => import("./pages/Inbox.tsx"));
-const LogsPage = lazy(() => import("./pages/Logs.tsx"));
-const SettingsPage = lazy(() => import("./pages/Settings.tsx"));
-const WebhooksPage = lazy(() => import("./pages/Webhooks.tsx"));
-const WhatsAppPage = lazy(() => import("./pages/WhatsApp.tsx"));
-const Placeholder = lazy(() => import("./pages/Placeholder.tsx"));
-const OAuthConsent = lazy(() => import("./pages/OAuthConsent.tsx"));
+const Login = lazy(() => import("@/pages/Login"));
+const SetPassword = lazy(() => import("@/pages/SetPassword"));
+const Inbox = lazy(() => import("@/pages/Inbox"));
+const Agent = lazy(() => import("@/pages/Agent"));
+const AgentSetup = lazy(() => import("@/pages/AgentSetup"));
+const KnowledgeBase = lazy(() => import("@/pages/KnowledgeBase"));
+const WhatsApp = lazy(() => import("@/pages/WhatsApp"));
+const Integrations = lazy(() => import("@/pages/Integrations"));
+const ApiKeys = lazy(() => import("@/pages/ApiKeys"));
+const Webhooks = lazy(() => import("@/pages/Webhooks"));
+const Logs = lazy(() => import("@/pages/Logs"));
+const Settings = lazy(() => import("@/pages/Settings"));
+const Team = lazy(() => import("@/pages/Team"));
+const Roadmap = lazy(() => import("@/pages/Roadmap"));
+const AdminOverview = lazy(() => import("@/pages/admin/Overview"));
+const AdminTenants = lazy(() => import("@/pages/admin/Tenants"));
+const AdminTenantDetail = lazy(() => import("@/pages/admin/TenantDetail"));
+const AdminPlans = lazy(() => import("@/pages/admin/Plans"));
+const AdminUsers = lazy(() => import("@/pages/admin/Users"));
+const AdminAudit = lazy(() => import("@/pages/admin/Audit"));
+const AdminSettings = lazy(() => import("@/pages/admin/PlatformSettings"));
 
-const queryClient = new QueryClient();
+const admin = (el: ReactElement) => <ProtectedRoute adminOnly>{el}</ProtectedRoute>;
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <AppErrorBoundary>
-          <Suspense fallback={<RouteLoader />}>
-            <AuthProvider>
-              <WorkspaceProvider>
-                <Routes>
-                  <Route path="/" element={<Index />} />
-                  <Route path="/acompanhamento" element={<Index />} />
-                  <Route path="/app" element={<Navigate to="/inbox" replace />} />
-                  <Route path="/login" element={<Login />} />
-                  <Route path="/signup" element={<Signup />} />
-                  <Route path="/.lovable/oauth/consent" element={<OAuthConsent />} />
-                  <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
-                  <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
-                    <Route path="/inbox" element={<InboxPage />} />
-                    <Route path="/agent" element={<AgentPage />} />
-                    <Route path="/knowledge-base" element={<KnowledgeBasePage />} />
-                    <Route path="/whatsapp" element={<WhatsAppPage />} />
-                    <Route path="/api-keys" element={<ApiKeysPage />} />
-                    <Route path="/webhooks" element={<WebhooksPage />} />
-                    <Route path="/team" element={<Placeholder title="Time" description="Convidar membros e gerenciar roles" />} />
-                    <Route path="/logs" element={<LogsPage />} />
-                    <Route path="/settings" element={<SettingsPage />} />
-                  </Route>
-                  <Route path="*" element={<NotFound />} />
-                </Routes>
-              </WorkspaceProvider>
-            </AuthProvider>
-          </Suspense>
-        </AppErrorBoundary>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
-);
-
-export default App;
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route path="/" element={<Login />} />
+          <Route path="/definir-senha" element={<SetPassword />} />
+          <Route path="/acompanhamento" element={<Roadmap />} />
+          <Route
+            element={
+              <ProtectedRoute>
+                <AppLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route path="/inbox" element={<Inbox />} />
+            <Route path="/inbox/:conversationId" element={<Inbox />} />
+            <Route path="/team" element={<Team />} />
+            <Route path="/agent" element={admin(<Agent />)} />
+            <Route path="/agent/setup" element={admin(<AgentSetup />)} />
+            <Route path="/knowledge-base" element={admin(<KnowledgeBase />)} />
+            <Route path="/integrations" element={admin(<Integrations />)} />
+            <Route path="/whatsapp" element={admin(<WhatsApp />)} />
+            <Route path="/api-keys" element={admin(<ApiKeys />)} />
+            <Route path="/webhooks" element={admin(<Webhooks />)} />
+            <Route path="/logs" element={admin(<Logs />)} />
+            <Route path="/settings" element={admin(<Settings />)} />
+          </Route>
+          <Route
+            element={
+              <PlatformAdminRoute>
+                <AppLayout />
+              </PlatformAdminRoute>
+            }
+          >
+            <Route path="/admin" element={<AdminOverview />} />
+            <Route path="/admin/tenants" element={<AdminTenants />} />
+            <Route path="/admin/tenants/:id" element={<AdminTenantDetail />} />
+            <Route path="/admin/plans" element={<AdminPlans />} />
+            <Route path="/admin/users" element={<AdminUsers />} />
+            <Route path="/admin/audit" element={<AdminAudit />} />
+            <Route path="/admin/settings" element={<AdminSettings />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
+    </BrowserRouter>
+  );
+}

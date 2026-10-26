@@ -1,330 +1,220 @@
-// @ts-nocheck
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { corsHeaders, createServiceClient, jsonResponse } from "../_shared/auth.ts";
-import { extractQrCode, mapEvolutionStatus } from "../_shared/evolution.ts";
-import { normalizeEvolutionMessageUpsert } from "../_shared/inbound.ts";
-import { triggerPendingWebhookDispatch, triggerWebhookDispatch } from "../_shared/webhooks.ts";
+// Recebe eventos da Evolution: QR code, status da conexão e mensagens (com idempotência).
+// URL configurada na Evolution: /functions/v1/whatsapp-webhook?instance=<uuid>&token=<token da instância>
+import { createHandler, json, readJson, RuntimeError, runInBackground, sleep } from "../_shared/http.ts";
+import { sha256Hex, timingSafeEqual } from "../_shared/crypto.ts";
+import { type EvolutionMessageEvent, parseEvolutionWebhook } from "../_shared/evolution.ts";
+import { adminDb, type Db, functionUrl, internalHeaders, optionalEnv } from "../_shared/supabase.ts";
+import { emitEvent } from "../_shared/webhooks.ts";
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+interface Instance {
+  id: string;
+  workspace_id: string;
+  instance_name: string;
+  webhook_token_hash: string | null;
+  status: string;
 }
 
-function getEnv(name: string) {
-  return (globalThis as { Deno?: { env?: { get: (key: string) => string | undefined } } }).Deno?.env?.get(name);
-}
+Deno.serve(createHandler("whatsapp-webhook", async ({ req, url, correlationId, log }) => {
+  if (req.method !== "POST") throw new RuntimeError("invalid_request", "Use POST.");
+  const instanceId = url.searchParams.get("instance") ?? "";
+  const token = url.searchParams.get("token") ?? "";
+  if (!/^[0-9a-f-]{36}$/i.test(instanceId) || !token) throw new RuntimeError("unauthorized", "Webhook sem credenciais.");
 
-async function triggerProcessMessage(input) {
-  const supabaseUrl = getEnv("SUPABASE_URL");
-  const serviceRoleKey = getEnv("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceRoleKey) return;
-
-  await fetch(`${supabaseUrl.replace(/\/+$/, "")}/functions/v1/process-message`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${serviceRoleKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(input),
-  }).catch(() => null);
-}
-
-async function findExistingMessage(supabase, workspaceId, externalId) {
-  const { data } = await supabase
-    .from("messages")
-    .select("*")
-    .eq("workspace_id", workspaceId)
-    .eq("external_id", externalId)
-    .maybeSingle();
-
-  return data;
-}
-
-async function upsertConversation(supabase, instance, normalized) {
-  const { data: existing } = await supabase
-    .from("conversations")
-    .select("*")
-    .eq("workspace_id", instance.workspace_id)
-    .eq("customer_phone", normalized.customerPhone)
-    .maybeSingle();
-
-  if (existing) {
-    const nextUnreadCount =
-      normalized.direction === "inbound" && normalized.sender === "customer"
-        ? (existing.unread_count ?? 0) + 1
-        : existing.unread_count ?? 0;
-
-    const { data, error } = await supabase
-      .from("conversations")
-      .update({
-        whatsapp_instance_id: instance.id,
-        customer_name: normalized.customerName ?? existing.customer_name,
-        last_message_at: new Date().toISOString(),
-        unread_count: nextUnreadCount,
-        is_closed: false,
-        metadata: {
-          ...((existing.metadata as Record<string, unknown> | null) ?? {}),
-          last_event_type: "MESSAGES_UPSERT",
-          last_message_direction: normalized.direction,
-          last_message_type: normalized.messageType,
-        },
-      })
-      .eq("id", existing.id)
-      .select("*")
-      .single();
-
-    if (error) throw error;
-    return data;
+  const db = adminDb();
+  const { data: instance } = await db
+    .from("whatsapp_instances")
+    .select("id, workspace_id, instance_name, webhook_token_hash, status")
+    .eq("id", instanceId)
+    .maybeSingle<Instance>();
+  if (!instance?.webhook_token_hash || !timingSafeEqual(await sha256Hex(token), instance.webhook_token_hash)) {
+    throw new RuntimeError("unauthorized", "Token de webhook inválido.");
   }
 
-  const { data, error } = await supabase
-    .from("conversations")
-    .insert({
-      workspace_id: instance.workspace_id,
-      whatsapp_instance_id: instance.id,
-      customer_phone: normalized.customerPhone,
-      customer_name: normalized.customerName,
-      last_message_at: new Date().toISOString(),
-      unread_count: normalized.direction === "inbound" ? 1 : 0,
-      metadata: {
-        last_event_type: "MESSAGES_UPSERT",
-        last_message_direction: normalized.direction,
-        last_message_type: normalized.messageType,
-      },
-    })
-    .select("*")
-    .single();
+  const body = await readJson(req);
+  const events = parseEvolutionWebhook(body);
+  const results: Array<Record<string, unknown>> = [];
 
-  if (error) throw error;
-  return data;
-}
-
-async function insertMessage(supabase, instance, conversation, normalized) {
-  const existing = normalized.externalMessageId
-    ? await findExistingMessage(supabase, instance.workspace_id, normalized.externalMessageId)
-    : null;
-
-  if (existing) {
-    return existing;
-  }
-
-  const { data, error } = await supabase
-    .from("messages")
-    .insert({
-      workspace_id: instance.workspace_id,
-      conversation_id: conversation.id,
-      direction: normalized.direction,
-      sender: normalized.sender,
-      type: normalized.messageType,
-      content: normalized.content,
-      media_url: normalized.mediaUrl,
-      transcription: normalized.transcription,
-      external_id: normalized.externalMessageId,
-      metadata: {
-        ...normalized.metadata,
-        mimeType: normalized.mimeType,
-      },
-    })
-    .select("*")
-    .single();
-
-  if (error) {
-    if (normalized.externalMessageId) {
-      const duplicate = await findExistingMessage(
-        supabase,
-        instance.workspace_id,
-        normalized.externalMessageId,
-      );
-      if (duplicate) return duplicate;
+  for (const ev of events) {
+    if (ev.instanceName && ev.instanceName !== instance.instance_name) {
+      results.push({ kind: "ignored", reason: "instance_mismatch" });
+      continue;
     }
-    throw error;
+    if (ev.kind === "qrcode") {
+      await db.from("whatsapp_instances").update({
+        qr_code: ev.qrBase64,
+        qr_updated_at: new Date().toISOString(),
+        status: instance.status === "open" ? "open" : "qr",
+      }).eq("id", instance.id);
+      results.push({ kind: "qrcode" });
+    } else if (ev.kind === "connection") {
+      const patch: Record<string, unknown> = { status: ev.state };
+      if (ev.state === "open") {
+        Object.assign(patch, { qr_code: null, last_connected_at: new Date().toISOString(), last_error: null });
+        if (ev.phone) patch.phone_number = ev.phone;
+        if (ev.profileName) patch.profile_name = ev.profileName;
+      }
+      if (ev.state === "close" && ev.reason) patch.last_error = `Conexão encerrada (código ${ev.reason}).`;
+      await db.from("whatsapp_instances").update(patch).eq("id", instance.id);
+      await db.from("audit_logs").insert({
+        workspace_id: instance.workspace_id,
+        actor_type: "system",
+        action: `whatsapp.connection.${ev.state}`,
+        entity: "whatsapp_instance",
+        entity_id: instance.id,
+        correlation_id: correlationId,
+      });
+      results.push({ kind: "connection", state: ev.state });
+    } else if (ev.kind === "message") {
+      results.push(await handleMessage(db, instance, ev, correlationId, log));
+    } else {
+      results.push({ kind: "ignored", reason: ev.reason });
+    }
   }
 
-  return data;
-}
+  // Sempre 200 para eventos válidos: a Evolution não deve reenviar o que já foi tratado.
+  return json({ ok: true, results });
+}));
 
-async function registerInboundEvent(supabase, instance, payload, normalized) {
-  const basePayload = {
+async function handleMessage(
+  db: Db,
+  instance: Instance,
+  ev: EvolutionMessageEvent,
+  correlationId: string,
+  log: { info: (m: string, e?: Record<string, unknown>) => void },
+): Promise<Record<string, unknown>> {
+  // Ledger: a mesma mensagem pode chegar mais de uma vez.
+  const { data: ledger, error: ledgerError } = await db.from("inbound_events").insert({
     workspace_id: instance.workspace_id,
-    whatsapp_instance_id: instance.id,
+    instance_id: instance.id,
     provider: "evolution",
     event_type: "MESSAGES_UPSERT",
-    provider_event_id: normalized.providerEventId,
-    payload,
-    processing_status: "processing",
+    event_key: ev.externalId,
+    payload: { phone: ev.phone, type: ev.type, from_me: ev.fromMe, timestamp: ev.timestamp },
+    correlation_id: correlationId,
+  }).select("id").single();
+  if (ledgerError?.code === "23505") return { kind: "message", duplicate: true };
+  if (ledgerError) throw new RuntimeError("internal_error", "Falha no ledger de eventos.", { db: ledgerError.message });
+
+  const finish = (status: "processed" | "ignored", error?: string) =>
+    db.from("inbound_events").update({ status, error: error ?? null }).eq("id", ledger.id);
+
+  const metadata = {
+    wa_key: ev.key,
+    instance_name: instance.instance_name,
+    ...(ev.fileName ? { file_name: ev.fileName } : {}),
   };
 
-  const { data, error } = await supabase
-    .from("inbound_events")
-    .insert(basePayload)
-    .select("*")
-    .single();
+  if (ev.fromMe) {
+    // Eco de algo que nós mesmos enviamos? O id do provedor fica em outbound_messages.
+    if (await isOurOwnSend(db, instance.workspace_id, ev.externalId, ev.phone)) {
+      await finish("ignored", "echo_of_outbound");
+      return { kind: "message", echo: true };
+    }
+    const { data } = await db.rpc("record_message", {
+      p_workspace_id: instance.workspace_id,
+      p_instance_id: instance.id,
+      p_channel: "whatsapp",
+      p_contact_phone: ev.phone,
+      p_contact_name: null,
+      p_direction: "outbound",
+      p_sender: "agent",
+      p_type: ev.type,
+      p_content: ev.text,
+      p_media_mime: ev.mediaMime,
+      p_external_id: ev.externalId,
+      p_metadata: { ...metadata, echo: true, from_device: true },
+      p_created_at: ev.timestamp,
+      p_status: "sent",
+    });
+    const row = data?.[0];
+    // Equipe respondeu pelo celular: pausa o bot para não atropelar a conversa.
+    if (row && !row.duplicate && row.conversation_mode === "bot") {
+      await db.from("conversations").update({ mode: "human", handoff_at: new Date().toISOString() }).eq("id", row.conversation_id);
+      await emitEvent(db, {
+        workspaceId: instance.workspace_id,
+        event: "conversation.handoff",
+        correlationId,
+        masterKey: optionalEnv("CALLIA_ENCRYPTION_KEY"),
+        data: { conversation_id: row.conversation_id, reason: "agent_replied_from_phone" },
+      });
+    }
+    await finish("processed");
+    return { kind: "message", from_me: true };
+  }
 
-  if (!error) return { event: data, duplicate: false };
+  const { data, error } = await db.rpc("record_message", {
+    p_workspace_id: instance.workspace_id,
+    p_instance_id: instance.id,
+    p_channel: "whatsapp",
+    p_contact_phone: ev.phone,
+    p_contact_name: ev.contactName,
+    p_direction: "inbound",
+    p_sender: "customer",
+    p_type: ev.type,
+    p_content: ev.text,
+    p_media_mime: ev.mediaMime,
+    p_external_id: ev.externalId,
+    p_metadata: metadata,
+    p_created_at: ev.timestamp,
+  });
+  const row = data?.[0];
+  if (error || !row) {
+    await finish("ignored", error?.message ?? "record_message sem retorno");
+    throw new RuntimeError("internal_error", "Falha ao gravar mensagem.", { db: error?.message });
+  }
+  await finish("processed");
+  if (row.duplicate) return { kind: "message", duplicate: true };
 
-  const duplicateError =
-    typeof error.code === "string" && error.code === "23505";
+  await emitEvent(db, {
+    workspaceId: instance.workspace_id,
+    event: "message.received",
+    correlationId,
+    masterKey: optionalEnv("CALLIA_ENCRYPTION_KEY"),
+    data: {
+      conversation_id: row.conversation_id,
+      message_id: row.message_id,
+      instance_id: instance.id,
+      from: ev.phone,
+      contact_name: ev.contactName,
+      type: ev.type,
+      text: ev.text,
+      timestamp: ev.timestamp,
+    },
+  });
 
-  if (!duplicateError) throw error;
-
-  const { data: existing } = await supabase
-    .from("inbound_events")
-    .select("*")
-    .eq("provider", "evolution")
-    .eq("provider_event_id", normalized.providerEventId)
-    .maybeSingle();
-
-  return { event: existing, duplicate: true };
+  if (row.conversation_mode === "bot") {
+    log.info("dispatch_process_message", { message_id: row.message_id });
+    runInBackground(
+      fetch(functionUrl("process-message"), {
+        method: "POST",
+        headers: { ...internalHeaders(), "x-correlation-id": correlationId },
+        body: JSON.stringify({ message_id: row.message_id }),
+      }).then((r) => r.body?.cancel()),
+    );
+  }
+  return { kind: "message", message_id: row.message_id, mode: row.conversation_mode };
 }
 
-serve(async (request) => {
-  if (request.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+async function isOurOwnSend(db: Db, workspaceId: string, providerId: string, phone: string): Promise<boolean> {
+  // O eco pode chegar antes de gravarmos o id do envio: um envio ainda "queued" para o mesmo número conta como nosso.
+  for (const wait of [0, 1500]) {
+    if (wait) await sleep(wait);
+    const { data: byId } = await db
+      .from("outbound_messages")
+      .select("id")
+      .eq("workspace_id", workspaceId)
+      .eq("provider_message_id", providerId)
+      .limit(1);
+    if (byId?.length) return true;
+    const { data: inFlight } = await db
+      .from("outbound_messages")
+      .select("id")
+      .eq("workspace_id", workspaceId)
+      .eq("to_phone", phone)
+      .eq("status", "queued")
+      .gte("created_at", new Date(Date.now() - 60_000).toISOString())
+      .limit(1);
+    if (inFlight?.length) return true;
   }
-
-  const url = new URL(request.url);
-  const instanceId = url.searchParams.get("instance_id");
-  const token = url.searchParams.get("token");
-
-  if (!instanceId || !token) {
-    return jsonResponse({ error: "missing_params" }, { status: 400 });
-  }
-
-  const supabase = createServiceClient();
-  const { data: instance } = await supabase
-    .from("whatsapp_instances")
-    .select("*")
-    .eq("id", instanceId)
-    .eq("webhook_token", token)
-    .maybeSingle();
-
-  if (!instance) {
-    return jsonResponse({ error: "forbidden" }, { status: 403 });
-  }
-
-  if (request.method !== "POST") {
-    return jsonResponse({ ok: true, message: "webhook_ready" }, { status: 200 });
-  }
-
-  const payload = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-  const event = typeof payload.event === "string" ? payload.event : null;
-  const data = asRecord(payload.data) ?? {};
-
-  if (event === "QRCODE_UPDATED") {
-    await supabase
-      .from("whatsapp_instances")
-      .update({
-        status: "qr",
-        qr_code: extractQrCode(data),
-        last_seen_at: new Date().toISOString(),
-        connection_metadata: {
-          ...((instance.connection_metadata as Record<string, unknown> | null) ?? {}),
-          last_qrcode_event: payload,
-        },
-      })
-      .eq("id", instanceId);
-  }
-
-  if (event === "CONNECTION_UPDATE") {
-    const status = mapEvolutionStatus(data);
-    await supabase
-      .from("whatsapp_instances")
-      .update({
-        status,
-        qr_code: status === "connected" ? null : instance.qr_code,
-        last_seen_at: new Date().toISOString(),
-        connection_metadata: {
-          ...((instance.connection_metadata as Record<string, unknown> | null) ?? {}),
-          last_connection_event: payload,
-        },
-      })
-      .eq("id", instanceId);
-  }
-
-  if (event === "MESSAGES_UPSERT") {
-    const normalized = normalizeEvolutionMessageUpsert(payload);
-
-    if (!normalized) {
-      return jsonResponse({ ok: true, skipped: "invalid_message_payload" }, { status: 202 });
-    }
-
-    const registered = await registerInboundEvent(supabase, instance, payload, normalized);
-    if (registered.duplicate) {
-      return jsonResponse({ ok: true, duplicate: true }, { status: 202 });
-    }
-
-    try {
-      const conversation = await upsertConversation(supabase, instance, normalized);
-      const message = await insertMessage(supabase, instance, conversation, normalized);
-
-      if (normalized.direction === "inbound" && normalized.sender === "customer") {
-        await triggerWebhookDispatch({
-          workspaceId: instance.workspace_id,
-          event: "message.received",
-          payload: {
-            workspaceId: instance.workspace_id,
-            conversationId: conversation.id,
-            whatsappInstanceId: instance.id,
-            messageId: message.id,
-            customerPhone: conversation.customer_phone,
-            customerName: conversation.customer_name,
-            type: message.type,
-            content: message.content,
-            mediaUrl: message.media_url,
-            transcription: message.transcription,
-            externalId: message.external_id,
-            direction: message.direction,
-            receivedAt: message.created_at,
-          },
-          correlationId: crypto.randomUUID(),
-        });
-      }
-
-      await supabase
-        .from("inbound_events")
-        .update({
-          processing_status: "processed",
-          message_id: message.id,
-          processed_at: new Date().toISOString(),
-        })
-        .eq("id", registered.event.id);
-
-      if (normalized.direction === "inbound" && normalized.sender === "customer") {
-        await triggerProcessMessage({
-          workspaceId: instance.workspace_id,
-          conversationId: conversation.id,
-          messageId: message.id,
-          correlationId: crypto.randomUUID(),
-        });
-      }
-
-      await triggerPendingWebhookDispatch(instance.workspace_id);
-
-      return jsonResponse(
-        {
-          ok: true,
-          conversationId: conversation.id,
-          messageId: message.id,
-        },
-        { status: 202 },
-      );
-    } catch (error) {
-      await supabase
-        .from("inbound_events")
-        .update({
-          processing_status: "failed",
-          processed_at: new Date().toISOString(),
-          payload: {
-            ...payload,
-            processing_error: error instanceof Error ? error.message : "unknown_error",
-          },
-        })
-        .eq("id", registered.event.id);
-
-      throw error;
-    }
-  }
-
-  return jsonResponse({ ok: true }, { status: 202 });
-});
+  return false;
+}

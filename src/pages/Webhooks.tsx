@@ -1,340 +1,316 @@
-import { useEffect, useState } from "react";
-import { toast } from "sonner";
-import { Copy, RefreshCcw, Save, Trash2, Webhook } from "lucide-react";
-import { useWebhooks } from "@/hooks/use-webhooks";
-import { formatWebhookEvents, supportedWebhookEvents } from "@/lib/webhooks";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
+import { useState, type FormEvent } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, KeyRound, Pencil, Plus, RotateCw, Send, Trash2, Webhook as WebhookIcon } from "lucide-react";
+import { useRequiredWorkspace } from "@/lib/workspace";
+import { supabase } from "@/lib/supabase";
+import { invokeFunction, unwrap } from "@/lib/functions";
+import { formatDateTime } from "@/lib/format";
+import { WEBHOOK_EVENTS, type Webhook, type WebhookDelivery } from "@/lib/database.types";
+import {
+  Badge,
+  Button,
+  Card,
+  CardBody,
+  CardHeader,
+  Checkbox,
+  CodeBlock,
+  ConfirmButton,
+  CopyButton,
+  EmptyState,
+  ErrorState,
+  Input,
+  Modal,
+  PageHeader,
+  Spinner,
+  Switch,
+  Table,
+  TBody,
+  TD,
+  TH,
+  THead,
+  TR,
+  statusTone,
+  useToast,
+} from "@/components/ui";
 
-type FormState = {
-  webhookId?: string;
+const COLUMNS = "id, workspace_id, name, url, events, active, secret_last4, max_attempts, created_by, created_at, updated_at";
+
+const EVENT_LABEL: Record<string, string> = {
+  "message.received": "Mensagem recebida",
+  "message.sent": "Mensagem enviada",
+  "conversation.handoff": "Transferência para humano",
+  "public_api.event.received": "Evento recebido pela API",
+};
+
+interface Draft {
+  id?: string;
   name: string;
-  description: string;
   url: string;
   events: string[];
-  headersText: string;
-  isActive: boolean;
-};
-
-const emptyForm: FormState = {
-  name: "",
-  description: "",
-  url: "",
-  events: ["message.received"],
-  headersText: "{}",
-  isActive: true,
-};
-
-function formatDateTime(value: string | null | undefined) {
-  if (!value) return "Sem data";
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(new Date(value));
+  active: boolean;
+  max_attempts: number;
 }
 
-export default function WebhooksPage() {
-  const {
-    currentWorkspace,
-    canEdit,
-    loading,
-    submitting,
-    webhooks,
-    revealedSecret,
-    setRevealedSecret,
-    saveWebhook,
-    deleteWebhook,
-    rotateSecret,
-    processPending,
-  } = useWebhooks();
-  const [form, setForm] = useState<FormState>(emptyForm);
+const emptyDraft: Draft = { name: "", url: "", events: [...WEBHOOK_EVENTS], active: true, max_attempts: 6 };
 
-  useEffect(() => {
-    if (webhooks.length === 0) return;
-    if (form.webhookId) return;
-    const first = webhooks[0];
-    setForm({
-      webhookId: first.id,
-      name: first.name,
-      description: first.description ?? "",
-      url: first.url,
-      events: first.events,
-      headersText: JSON.stringify(first.headers ?? {}, null, 2),
-      isActive: first.is_active,
-    });
-  }, [form.webhookId, webhooks]);
+export default function Webhooks() {
+  const { workspaceId } = useRequiredWorkspace();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const hooksKey = ["webhooks", workspaceId];
+  const deliveriesKey = ["webhook_deliveries", workspaceId];
 
-  const selectWebhook = (webhookId?: string) => {
-    if (!webhookId) {
-      setForm(emptyForm);
+  const webhooks = useQuery({
+    queryKey: hooksKey,
+    queryFn: async () =>
+      unwrap(
+        await supabase.from("webhooks").select(COLUMNS).eq("workspace_id", workspaceId).order("created_at"),
+      ) as unknown as Webhook[],
+  });
+  const deliveries = useQuery({
+    queryKey: deliveriesKey,
+    refetchInterval: 15000,
+    queryFn: async () =>
+      unwrap(
+        await supabase
+          .from("webhook_deliveries")
+          .select("*")
+          .eq("workspace_id", workspaceId)
+          .order("created_at", { ascending: false })
+          .limit(30),
+      ) as WebhookDelivery[],
+  });
+
+  const mutate = useMutation({
+    mutationFn: (body: Record<string, unknown>) =>
+      invokeFunction<{ webhook?: Webhook; secret?: string; delivery?: WebhookDelivery; deleted?: boolean }>("manage-webhooks", body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: hooksKey });
+      void qc.invalidateQueries({ queryKey: deliveriesKey });
+    },
+  });
+
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [secret, setSecret] = useState<{ name: string; value: string } | null>(null);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (!draft) return;
+    if (draft.events.length === 0) {
+      toast.error("Escolha ao menos um evento.");
       return;
     }
-
-    const webhook = webhooks.find((item) => item.id === webhookId);
-    if (!webhook) return;
-    setForm({
-      webhookId: webhook.id,
-      name: webhook.name,
-      description: webhook.description ?? "",
-      url: webhook.url,
-      events: webhook.events,
-      headersText: JSON.stringify(webhook.headers ?? {}, null, 2),
-      isActive: webhook.is_active,
-    });
-  };
-
-  const parseHeaders = () => {
     try {
-      const parsed = JSON.parse(form.headersText || "{}");
-      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-        throw new Error("Headers invalidos");
-      }
-      return parsed as Record<string, string>;
-    } catch {
-      throw new Error("Headers devem ser um JSON valido.");
+      const body = { name: draft.name.trim(), url: draft.url.trim(), events: draft.events, max_attempts: draft.max_attempts };
+      const res = draft.id
+        ? await mutate.mutateAsync({ action: "update", webhook_id: draft.id, ...body, active: draft.active })
+        : await mutate.mutateAsync({ action: "create", workspace_id: workspaceId, ...body });
+      setDraft(null);
+      if (res.secret) setSecret({ name: body.name, value: res.secret });
+      else toast.success("Webhook atualizado.");
+    } catch (err) {
+      toast.error(err);
     }
-  };
-
-  const handleSave = async () => {
-    try {
-      await saveWebhook({
-        webhookId: form.webhookId,
-        name: form.name.trim(),
-        description: form.description.trim() || undefined,
-        url: form.url.trim(),
-        events: form.events,
-        headers: parseHeaders(),
-        isActive: form.isActive,
-      });
-      toast.success(form.webhookId ? "Webhook atualizado." : "Webhook criado.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Nao foi possivel salvar o webhook.");
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!form.webhookId) return;
-    try {
-      await deleteWebhook(form.webhookId);
-      setForm(emptyForm);
-      toast.success("Webhook removido.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Nao foi possivel remover o webhook.");
-    }
-  };
-
-  const handleRotateSecret = async () => {
-    if (!form.webhookId) return;
-    try {
-      await rotateSecret(form.webhookId);
-      toast.success("Segredo do webhook rotacionado.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Nao foi possivel rotacionar o segredo.");
-    }
-  };
-
-  const handleProcessPending = async () => {
-    try {
-      const result = await processPending();
-      toast.success(`Processamento disparado. Pendentes avaliados: ${result?.processed ?? 0}.`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Nao foi possivel processar entregas pendentes.");
-    }
-  };
-
-  if (!currentWorkspace) {
-    return <div className="p-8 text-sm text-muted-foreground">Selecione um workspace para continuar.</div>;
   }
 
+  const call = async (body: Record<string, unknown>, ok: string) => {
+    try {
+      const res = await mutate.mutateAsync(body);
+      if (res.secret) setSecret({ name: res.webhook?.name ?? "", value: res.secret });
+      else toast.success(ok);
+    } catch (err) {
+      toast.error(err);
+    }
+  };
+
+  const hookName = (id: string) => webhooks.data?.find((w) => w.id === id)?.name ?? "—";
+
   return (
-    <div className="space-y-6 p-8">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Webhooks</h1>
-          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Configure callbacks externos com assinatura HMAC, escolha eventos e acompanhe retries e entregas pelo painel.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => selectWebhook(undefined)}>
-            Novo webhook
-          </Button>
-          <Button variant="outline" onClick={handleProcessPending} disabled={submitting}>
-            <RefreshCcw className="h-4 w-4" />
-            Processar pendentes
-          </Button>
-        </div>
-      </div>
+    <>
+      <PageHeader
+        title="Webhooks"
+        description="Avise seus sistemas quando algo acontece no atendimento. Entregas são assinadas e retentadas em caso de falha."
+        actions={<Button onClick={() => setDraft({ ...emptyDraft })}><Plus className="h-4 w-4" /> Novo webhook</Button>}
+      />
 
-      {revealedSecret ? (
-        <Card className="border-emerald-300 bg-emerald-50">
-          <CardHeader>
-            <CardTitle>Segredo do webhook</CardTitle>
-            <CardDescription>Copie este segredo agora. Ele aparece integralmente apenas neste momento.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Textarea value={revealedSecret} readOnly className="min-h-[100px] font-mono text-sm" />
-            <div className="flex gap-2">
-              <Button onClick={() => navigator.clipboard.writeText(revealedSecret).then(() => toast.success("Segredo copiado."))}>
-                <Copy className="h-4 w-4" />
-                Copiar segredo
-              </Button>
-              <Button variant="outline" onClick={() => setRevealedSecret(null)}>
-                Fechar
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      <div className="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
+      <div className="space-y-6">
         <Card>
-          <CardHeader>
-            <div className="flex items-center gap-3">
-              <Webhook className="h-5 w-5 text-primary" />
-              <div>
-                <CardTitle>Configuração</CardTitle>
-                <CardDescription>Crie ou edite endpoints externos habilitados para receber eventos do workspace.</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="wh-name">Nome</Label>
-              <Input
-                id="wh-name"
-                value={form.name}
-                onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-                disabled={!canEdit || submitting}
-                placeholder="CRM Principal"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="wh-url">URL</Label>
-              <Input
-                id="wh-url"
-                value={form.url}
-                onChange={(e) => setForm((prev) => ({ ...prev, url: e.target.value }))}
-                disabled={!canEdit || submitting}
-                placeholder="https://crm.exemplo.com/webhooks/callia"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="wh-description">Descricao</Label>
-              <Textarea
-                id="wh-description"
-                value={form.description}
-                onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
-                disabled={!canEdit || submitting}
-              />
-            </div>
-            <div className="space-y-3">
-              <Label>Eventos</Label>
-              <div className="grid gap-2">
-                {supportedWebhookEvents.map((event) => (
-                  <label key={event} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
-                    <span>{event}</span>
-                    <Switch
-                      checked={form.events.includes(event)}
-                      onCheckedChange={(checked) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          events: checked
-                            ? Array.from(new Set([...prev.events, event]))
-                            : prev.events.filter((item) => item !== event),
-                        }))
-                      }
-                      disabled={!canEdit || submitting}
-                    />
-                  </label>
-                ))}
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="wh-headers">Headers extras</Label>
-              <Textarea
-                id="wh-headers"
-                value={form.headersText}
-                onChange={(e) => setForm((prev) => ({ ...prev, headersText: e.target.value }))}
-                disabled={!canEdit || submitting}
-                className="min-h-[120px] font-mono text-xs"
-              />
-            </div>
-            <div className="flex items-center justify-between rounded-lg border px-4 py-3">
-              <div>
-                <div className="font-medium">Webhook ativo</div>
-                <div className="text-sm text-muted-foreground">Desative para interromper novas entregas.</div>
-              </div>
-              <Switch
-                checked={form.isActive}
-                onCheckedChange={(checked) => setForm((prev) => ({ ...prev, isActive: checked }))}
-                disabled={!canEdit || submitting}
-              />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button onClick={handleSave} disabled={!canEdit || submitting || !form.name || !form.url || form.events.length === 0}>
-                <Save className="h-4 w-4" />
-                Salvar webhook
-              </Button>
-              <Button variant="outline" onClick={handleRotateSecret} disabled={!canEdit || submitting || !form.webhookId}>
-                <RefreshCcw className="h-4 w-4" />
-                Rotacionar segredo
-              </Button>
-              <Button variant="outline" onClick={handleDelete} disabled={!canEdit || submitting || !form.webhookId}>
-                <Trash2 className="h-4 w-4" />
-                Remover
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Webhooks do workspace</CardTitle>
-            <CardDescription>Lista ativa do tenant com eventos assinados e segredos mascarados.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {loading ? (
-              <div className="text-sm text-muted-foreground">Carregando webhooks...</div>
-            ) : webhooks.length === 0 ? (
-              <div className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground">
-                Nenhum webhook configurado ainda.
-              </div>
-            ) : (
-              webhooks.map((webhook) => (
-                <button
-                  key={webhook.id}
-                  type="button"
-                  onClick={() => selectWebhook(webhook.id)}
-                  className="w-full rounded-xl border p-4 text-left transition-colors hover:bg-accent/40"
-                >
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="font-medium">{webhook.name}</div>
-                        <Badge variant="outline" className={webhook.is_active ? "border-emerald-300 bg-emerald-100 text-emerald-800" : "border-slate-300 bg-slate-100 text-slate-700"}>
-                          {webhook.is_active ? "Ativo" : "Inativo"}
-                        </Badge>
-                      </div>
-                      <div className="text-sm text-muted-foreground">{webhook.url}</div>
-                      <div className="text-xs text-muted-foreground">Segredo: {webhook.secret_masked}</div>
-                      <div className="text-xs text-muted-foreground">Eventos: {formatWebhookEvents(webhook.events)}</div>
+          {webhooks.isLoading ? (
+            <CardBody className="flex justify-center"><Spinner /></CardBody>
+          ) : webhooks.error ? (
+            <CardBody><ErrorState error={webhooks.error} onRetry={() => void webhooks.refetch()} /></CardBody>
+          ) : webhooks.data?.length === 0 ? (
+            <EmptyState icon={WebhookIcon} title="Nenhum webhook" description="Cadastre a URL do seu sistema para receber eventos em tempo real." />
+          ) : (
+            <ul className="divide-y divide-slate-100 dark:divide-slate-800">
+              {webhooks.data?.map((w) => (
+                <li key={w.id} className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:px-5">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium">{w.name}</p>
+                      <Badge tone={w.active ? "green" : "neutral"}>{w.active ? "Ativo" : "Pausado"}</Badge>
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      Atualizado em {formatDateTime(webhook.updated_at)}
+                    <p className="mt-0.5 break-all text-sm text-slate-500">{w.url}</p>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {w.events.map((ev) => <Badge key={ev} tone="blue">{ev}</Badge>)}
                     </div>
+                    <p className="mt-2 text-xs text-slate-400">Segredo …{w.secret_last4} · até {w.max_attempts} tentativas</p>
                   </div>
-                </button>
-              ))
-            )}
-          </CardContent>
+                  <div className="flex flex-wrap gap-1">
+                    <Button size="sm" variant="secondary" onClick={() => void call({ action: "test", webhook_id: w.id }, "Evento de teste enviado.")}>
+                      <Send className="h-4 w-4" /> Testar
+                    </Button>
+                    <Button size="sm" variant="ghost" aria-label="Editar" onClick={() => setDraft({ id: w.id, name: w.name, url: w.url, events: w.events, active: w.active, max_attempts: w.max_attempts })}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <ConfirmButton
+                      size="sm"
+                      variant="ghost"
+                      danger={false}
+                      title="Rotacionar segredo?"
+                      description="O segredo atual deixa de assinar as próximas entregas. Atualize o sistema que valida a assinatura."
+                      confirmLabel="Rotacionar"
+                      onConfirm={() => call({ action: "rotate_secret", webhook_id: w.id }, "Segredo rotacionado.")}
+                      aria-label="Rotacionar segredo"
+                    >
+                      <KeyRound className="h-4 w-4" />
+                    </ConfirmButton>
+                    <ConfirmButton
+                      size="sm"
+                      variant="ghost"
+                      title="Excluir webhook?"
+                      description="O histórico de entregas deste webhook também é removido."
+                      confirmLabel="Excluir"
+                      onConfirm={() => call({ action: "delete", webhook_id: w.id }, "Webhook excluído.")}
+                      aria-label="Excluir"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </ConfirmButton>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card>
+          <CardHeader title="Entregas recentes" description="Atualiza a cada 15 segundos. O histórico completo fica em Logs." />
+          {deliveries.isLoading ? (
+            <CardBody className="flex justify-center"><Spinner /></CardBody>
+          ) : deliveries.error ? (
+            <CardBody><ErrorState error={deliveries.error} /></CardBody>
+          ) : deliveries.data?.length === 0 ? (
+            <EmptyState title="Nenhuma entrega ainda" />
+          ) : (
+            <Table>
+              <THead><tr><TH>Quando</TH><TH>Webhook</TH><TH>Evento</TH><TH>Status</TH><TH>Tentativas</TH><TH>HTTP</TH><TH className="text-right" /></tr></THead>
+              <TBody>
+                {deliveries.data?.map((d) => (
+                  <TR key={d.id}>
+                    <TD className="whitespace-nowrap">{formatDateTime(d.created_at)}</TD>
+                    <TD>{hookName(d.webhook_id)}</TD>
+                    <TD><code className="text-xs">{d.event}</code></TD>
+                    <TD>
+                      <Badge tone={statusTone(d.status)}>{d.status}</Badge>
+                      {d.last_error && <p className="mt-1 max-w-[220px] truncate text-xs text-red-600" title={d.last_error}>{d.last_error}</p>}
+                    </TD>
+                    <TD>{d.attempts}</TD>
+                    <TD>{d.last_status_code ?? "—"}</TD>
+                    <TD className="text-right">
+                      {(d.status === "failed" || d.status === "retrying") && (
+                        <Button size="sm" variant="ghost" onClick={() => void call({ action: "retry", delivery_id: d.id }, "Reenvio solicitado.")}>
+                          <RotateCw className="h-4 w-4" /> Reenviar
+                        </Button>
+                      )}
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          )}
+        </Card>
+
+        <Card>
+          <CardHeader title="Verificando a assinatura" />
+          <CardBody className="space-y-3 text-sm text-slate-600 dark:text-slate-300">
+            <p>
+              Cada entrega traz os headers <code>x-callia-event</code>, <code>x-callia-delivery-id</code>, <code>x-callia-correlation-id</code>,{" "}
+              <code>x-callia-attempt</code>, <code>x-callia-timestamp</code> e <code>x-callia-signature</code>.
+            </p>
+            <p>
+              A assinatura é <code>sha256=&lt;hex&gt;</code>, um HMAC-SHA256 com o segredo do webhook sobre{" "}
+              <code>{"`${x-callia-timestamp}.${corpo bruto}`"}</code>. Compare em tempo constante e recuse timestamps com mais de 5 minutos.
+            </p>
+            <CodeBlock
+              code={`import crypto from "node:crypto";
+
+function isValid(req, rawBody, secret) {
+  const ts = req.headers["x-callia-timestamp"];
+  const sig = req.headers["x-callia-signature"] ?? "";
+  const expected = "sha256=" + crypto.createHmac("sha256", secret).update(\`\${ts}.\${rawBody}\`).digest("hex");
+  const fresh = Math.abs(Date.now() / 1000 - Number(ts)) < 300;
+  return fresh && sig.length === expected.length &&
+    crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+}`}
+            />
+            <p className="text-xs text-slate-500">Responda com HTTP 2xx em até 10 segundos; qualquer outro status conta como falha e gera nova tentativa.</p>
+          </CardBody>
         </Card>
       </div>
-    </div>
+
+      <Modal
+        open={Boolean(draft)}
+        onClose={() => setDraft(null)}
+        title={draft?.id ? "Editar webhook" : "Novo webhook"}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDraft(null)}>Cancelar</Button>
+            <Button type="submit" form="webhook-form" loading={mutate.isPending}>Salvar</Button>
+          </>
+        }
+      >
+        {draft && (
+          <form id="webhook-form" onSubmit={submit} className="space-y-4">
+            <Input label="Nome" required value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+            <Input label="URL" type="url" required value={draft.url} onChange={(e) => setDraft({ ...draft, url: e.target.value })} placeholder="https://" />
+            <fieldset className="space-y-2">
+              <legend className="mb-1 text-sm font-medium text-slate-700 dark:text-slate-300">Eventos</legend>
+              {WEBHOOK_EVENTS.map((ev) => (
+                <Checkbox
+                  key={ev}
+                  checked={draft.events.includes(ev)}
+                  onChange={(on) => setDraft({ ...draft, events: on ? [...draft.events, ev] : draft.events.filter((x) => x !== ev) })}
+                  label={<span>{EVENT_LABEL[ev]} <code className="text-xs text-slate-400">{ev}</code></span>}
+                />
+              ))}
+            </fieldset>
+            <Input
+              label="Máximo de tentativas"
+              type="number"
+              min={1}
+              max={12}
+              value={draft.max_attempts}
+              onChange={(e) => setDraft({ ...draft, max_attempts: Number(e.target.value) })}
+            />
+            {draft.id && <Switch checked={draft.active} onChange={(v) => setDraft({ ...draft, active: v })} label="Ativo" />}
+          </form>
+        )}
+      </Modal>
+
+      <Modal open={Boolean(secret)} onClose={() => setSecret(null)} title="Segredo de assinatura" footer={<Button onClick={() => setSecret(null)}>Já copiei</Button>}>
+        {secret && (
+          <div className="space-y-4">
+            <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              Guarde este segredo no sistema que recebe "{secret.name}". Ele não será exibido de novo.
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <code className="min-w-0 flex-1 break-all rounded-lg bg-slate-100 px-3 py-2 text-sm dark:bg-slate-800">{secret.value}</code>
+              <CopyButton value={secret.value} />
+            </div>
+          </div>
+        )}
+      </Modal>
+    </>
   );
 }

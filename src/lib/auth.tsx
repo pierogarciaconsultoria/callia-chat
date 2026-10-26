@@ -1,47 +1,90 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { Session, User } from "@supabase/supabase-js";
-import { supabase } from "@/integrations/supabase/client";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import type { Session, User } from "@supabase/supabase-js";
+import { supabase } from "./supabase";
 
-interface AuthCtx {
-  user: User | null;
+interface AuthState {
   session: Session | null;
+  user: User | null;
   loading: boolean;
-  isSuperAdmin?: boolean;
+  signInWithPassword: (email: string, password: string) => Promise<void>;
+  signUp: (email: string, password: string) => Promise<{ needsConfirmation: boolean }>;
+  signInWithGoogle: () => Promise<void>;
+  requestPasswordReset: (email: string) => Promise<void>;
+  updatePassword: (password: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
-const Ctx = createContext<AuthCtx>({ user: null, session: null, loading: true, signOut: async () => {} });
+const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
-      setSession(sess);
+    let active = true;
+    supabase.auth
+      .getSession()
+      .then(({ data }) => {
+        if (active) setSession(data.session);
+      })
+      .finally(() => active && setLoading(false));
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+      setSession(next);
       setLoading(false);
     });
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setLoading(false);
-    });
-    return () => sub.subscription.unsubscribe();
+    return () => {
+      active = false;
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
-  return (
-    <Ctx.Provider
-      value={{
-        user: session?.user ?? null,
-        session,
-        loading,
-        signOut: async () => {
-          await supabase.auth.signOut();
-        },
-      }}
-    >
-      {children}
-    </Ctx.Provider>
+  const value = useMemo<AuthState>(
+    () => ({
+      session,
+      user: session?.user ?? null,
+      loading,
+      async signInWithPassword(email, password) {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      },
+      async signUp(email, password) {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: `${window.location.origin}/` },
+        });
+        if (error) throw error;
+        return { needsConfirmation: !data.session };
+      },
+      async signInWithGoogle() {
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: { redirectTo: `${window.location.origin}/` },
+        });
+        if (error) throw error;
+      },
+      async requestPasswordReset(email) {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/definir-senha`,
+        });
+        if (error) throw error;
+      },
+      async updatePassword(password) {
+        const { error } = await supabase.auth.updateUser({ password });
+        if (error) throw error;
+      },
+      async signOut() {
+        await supabase.auth.signOut();
+      },
+    }),
+    [session, loading],
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-export const useAuth = () => useContext(Ctx);
+export function useAuth(): AuthState {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth fora do AuthProvider");
+  return ctx;
+}

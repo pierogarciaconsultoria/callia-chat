@@ -1,38 +1,58 @@
 import { describe, expect, it } from "vitest";
-// @ts-ignore - Deno edge module with pure logic, no Deno APIs
-import { chunkText, stripHtml } from "../../supabase/functions/_shared/knowledge.ts";
+import { chunkText, decodeEntities, extractHtmlTitle, htmlToText } from "../../supabase/functions/_shared/knowledge.ts";
 
-describe("knowledge chunking", () => {
-  it("ignora texto vazio", () => {
+describe("chunking da base de conhecimento", () => {
+  it("mantém texto curto em um único bloco", () => {
+    expect(chunkText("  Olá mundo.  ")).toEqual(["Olá mundo."]);
     expect(chunkText("")).toEqual([]);
-    expect(chunkText("   \n\n  ")).toEqual([]);
   });
 
-  it("mantem paragrafos curtos juntos ate o limite do trecho", () => {
-    const chunks = chunkText("Politica de cancelamento.\n\nReembolso em ate 7 dias.");
-
-    expect(chunks).toHaveLength(1);
-    expect(chunks[0].content).toBe("Politica de cancelamento. Reembolso em ate 7 dias.");
-    expect(chunks[0].position).toBe(0);
+  it("respeita o tamanho máximo e sobrepõe o final do bloco anterior", () => {
+    const paragraphs = Array.from({ length: 12 }, (_, i) => `Parágrafo ${i + 1}. ` + "palavra ".repeat(25).trim() + ".");
+    const chunks = chunkText(paragraphs.join("\n\n"), { size: 400, overlap: 80 });
+    expect(chunks.length).toBeGreaterThan(3);
+    for (const c of chunks) expect(c.length).toBeLessThanOrEqual(400);
+    // A sobreposição repete o fim do bloco anterior no início do próximo.
+    for (let i = 1; i < chunks.length; i++) {
+      const tail = chunks[i - 1].slice(-30).trim().split(/\s+/).slice(-3).join(" ");
+      expect(chunks[i]).toContain(tail);
+    }
+    // Nenhum parágrafo se perde.
+    const all = chunks.join("\n");
+    for (let i = 1; i <= 12; i++) expect(all).toContain(`Parágrafo ${i}.`);
   });
 
-  it("divide texto longo com sobreposicao e numerera as posicoes", () => {
-    const long = Array.from({ length: 400 }, (_, index) => `palavra${index}`).join(" ");
-    const chunks = chunkText(long, 200, 50);
-
-    expect(chunks.length).toBeGreaterThan(1);
-    expect(chunks.every((chunk) => chunk.content.length <= 200)).toBe(true);
-    expect(chunks.map((chunk) => chunk.position)).toEqual(
-      chunks.map((_, index) => index),
-    );
-
-    const tailOfFirst = chunks[0].content.split(" ").slice(-3).join(" ");
-    expect(chunks[1].content).toContain(tailOfFirst);
+  it("quebra frases gigantes sem espaço em fatias fixas", () => {
+    const chunks = chunkText("x".repeat(2500), { size: 1000, overlap: 100 });
+    expect(chunks.every((c) => c.length <= 1000)).toBe(true);
+    expect(chunks.join("").replace(/\s/g, "").length).toBeGreaterThanOrEqual(2500);
   });
 
-  it("limpa html antes da indexacao", () => {
-    expect(
-      stripHtml("<div><script>var a=1;</script><p>Ola &nbsp;mundo</p></div>"),
-    ).toBe("Ola mundo");
+  it("rejeita sobreposição maior que o bloco", () => {
+    expect(() => chunkText("abc", { size: 100, overlap: 100 })).toThrow();
+  });
+});
+
+describe("limpeza de HTML", () => {
+  const html = `<html><head><title>Pousada Alfa &amp; Cia</title><style>.x{}</style></head>
+    <body><nav>Menu Início Contato</nav><h1>Bem-vindo</h1><p>Café das 7h&nbsp;às 10h.</p>
+    <ul><li>Wi-Fi</li><li>Piscina</li></ul><script>alert(1)</script><footer>© 2026</footer></body></html>`;
+
+  it("remove scripts, estilos, navegação e rodapé", () => {
+    const text = htmlToText(html);
+    expect(text).toContain("Bem-vindo");
+    expect(text).toContain("Café das 7h às 10h.");
+    expect(text).toContain("- Wi-Fi");
+    expect(text).not.toMatch(/alert|\.x\{\}|Menu Início|© 2026/);
+  });
+
+  it("extrai o título", () => {
+    expect(extractHtmlTitle(html)).toBe("Pousada Alfa & Cia");
+  });
+
+  it("decodifica acentos codificados como entidades (sites Duda/Wix)", () => {
+    expect(htmlToText("<p>Acomoda&ccedil;&otilde;es &agrave; beira-mar &ndash; d&uacute;vidas? Ol&aacute;! &#233; &#xE7;</p>"))
+      .toBe("Acomodações à beira-mar – dúvidas? Olá! é ç");
+    expect(decodeEntities("&Aacute;rea &ecirc; &inexistente;")).toBe("Área ê &inexistente;");
   });
 });

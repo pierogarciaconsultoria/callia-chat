@@ -1,58 +1,36 @@
-// @ts-nocheck
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { corsHeaders, createServiceClient, jsonResponse } from "../_shared/auth.ts";
-import {
-  enqueueWebhookDeliveries,
-  processPendingWebhookDeliveries,
-} from "../_shared/webhooks.ts";
+// Retoma entregas pendentes/retentando cujo horário chegou. Acionado por cron (pg_cron + pg_net, ver DEPLOY_RUNBOOK).
+import { createHandler, json, RuntimeError } from "../_shared/http.ts";
+import { adminDb, env, isInternalCall } from "../_shared/supabase.ts";
+import { deliverWebhook } from "../_shared/webhooks.ts";
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
+const BATCH = 50;
 
-serve(async (request) => {
-  if (request.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+Deno.serve(createHandler("webhook-dispatcher", async ({ req, log }) => {
+  if (!isInternalCall(req)) throw new RuntimeError("unauthorized", "Chamada interna apenas.");
+  const db = adminDb();
+  const masterKey = env("CALLIA_ENCRYPTION_KEY");
+  const { data: due, error } = await db
+    .from("webhook_deliveries")
+    .select("id")
+    .in("status", ["pending", "retrying"])
+    .lte("next_attempt_at", new Date().toISOString())
+    .order("next_attempt_at")
+    .limit(BATCH);
+  if (error) throw new RuntimeError("internal_error", "Falha ao buscar entregas.", { db: error.message });
+
+  // Empurra o próximo horário antes de tentar, para duas execuções do cron não pegarem a mesma entrega.
+  const ids = (due ?? []).map((d: { id: string }) => d.id);
+  if (ids.length) {
+    await db.from("webhook_deliveries").update({ next_attempt_at: new Date(Date.now() + 120_000).toISOString() }).in("id", ids);
   }
-
-  try {
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-    const workspaceId = typeof body.workspaceId === "string" ? body.workspaceId : null;
-    const event = typeof body.event === "string" ? body.event : null;
-    const payload = asRecord(body.payload) ?? {};
-    const correlationId =
-      typeof body.correlationId === "string" ? body.correlationId : crypto.randomUUID();
-    const processPendingOnly = body.processPendingOnly === true;
-
-    const supabase = createServiceClient();
-
-    let queued = [];
-    if (!processPendingOnly && workspaceId && event) {
-      queued = await enqueueWebhookDeliveries(supabase, {
-        workspaceId,
-        event,
-        payload,
-        correlationId,
-      });
-    }
-
-    await processPendingWebhookDeliveries(supabase, {
-      workspaceId,
-      limit: 25,
-    });
-
-    return jsonResponse(
-      {
-        ok: true,
-        queued: queued.length,
-        correlationId,
-      },
-      { status: 200 },
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "unexpected_error";
-    return jsonResponse({ error: message }, { status: 500 });
+  const results = await Promise.allSettled(ids.map((id: string) => deliverWebhook(db, id, masterKey)));
+  const summary = { picked: ids.length, delivered: 0, retrying: 0, failed: 0, errors: 0 };
+  for (const r of results) {
+    if (r.status === "rejected") summary.errors++;
+    else if (r.value?.status === "success") summary.delivered++;
+    else if (r.value?.status === "failed") summary.failed++;
+    else summary.retrying++;
   }
-});
+  if (ids.length) log.info("dispatch_round", summary);
+  return json(summary);
+}));

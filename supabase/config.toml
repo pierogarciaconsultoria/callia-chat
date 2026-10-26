@@ -1,1 +1,19 @@
-project_id = "vtbxkwyyaqvijuuszkzb"
+# Functions chamadas sem JWT de usuário: autenticam por token próprio (webhook da Evolution),
+# x-api-key (API pública), segredo interno (process-message, dispatcher) ou Bearer validado no código (mcp).
+# No self-host, a mesma lista vai em NO_VERIFY_JWT_FUNCTIONS do edge-runtime.
+project_id = "callia-chat"
+
+[functions.whatsapp-webhook]
+verify_jwt = false
+
+[functions.public-api]
+verify_jwt = false
+
+[functions.process-message]
+verify_jwt = false
+
+[functions.webhook-dispatcher]
+verify_jwt = false
+
+[functions.mcp]
+verify_jwt = false

@@ -1,379 +1,138 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/lib/auth";
-import { useWorkspace } from "@/lib/workspace";
-import type { InboxConversation, InboxInstance, MessageRow } from "@/lib/inbox";
+import { useEffect } from "react";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase";
+import { invokeFunction, unwrap } from "@/lib/functions";
+import type { Conversation, ConversationMode, Message } from "@/lib/database.types";
 
-type ModeFilter = "all" | "bot" | "human";
-
-function asInboxInstances(data: any[]): InboxInstance[] {
-  return (data ?? []).map((item) => ({
-    id: item.id,
-    instance_name: item.instance_name,
-    display_name: item.display_name ?? null,
-    phone_number: item.phone_number ?? null,
-    status: item.status ?? null,
-    is_default: Boolean(item.is_default),
-  }));
+export interface ConversationFilters {
+  instanceId: string | "all";
+  mode: ConversationMode | "all";
 }
 
-function asInboxConversations(data: any[]): InboxConversation[] {
-  return (data ?? []).map((item) => ({
-    ...item,
-    metadata:
-      item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata)
-        ? item.metadata
-        : {},
-    whatsapp_instance: item.whatsapp_instance
-      ? {
-          id: item.whatsapp_instance.id,
-          instance_name: item.whatsapp_instance.instance_name,
-          display_name: item.whatsapp_instance.display_name ?? null,
-          phone_number: item.whatsapp_instance.phone_number ?? null,
-          status: item.whatsapp_instance.status ?? null,
-          is_default: Boolean(item.whatsapp_instance.is_default),
-        }
-      : null,
-  }));
+export const conversationsKey = (workspaceId: string) => ["conversations", workspaceId] as const;
+export const messagesKey = (conversationId: string) => ["messages", conversationId] as const;
+
+const PAGE = 200;
+
+export function useConversations(workspaceId: string) {
+  return useQuery({
+    queryKey: conversationsKey(workspaceId),
+    queryFn: async () =>
+      unwrap(
+        await supabase
+          .from("conversations")
+          .select("*")
+          .eq("workspace_id", workspaceId)
+          .order("last_message_at", { ascending: false, nullsFirst: false })
+          .limit(PAGE),
+      ) as Conversation[],
+  });
 }
 
-function asMessages(data: any[]): MessageRow[] {
-  return (data ?? []).map((item) => ({
-    ...item,
-    metadata:
-      item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata)
-        ? item.metadata
-        : {},
-  }));
+export function useMessages(conversationId: string | null) {
+  return useQuery({
+    queryKey: messagesKey(conversationId ?? "none"),
+    enabled: Boolean(conversationId),
+    // As 500 mais recentes, exibidas em ordem cronológica.
+    queryFn: async () =>
+      (unwrap(
+        await supabase
+          .from("messages")
+          .select("*")
+          .eq("conversation_id", conversationId!)
+          .order("created_at", { ascending: false })
+          .order("seq", { ascending: false })
+          .limit(500),
+      ) as Message[]).reverse(),
+  });
 }
 
-export function useInbox() {
-  const { user } = useAuth();
-  const { currentWorkspace, role } = useWorkspace();
-  const [loading, setLoading] = useState(true);
-  const [messagesLoading, setMessagesLoading] = useState(false);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [instances, setInstances] = useState<InboxInstance[]>([]);
-  const [conversations, setConversations] = useState<InboxConversation[]>([]);
-  const [messages, setMessages] = useState<MessageRow[]>([]);
-  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [instanceFilter, setInstanceFilter] = useState<string>("all");
-  const [modeFilter, setModeFilter] = useState<ModeFilter>("all");
-  const selectedConversationIdRef = useRef<string | null>(null);
+function sortConversations(list: Conversation[]) {
+  return [...list].sort((a, b) => (b.last_message_at ?? "").localeCompare(a.last_message_at ?? ""));
+}
 
+export function upsertConversationInCache(qc: QueryClient, workspaceId: string, row: Conversation) {
+  qc.setQueryData<Conversation[]>(conversationsKey(workspaceId), (prev) => {
+    if (!prev) return prev;
+    const rest = prev.filter((c) => c.id !== row.id);
+    return sortConversations([row, ...rest]);
+  });
+}
+
+function upsertMessageInCache(qc: QueryClient, row: Message) {
+  qc.setQueryData<Message[]>(messagesKey(row.conversation_id), (prev) => {
+    if (!prev) return prev;
+    const idx = prev.findIndex((m) => m.id === row.id);
+    if (idx >= 0) {
+      const next = [...prev];
+      next[idx] = row;
+      return next;
+    }
+    return [...prev, row].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.seq - b.seq);
+  });
+}
+
+// Realtime: conversas e mensagens do workspace atualizam os caches do TanStack Query.
+export function useInboxRealtime(workspaceId: string) {
+  const qc = useQueryClient();
   useEffect(() => {
-    selectedConversationIdRef.current = selectedConversationId;
-  }, [selectedConversationId]);
-
-  const refreshInstances = useCallback(async () => {
-    if (!currentWorkspace) {
-      setInstances([]);
-      return;
-    }
-
-    const { data, error } = await (supabase as any)
-      .from("whatsapp_instances")
-      .select("id, instance_name, display_name, phone_number, status, is_default")
-      .eq("workspace_id", currentWorkspace.id)
-      .order("is_default", { ascending: false })
-      .order("created_at", { ascending: true });
-
-    if (error) throw error;
-    setInstances(asInboxInstances(data ?? []));
-  }, [currentWorkspace]);
-
-  const refreshConversations = useCallback(async () => {
-    if (!currentWorkspace) {
-      setConversations([]);
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    const builder = (supabase as any)
-      .from("conversations")
-      .select(`
-        *,
-        whatsapp_instance:whatsapp_instances(
-          id,
-          instance_name,
-          display_name,
-          phone_number,
-          status,
-          is_default
-        )
-      `)
-      .eq("workspace_id", currentWorkspace.id)
-      .eq("is_closed", false)
-      .order("last_message_at", { ascending: false });
-
-    if (instanceFilter !== "all") {
-      builder.eq("whatsapp_instance_id", instanceFilter);
-    }
-
-    if (modeFilter !== "all") {
-      builder.eq("mode", modeFilter);
-    }
-
-    const { data, error } = await builder;
-    if (error) throw error;
-
-    setConversations(asInboxConversations(data ?? []));
-    setLoading(false);
-  }, [currentWorkspace, instanceFilter, modeFilter]);
-
-  const refreshMessages = useCallback(async (conversationId: string | null) => {
-    if (!currentWorkspace || !conversationId) {
-      setMessages([]);
-      setMessagesLoading(false);
-      return;
-    }
-
-    setMessagesLoading(true);
-    const { data, error } = await (supabase as any)
-      .from("messages")
-      .select("*")
-      .eq("workspace_id", currentWorkspace.id)
-      .eq("conversation_id", conversationId)
-      .order("created_at", { ascending: true });
-
-    if (error) throw error;
-    setMessages(asMessages(data ?? []));
-    setMessagesLoading(false);
-  }, [currentWorkspace]);
-
-  useEffect(() => {
-    refreshInstances().catch(() => setInstances([]));
-  }, [refreshInstances]);
-
-  useEffect(() => {
-    refreshConversations().catch(() => {
-      setConversations([]);
-      setLoading(false);
-    });
-  }, [refreshConversations]);
-
-  useEffect(() => {
-    if (!currentWorkspace) {
-      setSelectedConversationId(null);
-      setMessages([]);
-      return;
-    }
-
-    if (conversations.length === 0) {
-      setSelectedConversationId(null);
-      setMessages([]);
-      return;
-    }
-
-    const selectedExists = conversations.some((conversation) => conversation.id === selectedConversationId);
-    if (!selectedExists) {
-      setSelectedConversationId(conversations[0].id);
-    }
-  }, [currentWorkspace, conversations, selectedConversationId]);
-
-  useEffect(() => {
-    refreshMessages(selectedConversationId).catch(() => {
-      setMessages([]);
-      setMessagesLoading(false);
-    });
-  }, [refreshMessages, selectedConversationId]);
-
-  const selectedConversation = useMemo(
-    () => conversations.find((conversation) => conversation.id === selectedConversationId) ?? null,
-    [conversations, selectedConversationId],
-  );
-
-  const filteredConversations = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) return conversations;
-
-    return conversations.filter((conversation) => {
-      const haystack = [
-        conversation.customer_name ?? "",
-        conversation.customer_phone ?? "",
-        conversation.whatsapp_instance?.display_name ?? "",
-        conversation.whatsapp_instance?.instance_name ?? "",
-      ]
-        .join(" ")
-        .toLowerCase();
-
-      return haystack.includes(normalizedQuery);
-    });
-  }, [conversations, query]);
-
-  const patchConversation = useCallback(
-    async (conversationId: string, patch: Record<string, unknown>) => {
-      if (!currentWorkspace) return;
-
-      const { error } = await (supabase as any)
-        .from("conversations")
-        .update(patch)
-        .eq("workspace_id", currentWorkspace.id)
-        .eq("id", conversationId);
-
-      if (error) throw error;
-      await refreshConversations();
-    },
-    [currentWorkspace, refreshConversations],
-  );
-
-  const markAsRead = useCallback(
-    async (conversationId: string) => {
-      const conversation = conversations.find((item) => item.id === conversationId);
-      if (!conversation || conversation.unread_count === 0) return;
-
-      await patchConversation(conversationId, { unread_count: 0 });
-    },
-    [conversations, patchConversation],
-  );
-
-  useEffect(() => {
-    if (!selectedConversationId) return;
-    markAsRead(selectedConversationId).catch(() => null);
-  }, [markAsRead, selectedConversationId]);
-
-  const assumeConversation = useCallback(async () => {
-    if (!selectedConversation || !user) return;
-
-    setActionLoading(true);
-    try {
-      await patchConversation(selectedConversation.id, {
-        mode: "human",
-        assigned_agent_id: user.id,
-        unread_count: 0,
-        metadata: {
-          ...(selectedConversation.metadata ?? {}),
-          claimed_at: new Date().toISOString(),
-          claimed_by: user.id,
-        },
-      });
-    } finally {
-      setActionLoading(false);
-    }
-  }, [patchConversation, selectedConversation, user]);
-
-  const returnToBot = useCallback(async () => {
-    if (!selectedConversation) return;
-
-    setActionLoading(true);
-    try {
-      await patchConversation(selectedConversation.id, {
-        mode: "bot",
-        assigned_agent_id: null,
-        metadata: {
-          ...(selectedConversation.metadata ?? {}),
-          returned_to_bot_at: new Date().toISOString(),
-          returned_to_bot_by: user?.id ?? null,
-        },
-      });
-    } finally {
-      setActionLoading(false);
-    }
-  }, [patchConversation, selectedConversation, user?.id]);
-
-  const sendManualMessage = useCallback(
-    async (text: string) => {
-      if (!currentWorkspace || !selectedConversation || !text.trim()) return;
-
-      setActionLoading(true);
-      try {
-        const { error } = await supabase.functions.invoke("send-message", {
-          body: {
-            workspaceId: currentWorkspace.id,
-            conversationId: selectedConversation.id,
-            instanceId: selectedConversation.whatsapp_instance_id,
-            phoneNumber: selectedConversation.customer_phone,
-            text: text.trim(),
-            sender: "agent",
-            metadata: {
-              sent_from: "inbox",
-            },
-          },
-        });
-
-        if (error) throw error;
-        await Promise.all([
-          refreshMessages(selectedConversation.id),
-          patchConversation(selectedConversation.id, {
-            unread_count: 0,
-            mode: "human",
-            assigned_agent_id: selectedConversation.assigned_agent_id ?? user?.id ?? null,
-          }),
-        ]);
-      } finally {
-        setActionLoading(false);
-      }
-    },
-    [currentWorkspace, patchConversation, refreshMessages, selectedConversation, user?.id],
-  );
-
-  useEffect(() => {
-    if (!currentWorkspace) return;
-
     const channel = supabase
-      .channel(`inbox-${currentWorkspace.id}`)
+      .channel(`inbox:${workspaceId}`)
       .on(
         "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "conversations",
-          filter: `workspace_id=eq.${currentWorkspace.id}`,
-        },
-        () => {
-          refreshConversations().catch(() => null);
-        },
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "messages",
-          filter: `workspace_id=eq.${currentWorkspace.id}`,
-        },
-        (payload: any) => {
-          const changedConversationId =
-            payload.new?.conversation_id ?? payload.old?.conversation_id ?? null;
-
-          refreshConversations().catch(() => null);
-          if (changedConversationId && selectedConversationIdRef.current === changedConversationId) {
-            refreshMessages(changedConversationId).catch(() => null);
+        { event: "*", schema: "public", table: "conversations", filter: `workspace_id=eq.${workspaceId}` },
+        (payload) => {
+          if (payload.eventType === "DELETE") {
+            const oldId = (payload.old as Partial<Conversation>).id;
+            qc.setQueryData<Conversation[]>(conversationsKey(workspaceId), (prev) => prev?.filter((c) => c.id !== oldId));
+            return;
           }
+          upsertConversationInCache(qc, workspaceId, payload.new as Conversation);
         },
       )
-      .subscribe();
-
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "messages", filter: `workspace_id=eq.${workspaceId}` },
+        (payload) => {
+          if (payload.eventType === "DELETE") return;
+          upsertMessageInCache(qc, payload.new as Message);
+        },
+      )
+      .subscribe((status) => {
+        // Ao reconectar, recarrega para não perder eventos durante a queda.
+        if (status === "SUBSCRIBED") void qc.invalidateQueries({ queryKey: conversationsKey(workspaceId) });
+      });
     return () => {
-      supabase.removeChannel(channel);
+      void supabase.removeChannel(channel);
     };
-  }, [currentWorkspace, refreshConversations, refreshMessages]);
+  }, [workspaceId, qc]);
+}
 
-  return {
-    currentWorkspace,
-    role,
-    user,
-    loading,
-    messagesLoading,
-    actionLoading,
-    instances,
-    conversations: filteredConversations,
-    selectedConversation,
-    selectedConversationId,
-    messages,
-    query,
-    instanceFilter,
-    modeFilter,
-    setQuery,
-    setInstanceFilter,
-    setModeFilter,
-    setSelectedConversationId,
-    refreshConversations,
-    markAsRead,
-    assumeConversation,
-    returnToBot,
-    sendManualMessage,
-  };
+export function useUpdateConversation(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      patch,
+    }: {
+      id: string;
+      patch: Partial<Pick<Conversation, "mode" | "unread_count" | "assigned_user_id" | "handoff_at">>;
+    }) => unwrap(await supabase.from("conversations").update(patch).eq("id", id).select("*").single()) as Conversation,
+    onSuccess: (row) => upsertConversationInCache(qc, workspaceId, row),
+  });
+}
+
+export function useSendMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { conversationId: string; text: string }) =>
+      invokeFunction<{ message: Message }>("send-message", {
+        conversation_id: vars.conversationId,
+        type: "text",
+        text: vars.text,
+      }),
+    onSuccess: (res) => {
+      if (res?.message) upsertMessageInCache(qc, res.message);
+    },
+  });
 }

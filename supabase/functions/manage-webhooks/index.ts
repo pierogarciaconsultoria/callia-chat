@@ -1,222 +1,131 @@
-// @ts-nocheck
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { corsHeaders, jsonResponse, requireAdminContext } from "../_shared/auth.ts";
-import {
-  createAuditLog,
-  maskWebhookSecret,
-  processPendingWebhookDeliveries,
-} from "../_shared/webhooks.ts";
+// CRUD de webhooks de saída. O segredo HMAC é mostrado uma vez e guardado cifrado.
+import { createHandler, json, readJson, RuntimeError } from "../_shared/http.ts";
+import { encryptSecret, randomToken } from "../_shared/crypto.ts";
+import { adminDb, audit, env, requireUser, requireWorkspaceRole } from "../_shared/supabase.ts";
+import { deliverWebhook, emitEvent, WEBHOOK_EVENTS } from "../_shared/webhooks.ts";
+import { assertPublicHttpUrl } from "../_shared/net.ts";
+import { assertActive, loadEntitlements } from "../_shared/entitlements.ts";
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
+const PUBLIC_COLUMNS = "id, workspace_id, name, url, events, active, secret_last4, max_attempts, created_by, created_at, updated_at";
+const DELIVERY_COLUMNS = "id, webhook_id, event, status, attempts, last_status_code, last_error, created_at, delivered_at, next_attempt_at";
+
+interface Body {
+  action?: string;
+  workspace_id?: string;
+  webhook_id?: string;
+  delivery_id?: string;
+  name?: string;
+  url?: string;
+  events?: unknown;
+  active?: boolean;
+  max_attempts?: number;
 }
 
-function sanitizeWebhook(webhook) {
-  return {
-    id: webhook.id,
-    workspace_id: webhook.workspace_id,
-    name: webhook.name,
-    description: webhook.description ?? null,
-    url: webhook.url,
-    events: webhook.events ?? [],
-    headers: webhook.headers ?? {},
-    is_active: webhook.is_active,
-    created_at: webhook.created_at,
-    updated_at: webhook.updated_at ?? webhook.created_at,
-    secret_masked: maskWebhookSecret(webhook.secret),
-  };
+function validateEvents(events: unknown): string[] {
+  if (!Array.isArray(events) || events.length === 0) throw new RuntimeError("invalid_request", "Selecione ao menos um evento.");
+  const invalid = events.filter((e) => !(WEBHOOK_EVENTS as readonly string[]).includes(e));
+  if (invalid.length) throw new RuntimeError("invalid_request", `Eventos inválidos: ${invalid.join(", ")}.`);
+  return [...new Set(events as string[])];
 }
 
-serve(async (request) => {
-  if (request.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+function validateAttempts(n: unknown): number | undefined {
+  if (n === undefined) return undefined;
+  const v = Number(n);
+  if (!Number.isInteger(v) || v < 1 || v > 12) throw new RuntimeError("invalid_request", "max_attempts entre 1 e 12.");
+  return v;
+}
+
+Deno.serve(createHandler("manage-webhooks", async ({ req, correlationId }) => {
+  if (req.method !== "POST") throw new RuntimeError("invalid_request", "Use POST.");
+  const user = await requireUser(req);
+  const body = await readJson<Body>(req);
+  const db = adminDb();
+  const masterKey = env("CALLIA_ENCRYPTION_KEY");
+
+  if (body.action === "create") {
+    await requireWorkspaceRole(user.id, body.workspace_id);
+    assertActive(await loadEntitlements(db, body.workspace_id as string));
+    const name = body.name?.trim() ?? "";
+    if (name.length < 2 || name.length > 80) throw new RuntimeError("invalid_request", "Nome deve ter entre 2 e 80 caracteres.");
+    const secret = `whsec_${randomToken(40)}`;
+    const { data, error } = await db.from("webhooks").insert({
+      workspace_id: body.workspace_id,
+      name,
+      url: assertPublicHttpUrl(body.url),
+      events: validateEvents(body.events),
+      max_attempts: validateAttempts(body.max_attempts) ?? 6,
+      secret_ciphertext: await encryptSecret(secret, masterKey),
+      secret_last4: secret.slice(-4),
+      created_by: user.id,
+    }).select(PUBLIC_COLUMNS).single();
+    if (error) throw new RuntimeError("internal_error", "Falha ao criar webhook.", { db: error.message });
+    await audit(db, { workspace_id: data.workspace_id, actor_user_id: user.id, action: "webhook.created", entity: "webhook", entity_id: data.id, details: { url: data.url }, correlation_id: correlationId });
+    return json({ webhook: data, secret });
   }
 
-  try {
-    const {
-      userId,
-      workspaceId,
-      supabase,
-      body,
-    } = await requireAdminContext(request);
-    const action = typeof body.action === "string" ? body.action : "list";
-
-    if (action === "list") {
-      const { data, error } = await supabase
-        .from("webhooks")
-        .select("*")
-        .eq("workspace_id", workspaceId)
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-
-      return jsonResponse(
-        {
-          ok: true,
-          webhooks: (data ?? []).map(sanitizeWebhook),
-        },
-        { status: 200 },
-      );
-    }
-
-    if (action === "save") {
-      const webhookId = typeof body.webhookId === "string" ? body.webhookId : null;
-      const name = typeof body.name === "string" ? body.name.trim() : "";
-      const url = typeof body.url === "string" ? body.url.trim() : "";
-      const description =
-        typeof body.description === "string" ? body.description.trim() || null : null;
-      const events = Array.isArray(body.events)
-        ? body.events.filter((value) => typeof value === "string" && value.trim())
-        : [];
-      const headers = asRecord(body.headers) ?? {};
-      const isActive = body.isActive !== false;
-
-      if (!name || !url || events.length === 0) {
-        return jsonResponse({ error: "invalid_webhook_payload" }, { status: 400 });
-      }
-
-      const builder = webhookId
-        ? supabase.from("webhooks").update({
-            name,
-            url,
-            description,
-            events,
-            headers,
-            is_active: isActive,
-          }).eq("workspace_id", workspaceId).eq("id", webhookId)
-        : supabase.from("webhooks").insert({
-            workspace_id: workspaceId,
-            name,
-            url,
-            description,
-            events,
-            headers,
-            is_active: isActive,
-          });
-
-      const { data, error } = await builder.select("*").single();
-      if (error) throw error;
-
-      await createAuditLog(supabase, {
-        workspaceId,
-        actorType: "user",
-        actorId: userId,
-        action: webhookId ? "webhook.updated" : "webhook.created",
-        target: data.id,
-        metadata: {
-          name,
-          url,
-          events,
-        },
-      });
-
-      return jsonResponse(
-        {
-          ok: true,
-          webhook: sanitizeWebhook(data),
-          secret: webhookId ? null : data.secret,
-        },
-        { status: webhookId ? 200 : 201 },
-      );
-    }
-
-    if (action === "delete") {
-      const webhookId = typeof body.webhookId === "string" ? body.webhookId : null;
-      if (!webhookId) {
-        return jsonResponse({ error: "webhook_id_required" }, { status: 400 });
-      }
-
-      const { data: existing } = await supabase
-        .from("webhooks")
-        .select("*")
-        .eq("workspace_id", workspaceId)
-        .eq("id", webhookId)
-        .maybeSingle();
-
-      if (!existing) {
-        return jsonResponse({ error: "webhook_not_found" }, { status: 404 });
-      }
-
-      const { error } = await supabase
-        .from("webhooks")
-        .delete()
-        .eq("workspace_id", workspaceId)
-        .eq("id", webhookId);
-
-      if (error) throw error;
-
-      await createAuditLog(supabase, {
-        workspaceId,
-        actorType: "user",
-        actorId: userId,
-        action: "webhook.deleted",
-        target: webhookId,
-        metadata: {
-          name: existing.name,
-          url: existing.url,
-        },
-      });
-
-      return jsonResponse({ ok: true }, { status: 200 });
-    }
-
-    if (action === "rotate_secret") {
-      const webhookId = typeof body.webhookId === "string" ? body.webhookId : null;
-      if (!webhookId) {
-        return jsonResponse({ error: "webhook_id_required" }, { status: 400 });
-      }
-
-      const { data, error } = await supabase.rpc("rotate_webhook_secret", {
-        p_workspace_id: workspaceId,
-        p_webhook_id: webhookId,
-      });
-
-      if (error) throw error;
-
-      await createAuditLog(supabase, {
-        workspaceId,
-        actorType: "user",
-        actorId: userId,
-        action: "webhook.secret_rotated",
-        target: webhookId,
-        metadata: {},
-      });
-
-      return jsonResponse(
-        {
-          ok: true,
-          secret: data,
-        },
-        { status: 200 },
-      );
-    }
-
-    if (action === "process_pending") {
-      const deliveries = await processPendingWebhookDeliveries(supabase, {
-        workspaceId,
-        limit: 50,
-      });
-
-      return jsonResponse(
-        {
-          ok: true,
-          processed: deliveries.length,
-        },
-        { status: 200 },
-      );
-    }
-
-    return jsonResponse({ error: "unsupported_action" }, { status: 400 });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "unexpected_error";
-    const status =
-      message === "unauthorized" ? 401 :
-      message === "forbidden" ? 403 :
-      message === "workspace_required" ? 400 :
-      500;
-
-    return jsonResponse({ error: message }, { status });
+  if (body.action === "retry") {
+    if (typeof body.delivery_id !== "string") throw new RuntimeError("invalid_request", "delivery_id obrigatório.");
+    const { data: delivery } = await db.from("webhook_deliveries").select("id, workspace_id, status").eq("id", body.delivery_id).maybeSingle();
+    if (!delivery) throw new RuntimeError("not_found", "Entrega não encontrada.");
+    await requireWorkspaceRole(user.id, delivery.workspace_id);
+    if (delivery.status === "success") throw new RuntimeError("conflict", "Entrega já concluída.");
+    // Retentativa manual: uma tentativa agora; se falhar de novo, segue o limite configurado.
+    await db.from("webhook_deliveries").update({ status: "retrying" }).eq("id", delivery.id);
+    return json({ delivery: await deliverWebhook(db, delivery.id, masterKey) });
   }
-});
+
+  if (typeof body.webhook_id !== "string") throw new RuntimeError("invalid_request", "webhook_id obrigatório.");
+  const { data: hook } = await db.from("webhooks").select(PUBLIC_COLUMNS).eq("id", body.webhook_id).maybeSingle();
+  if (!hook) throw new RuntimeError("not_found", "Webhook não encontrado.");
+  await requireWorkspaceRole(user.id, hook.workspace_id);
+  const log = (action: string, details: Record<string, unknown> = {}) =>
+    audit(db, { workspace_id: hook.workspace_id, actor_user_id: user.id, action, entity: "webhook", entity_id: hook.id, details, correlation_id: correlationId });
+
+  switch (body.action) {
+    case "update": {
+      const patch: Record<string, unknown> = {};
+      if (body.name !== undefined) {
+        const name = String(body.name).trim();
+        if (name.length < 2 || name.length > 80) throw new RuntimeError("invalid_request", "Nome deve ter entre 2 e 80 caracteres.");
+        patch.name = name;
+      }
+      if (body.url !== undefined) patch.url = assertPublicHttpUrl(body.url);
+      if (body.events !== undefined) patch.events = validateEvents(body.events);
+      if (body.active !== undefined) patch.active = Boolean(body.active);
+      const attempts = validateAttempts(body.max_attempts);
+      if (attempts !== undefined) patch.max_attempts = attempts;
+      const { data } = await db.from("webhooks").update(patch).eq("id", hook.id).select(PUBLIC_COLUMNS).single();
+      await log("webhook.updated", { fields: Object.keys(patch) });
+      return json({ webhook: data });
+    }
+    case "rotate_secret": {
+      const secret = `whsec_${randomToken(40)}`;
+      const { data } = await db.from("webhooks").update({
+        secret_ciphertext: await encryptSecret(secret, masterKey),
+        secret_last4: secret.slice(-4),
+      }).eq("id", hook.id).select(PUBLIC_COLUMNS).single();
+      await log("webhook.secret_rotated");
+      return json({ webhook: data, secret });
+    }
+    case "delete": {
+      await db.from("webhooks").delete().eq("id", hook.id);
+      await log("webhook.deleted", { url: hook.url });
+      return json({ deleted: true });
+    }
+    case "test": {
+      if (!hook.active) throw new RuntimeError("conflict", "Ative o webhook antes de testar.");
+      const [deliveryId] = await emitEvent(db, {
+        workspaceId: hook.workspace_id,
+        event: "webhook.test",
+        onlyWebhookId: hook.id,
+        correlationId,
+        masterKey,
+        data: { message: "Entrega de teste do Callia Chat.", webhook_id: hook.id },
+      });
+      const { data: delivery } = await db.from("webhook_deliveries").select(DELIVERY_COLUMNS).eq("id", deliveryId).maybeSingle();
+      return json({ delivery });
+    }
+    default:
+      throw new RuntimeError("invalid_request", "Ação desconhecida.");
+  }
+}));

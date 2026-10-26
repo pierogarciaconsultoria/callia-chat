@@ -1,0 +1,31 @@
+{
+  "default_period": "baixa",
+  "periods": [
+    { "id": "baixa", "name": "Baixa temporada", "min_nights": 5, "ranges": [["2026-11-30", "2026-12-20"], ["2027-03-01", "2027-03-25"]] },
+    { "id": "alta", "name": "Alta temporada", "min_nights": 5, "ranges": [["2026-12-20", "2026-12-24"], ["2027-01-04", "2027-02-04"], ["2027-02-11", "2027-02-28"]] },
+    { "id": "natal", "name": "Pacote Natal e Ano Novo", "min_nights": 5, "ranges": [["2026-12-24", "2027-01-04"]] },
+    { "id": "carnaval", "name": "Pacote de Carnaval", "min_nights": 5, "ranges": [["2027-02-06", "2027-02-10"]] },
+    { "id": "pascoa", "name": "Pacote de Páscoa", "min_nights": 3, "ranges": [["2027-03-26", "2027-03-28"]] }
+  ],
+  "units": [
+    { "name": "Apartamentos 101 a 104, 201 a 204 e 207 a 209", "product_ids": [], "max_guests": 3, "rates": [
+      { "guests": 2, "label": "2 pessoas", "prices": { "baixa": 400, "alta": 550, "natal": 780, "carnaval": 630, "pascoa": 550 } },
+      { "guests": 3, "label": "3 pessoas", "prices": { "baixa": 440, "alta": 600, "natal": 850, "carnaval": 700, "pascoa": 600 } } ] },
+    { "name": "Apartamento 105 (acessível)", "product_ids": [], "max_guests": 3, "rates": [
+      { "guests": 2, "label": "2 pessoas", "prices": { "baixa": 400, "alta": 550, "natal": 780, "carnaval": 630, "pascoa": 550 } },
+      { "guests": 3, "label": "3 pessoas", "prices": { "baixa": 440, "alta": 600, "natal": 850, "carnaval": 700, "pascoa": 600 } } ] },
+    { "name": "Apartamentos 210 a 212", "product_ids": [], "max_guests": 3, "rates": [
+      { "guests": 2, "label": "2 pessoas", "prices": { "baixa": 400, "alta": 550, "natal": 780, "carnaval": 630, "pascoa": 550 } },
+      { "guests": 3, "label": "2 adultos + 1 criança de até 10 anos", "max_adults": 2, "child_max_age": 10, "prices": { "baixa": 440, "alta": 600, "natal": 850, "carnaval": 700, "pascoa": 600 } } ] },
+    { "name": "Apartamentos 205 e 206", "product_ids": [], "max_guests": 4, "rates": [
+      { "guests": 4, "label": "até 4 pessoas", "prices": { "baixa": 600, "alta": 850, "natal": 1000, "carnaval": 850, "pascoa": 850 } } ] },
+    { "name": "Kitnet", "product_ids": [], "max_guests": 2, "rates": [
+      { "guests": 2, "label": "até 2 pessoas", "prices": { "baixa": 320, "alta": 420, "natal": 550, "carnaval": 480, "pascoa": 420 } } ] },
+    { "name": "Condomínio Verdes Mares", "product_ids": [], "max_guests": 7, "rates": [
+      { "guests": 7, "label": "até 7 pessoas", "prices": { "baixa": 1100, "alta": 1500, "natal": 1800, "carnaval": 1500, "pascoa": 1500 } } ] }
+  ],
+  "notes": [
+    "Fora dos períodos listados vale a baixa temporada, desde que a pousada esteja em funcionamento.",
+    "Páscoa: 3 diárias (check-in 26/03/2027, check-out 29/03/2027)."
+  ]
+}

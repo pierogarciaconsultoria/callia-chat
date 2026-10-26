@@ -1,69 +1,129 @@
-// @ts-nocheck
-// Pure text helpers shared by the knowledge-index edge function and its tests.
-export const CHUNK_SIZE = 700;
-export const CHUNK_OVERLAP = 150;
+// Base de conhecimento: limpeza de texto, chunking com sobreposição e busca híbrida.
+import type { AiProvider } from "./ai.ts";
+import { toPgVector } from "./ai.ts";
+import type { KnowledgeHit } from "./agent-core.ts";
 
-export function stripHtml(html: string) {
+// Entidades nomeadas comuns em sites brasileiros (construtores como Duda e Wix codificam todos os acentos).
+const ENTITIES: Record<string, string> = {
+  nbsp: " ", amp: "&", lt: "<", gt: ">", quot: '"', apos: "'",
+  ccedil: "ç", Ccedil: "Ç", ntilde: "ñ", Ntilde: "Ñ", ordm: "º", ordf: "ª", deg: "°", sup2: "²", sup3: "³",
+  ndash: "–", mdash: "—", lsquo: "‘", rsquo: "’", ldquo: "“", rdquo: "”", sbquo: "‚", bdquo: "„", hellip: "…",
+  bull: "•", middot: "·", laquo: "«", raquo: "»", lsaquo: "‹", rsaquo: "›", copy: "©", reg: "®", trade: "™",
+  euro: "€", cent: "¢", pound: "£", times: "×", divide: "÷", frac12: "½", iexcl: "¡", iquest: "¿", szlig: "ß", shy: "",
+};
+// Vogais acentuadas: aacute, Agrave, ecirc, otilde, uuml…
+for (const [mark, marks] of Object.entries({ acute: "\u0301", grave: "\u0300", circ: "\u0302", tilde: "\u0303", uml: "\u0308" })) {
+  for (const v of "aeiouyAEIOUY") ENTITIES[`${v}${mark}`] = (v + marks).normalize("NFC");
+}
+
+export function decodeEntities(text: string): string {
+  return text
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(/&([a-z][a-z0-9]{1,10});/gi, (m, name) => ENTITIES[name] ?? m);
+}
+
+export function htmlToText(html: string): string {
   return html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<(script|style|noscript|svg|iframe|template)[\s\S]*?<\/\1>/gi, " ")
     .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<(nav|footer|header)[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|h[1-6]|tr|section|article|blockquote)>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "- ")
     .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/\s+/g, " ")
+    .replace(/&[a-z0-9#]+;/gi, (m) => decodeEntities(m))
+    .replace(/[ \t\f\v]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
-// Paragraphs first, then a sliding window for anything longer than the budget,
-// so a chunk never starts in the middle of a short paragraph.
-export function chunkText(text: string, size = CHUNK_SIZE, overlap = CHUNK_OVERLAP) {
-  const clean = (text ?? "").replace(/\r\n/g, "\n").trim();
-  if (!clean) return [];
+export function extractHtmlTitle(html: string): string | null {
+  const m = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
+  return m ? htmlToText(m[1]).slice(0, 200) || null : null;
+}
 
-  const paragraphs = clean.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
-  const blocks: string[] = [];
+export interface ChunkOptions {
+  size?: number;
+  overlap?: number;
+}
 
-  for (const paragraph of paragraphs) {
-    if (paragraph.length <= size) {
-      blocks.push(paragraph);
+/**
+ * Divide em blocos de até `size` caracteres respeitando parágrafos e frases.
+ * Cada bloco começa com o final (`overlap` caracteres) do anterior para não perder contexto na fronteira.
+ */
+export function chunkText(input: string, { size = 1200, overlap = 200 }: ChunkOptions = {}): string[] {
+  if (overlap >= size) throw new Error("overlap deve ser menor que size");
+  const text = input.replace(/\r\n?/g, "\n").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  if (!text) return [];
+  if (text.length <= size) return [text];
+
+  // Unidades: parágrafos; parágrafos grandes viram frases; frases enormes viram fatias fixas.
+  const units: string[] = [];
+  for (const para of text.split(/\n{2,}/)) {
+    if (para.length <= size) {
+      units.push(para);
       continue;
     }
-
-    const words = paragraph.split(/\s+/);
-    let current = "";
-
-    for (const word of words) {
-      if (current && `${current} ${word}`.length > size) {
-        blocks.push(current);
-        // Keep the tail of the previous window so a fact cut in half still
-        // appears in full in one of the two neighbours.
-        const tail = current.slice(Math.max(0, current.length - overlap));
-        current = `${tail} ${word}`.trim();
-        continue;
-      }
-      current = current ? `${current} ${word}` : word;
+    for (const sentence of para.split(/(?<=[.!?…])\s+/)) {
+      if (sentence.length <= size) units.push(sentence);
+      else for (let i = 0; i < sentence.length; i += size - overlap) units.push(sentence.slice(i, i + size - overlap));
     }
-
-    if (current) blocks.push(current);
   }
 
-  // Merge tiny neighbours so the catalog of a short page does not become
-  // twenty chunks of thirty characters.
-  const merged: string[] = [];
-  for (const block of blocks) {
-    const last = merged[merged.length - 1];
-    if (last !== undefined && `${last} ${block}`.length <= size) {
-      merged[merged.length - 1] = `${last} ${block}`;
+  const chunks: string[] = [];
+  let current = "";
+  for (const unit of units) {
+    const candidate = current ? `${current}\n\n${unit}` : unit;
+    if (candidate.length <= size) {
+      current = candidate;
       continue;
     }
-    merged.push(block);
+    if (current) chunks.push(current);
+    const tail = overlapTail(current, overlap);
+    current = tail && tail.length + unit.length + 2 <= size ? `${tail}\n\n${unit}` : unit;
   }
+  if (current) chunks.push(current);
+  return chunks;
+}
 
-  return merged.map((content, position) => ({ content, position }));
+/** Final do bloco anterior, começando numa fronteira de palavra. */
+function overlapTail(chunk: string, overlap: number): string {
+  if (!chunk || overlap <= 0) return "";
+  if (chunk.length <= overlap) return chunk;
+  const slice = chunk.slice(-overlap);
+  const firstSpace = slice.search(/\s/);
+  return (firstSpace > 0 ? slice.slice(firstSpace + 1) : slice).trim();
+}
+
+// deno-lint-ignore no-explicit-any
+type Db = any;
+
+export async function searchKnowledge(
+  db: Db,
+  ai: AiProvider | null,
+  workspaceId: string,
+  query: string,
+  limit = 5,
+): Promise<{ mode: "hybrid" | "keyword"; results: KnowledgeHit[] }> {
+  const q = query.trim().slice(0, 1000);
+  if (!q) return { mode: "keyword", results: [] };
+  let embedding: string | null = null;
+  if (ai?.embeddingsEnabled) {
+    try {
+      embedding = toPgVector((await ai.embed([q]))[0]);
+    } catch (err) {
+      // Sem embedding a busca segue só por palavra-chave.
+      console.warn(JSON.stringify({ level: "warn", msg: "embedding_failed", error: String(err) }));
+    }
+  }
+  const { data, error } = await db.rpc("knowledge_search", {
+    p_workspace_id: workspaceId,
+    p_query: q,
+    p_query_embedding: embedding,
+    p_limit: limit,
+  });
+  if (error) throw new Error(`knowledge_search: ${error.message}`);
+  return { mode: embedding ? "hybrid" : "keyword", results: (data ?? []) as KnowledgeHit[] };
 }

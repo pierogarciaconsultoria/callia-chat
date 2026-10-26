@@ -1,162 +1,74 @@
-import { useCallback, useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { useWorkspace } from "@/lib/workspace";
-import type { WhatsAppInstanceForm, WhatsAppInstanceRecord } from "@/lib/whatsapp-instances";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/lib/supabase";
+import { invokeFunction, unwrap } from "@/lib/functions";
+import type { WhatsAppInstance } from "@/lib/database.types";
+import { invalidateEntitlements } from "./use-entitlements";
 
-type EvolutionConnectAction =
-  | "create_instance"
-  | "connect_instance"
-  | "refresh_status"
-  | "disconnect_instance";
+// Colunas liberadas por GRANT para authenticated (hash do token fica oculto).
+const INSTANCE_COLUMNS =
+  "id, workspace_id, name, instance_name, provider, status, qr_code, qr_updated_at, phone_number, profile_name, is_default, last_connected_at, last_error, webhook_token_rotated_at, created_at, updated_at";
 
-async function invokeEvolutionConnect(body: Record<string, unknown>) {
-  const { data, error } = await supabase.functions.invoke("evolution-connect", { body });
-  if (error) throw error;
-  return data as Record<string, unknown>;
+export const instancesKey = (workspaceId: string) => ["whatsapp_instances", workspaceId] as const;
+
+export function useWhatsAppInstances(workspaceId: string, opts?: { refetchInterval?: number | false }) {
+  return useQuery({
+    queryKey: instancesKey(workspaceId),
+    refetchInterval: opts?.refetchInterval,
+    queryFn: async () =>
+      unwrap(
+        await supabase
+          .from("whatsapp_instances")
+          .select(INSTANCE_COLUMNS)
+          .eq("workspace_id", workspaceId)
+          .order("created_at"),
+      ) as unknown as WhatsAppInstance[],
+  });
 }
 
-export function useWhatsAppInstances() {
-  const { currentWorkspace, canManage: canEdit } = useWorkspace();
-  const [loading, setLoading] = useState(true);
-  const [instances, setInstances] = useState<WhatsAppInstanceRecord[]>([]);
+export type InstanceAction = "connect" | "refresh" | "disconnect" | "delete" | "set_default" | "rotate_token";
 
-  const refresh = useCallback(async () => {
-    if (!currentWorkspace) {
-      setInstances([]);
-      setLoading(false);
-      return;
-    }
+export interface InstanceResponse {
+  instance?: WhatsAppInstance;
+  qr_code?: string | null;
+  pairing_code?: string | null;
+  deleted?: boolean;
+}
 
-    setLoading(true);
-    const { data, error } = await (supabase as any)
-      .from("whatsapp_instances")
-      .select("*")
-      .eq("workspace_id", currentWorkspace.id)
-      .order("created_at", { ascending: true });
-
-    if (error) throw error;
-    setInstances((data ?? []) as WhatsAppInstanceRecord[]);
-    setLoading(false);
-  }, [currentWorkspace]);
-
-  useEffect(() => {
-    refresh().catch(() => setLoading(false));
-  }, [refresh]);
-
-  const saveInstance = useCallback(
-    async (instanceId: string | null, form: WhatsAppInstanceForm) => {
-      if (!currentWorkspace) return null;
-
-      const payload = {
-        instance_name: form.instance_name.trim(),
-        display_name: form.display_name.trim() || null,
-        evolution_base_url: form.evolution_base_url.trim() || null,
-        provider_secret_ref: form.provider_secret_ref.trim() || null,
-        phone_number: form.phone_number.trim() || null,
-        provider_type: "evolution",
-      };
-
-      const builder = instanceId
-        ? (supabase as any).from("whatsapp_instances").update(payload).eq("id", instanceId)
-        : (supabase as any)
-            .from("whatsapp_instances")
-            .insert({
-              ...payload,
-              workspace_id: currentWorkspace.id,
-            });
-
-      const { data, error } = await builder.select("*").single();
-
-      if (error) throw error;
-
-      if (form.is_default) {
-        await (supabase as any).rpc("set_default_whatsapp_instance", {
-          p_workspace_id: currentWorkspace.id,
-          p_instance_id: data.id,
-        });
-      }
-
-      await refresh();
-      return data as WhatsAppInstanceRecord;
-    },
-    [currentWorkspace, refresh],
-  );
-
-  const deleteInstance = useCallback(
-    async (instanceId: string) => {
-      await (supabase as any).from("whatsapp_instances").delete().eq("id", instanceId);
-      await refresh();
-    },
-    [refresh],
-  );
-
-  const setDefaultInstance = useCallback(
-    async (instanceId: string) => {
-      if (!currentWorkspace) return;
-      const { error } = await (supabase as any).rpc("set_default_whatsapp_instance", {
-        p_workspace_id: currentWorkspace.id,
-        p_instance_id: instanceId,
-      });
-      if (error) throw error;
-      await refresh();
-    },
-    [currentWorkspace, refresh],
-  );
-
-  const rotateWebhookToken = useCallback(
-    async (instanceId: string) => {
-      if (!currentWorkspace) return null;
-      const { data, error } = await (supabase as any).rpc("rotate_whatsapp_webhook_token", {
-        p_workspace_id: currentWorkspace.id,
-        p_instance_id: instanceId,
-      });
-      if (error) throw error;
-      await refresh();
-      return data as string;
-    },
-    [currentWorkspace, refresh],
-  );
-
-  const syncWithEvolution = useCallback(
-    async (action: EvolutionConnectAction, instanceId: string, form?: Partial<WhatsAppInstanceForm>) => {
-      if (!currentWorkspace) return null;
-      const data = await invokeEvolutionConnect({
-        action,
-        workspaceId: currentWorkspace.id,
-        instanceId,
-        payload: form,
-      });
-      await refresh();
-      return data;
-    },
-    [currentWorkspace, refresh],
-  );
-
-  const bootstrapInstance = useCallback(
-    async (form: WhatsAppInstanceForm) => {
-      if (!currentWorkspace) return null;
-      const data = await invokeEvolutionConnect({
-        action: "create_instance",
-        workspaceId: currentWorkspace.id,
-        payload: form,
-      });
-      await refresh();
-      return data;
-    },
-    [currentWorkspace, refresh],
-  );
-
-  return {
-    currentWorkspace,
-    instances,
-    loading,
-    canEdit,
-    refresh,
-    saveInstance,
-    deleteInstance,
-    setDefaultInstance,
-    rotateWebhookToken,
-    syncWithEvolution,
-    bootstrapInstance,
+export function useInstanceMutations(workspaceId: string) {
+  const qc = useQueryClient();
+  const sync = (res: InstanceResponse) => {
+    qc.setQueryData<WhatsAppInstance[]>(instancesKey(workspaceId), (prev) => {
+      if (!prev || !res.instance) return prev;
+      const inst = { ...res.instance, qr_code: res.qr_code ?? res.instance.qr_code };
+      const others = prev.map((i) => (inst.is_default && i.id !== inst.id ? { ...i, is_default: false } : i));
+      return others.some((i) => i.id === inst.id) ? others.map((i) => (i.id === inst.id ? inst : i)) : [...others, inst];
+    });
   };
+
+  const create = useMutation({
+    // phone (com DDI) pede código de pareamento em vez de QR.
+    mutationFn: (vars: { name: string; make_default: boolean; phone?: string }) =>
+      invokeFunction<InstanceResponse>("evolution-connect", { action: "create", workspace_id: workspaceId, ...vars }),
+    onSuccess: (res) => {
+      sync(res);
+      void qc.invalidateQueries({ queryKey: instancesKey(workspaceId) });
+      invalidateEntitlements(qc, workspaceId);
+    },
+  });
+
+  const action = useMutation({
+    mutationFn: (vars: { action: InstanceAction; instance_id: string; phone?: string }) =>
+      invokeFunction<InstanceResponse>("evolution-connect", { workspace_id: workspaceId, ...vars }),
+    onSuccess: (res, vars) => {
+      if (vars.action === "delete") {
+        invalidateEntitlements(qc, workspaceId);
+        qc.setQueryData<WhatsAppInstance[]>(instancesKey(workspaceId), (prev) => prev?.filter((i) => i.id !== vars.instance_id));
+        return;
+      }
+      sync(res);
+      if (vars.action === "set_default") void qc.invalidateQueries({ queryKey: instancesKey(workspaceId) });
+    },
+  });
+
+  return { create, action };
 }

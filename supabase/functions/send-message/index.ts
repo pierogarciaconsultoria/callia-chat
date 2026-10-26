@@ -1,101 +1,53 @@
-// @ts-nocheck
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { corsHeaders, jsonResponse, requireWorkspaceMemberContext } from "../_shared/auth.ts";
-import { createOutboundMessageRecord, deliverOutboundMessage } from "../_shared/outbound.ts";
+// Envio manual pela inbox (sender = agent). Mesma trilha outbound do bot.
+import { createHandler, json, readJson, RuntimeError } from "../_shared/http.ts";
+import { sendOutbound } from "../_shared/channel.ts";
+import { adminDb, requireUser, requireWorkspaceRole } from "../_shared/supabase.ts";
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
+Deno.serve(createHandler("send-message", async ({ req, correlationId }) => {
+  if (req.method !== "POST") throw new RuntimeError("invalid_request", "Use POST.");
+  const user = await requireUser(req);
+  const body = await readJson<{ conversation_id?: string; type?: string; text?: string }>(req);
+  if (typeof body.conversation_id !== "string") throw new RuntimeError("invalid_request", "conversation_id obrigatório.");
+  if ((body.type ?? "text") !== "text") throw new RuntimeError("invalid_request", "A inbox envia apenas texto por enquanto.");
+  const text = body.text?.trim() ?? "";
+  if (!text) throw new RuntimeError("invalid_request", "Mensagem vazia.");
+  if (text.length > 4096) throw new RuntimeError("invalid_request", "Mensagem acima de 4096 caracteres.");
 
-serve(async (request) => {
-  if (request.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+  const db = adminDb();
+  const { data: conversation } = await db
+    .from("conversations")
+    .select("id, workspace_id, instance_id, channel, contact_phone, mode")
+    .eq("id", body.conversation_id)
+    .maybeSingle();
+  if (!conversation) throw new RuntimeError("not_found", "Conversa não encontrada.");
+  await requireWorkspaceRole(user.id, conversation.workspace_id, ["owner", "admin", "agent"]);
+  if (conversation.channel !== "whatsapp") {
+    throw new RuntimeError("channel_not_supported", "Conversa via integração: a resposta manual fica bloqueada até existir adaptador do canal.");
   }
 
-  try {
-    const {
-      userId,
-      workspaceId,
-      supabase,
-      body,
-    } = await requireWorkspaceMemberContext(request);
-    const conversationId =
-      typeof body.conversationId === "string" ? body.conversationId : null;
-    const instanceId = typeof body.instanceId === "string" ? body.instanceId : null;
-    const inputPhoneNumber =
-      typeof body.phoneNumber === "string" ? body.phoneNumber.trim() : null;
-    const text = typeof body.text === "string" ? body.text : "";
-    const mediaUrl = typeof body.mediaUrl === "string" ? body.mediaUrl : null;
-    const mimeType = typeof body.mimeType === "string" ? body.mimeType : null;
-    const sender = body.sender === "agent" ? "agent" : "bot";
-    const metadata = asRecord(body.metadata) ?? {};
-    const correlationId =
-      typeof body.correlationId === "string" ? body.correlationId : crypto.randomUUID();
-
-    if (!workspaceId || !conversationId || (!inputPhoneNumber && !conversationId) || (!text && !mediaUrl)) {
-      return jsonResponse({ error: "invalid_payload" }, { status: 400 });
-    }
-
-    const { data: conversation } = await supabase
-      .from("conversations")
-      .select("id, customer_phone")
-      .eq("workspace_id", workspaceId)
-      .eq("id", conversationId)
-      .maybeSingle();
-
-    if (!conversation) {
-      return jsonResponse({ error: "conversation_not_found" }, { status: 404 });
-    }
-
-    const phoneNumber = inputPhoneNumber || conversation.customer_phone;
-    if (!phoneNumber) {
-      return jsonResponse({ error: "phone_required" }, { status: 400 });
-    }
-
-    const outbound = await createOutboundMessageRecord(supabase, {
-      workspaceId,
-      conversationId,
-      instanceId,
-      content: text || null,
-      mediaUrl,
-      mimeType,
-      type: mediaUrl ? "image" : "text",
-      sender,
-      agentUserId: sender === "agent" ? userId : null,
-      correlationId,
-      metadata: {
-        ...metadata,
-        generated_by: sender === "agent" ? "human-inbox" : "send-message",
-      },
-    });
-
-    const delivered = await deliverOutboundMessage(supabase, {
-      workspaceId,
-      conversationId,
-      instanceId,
-      phoneNumber,
-      text,
-      mediaUrl,
-      mimeType,
-      messageId: outbound.message.id,
-      outboundMessageId: outbound.outbound.id,
-      messageMetadata: outbound.message.metadata,
-      outboundPayload: outbound.outbound.payload,
-    });
-
-    return jsonResponse(
-      {
-        ok: true,
-        messageId: outbound.message.id,
-        outboundMessageId: outbound.outbound.id,
-        providerMessageId: delivered.providerMessageId,
-      },
-      { status: 200 },
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "unexpected_error";
-    return jsonResponse({ error: message }, { status: 500 });
+  // Quem responde pela inbox assume a conversa, para o bot não responder por cima.
+  if (conversation.mode !== "human") {
+    await db.from("conversations").update({ mode: "human", assigned_user_id: user.id, handoff_at: new Date().toISOString() })
+      .eq("id", conversation.id);
   }
-});
+
+  const result = await sendOutbound(db, {
+    workspaceId: conversation.workspace_id,
+    origin: "agent",
+    sender: "agent",
+    type: "text",
+    text,
+    conversation,
+    agentUserId: user.id,
+    correlationId,
+  });
+
+  const [{ data: message }, { data: outbound }] = await Promise.all([
+    db.from("messages").select("*").eq("id", result.messageId).single(),
+    db.from("outbound_messages").select("id, status, error, provider_message_id, created_at, sent_at").eq("id", result.outboundId).single(),
+  ]);
+  if (result.status === "failed") {
+    throw new RuntimeError("upstream_unavailable", "Não foi possível enviar pelo WhatsApp.", { message_id: result.messageId, reason: result.error?.slice(0, 300) });
+  }
+  return json({ message, outbound });
+}));

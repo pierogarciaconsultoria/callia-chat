@@ -1,234 +1,186 @@
-import { useEffect, useState } from "react";
-import { toast } from "sonner";
-import { Palette, Save, Settings2 } from "lucide-react";
-import { useWorkspace } from "@/lib/workspace";
-import { normalizeCustomDomain } from "@/lib/agent-settings";
-import { useWorkspaceAdmin, type WorkspaceBrandingRecord } from "@/hooks/use-workspace-admin";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { useEffect, useState, type FormEvent } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
+import { ArrowRight } from "lucide-react";
+import { useRequiredWorkspace } from "@/lib/workspace";
+import { supabase } from "@/lib/supabase";
+import { unwrap } from "@/lib/functions";
+import { applyBranding, DEFAULT_PRIMARY, DEFAULT_SECONDARY } from "@/lib/branding";
+import { PlanUsageCard } from "@/components/PlanUsageCard";
+import { BusinessInfoCard } from "@/components/BusinessInfoCard";
+import type { WorkspaceBranding } from "@/lib/database.types";
+import { Button, Card, CardBody, CardHeader, Input, PageHeader, useToast } from "@/components/ui";
 
-type BrandingForm = WorkspaceBrandingRecord & {
-  workspaceName: string;
-  supportNotes: string;
-};
+const HEX = /^#[0-9a-fA-F]{6}$/;
 
-export default function SettingsPage() {
-  const { currentWorkspace, canManage: canEdit } = useWorkspace();
-  const { branding, loading, saveBranding } = useWorkspaceAdmin();
-  const [form, setForm] = useState<BrandingForm | null>(null);
-  const [saving, setSaving] = useState(false);
+export default function Settings() {
+  const { isAdmin } = useRequiredWorkspace();
+  return (
+    <>
+      <PageHeader title="Configurações" description="Plano, identidade visual e dados da empresa." />
+      <div className="space-y-6">
+        <PlanUsageCard />
+        <WorkspaceNameCard />
+        <BrandingCard />
+        {isAdmin && <BusinessInfoCard />}
+        <ConnectorsPointer />
+      </div>
+    </>
+  );
+}
 
-  useEffect(() => {
-    if (!currentWorkspace || !branding) return;
-    setForm({
-      ...branding,
-      workspaceName: currentWorkspace.name,
-      supportNotes: "",
-    });
-  }, [branding, currentWorkspace]);
+function WorkspaceNameCard() {
+  const { workspace, workspaceId, refresh } = useRequiredWorkspace();
+  const toast = useToast();
+  const [name, setName] = useState(workspace?.name ?? "");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => setName(workspace?.name ?? ""), [workspace?.name]);
 
-  if (loading || !form) {
-    return <div className="p-8 text-sm text-muted-foreground">Carregando configuracoes do workspace...</div>;
-  }
-
-  if (!currentWorkspace) {
-    return <div className="p-8 text-sm text-muted-foreground">Selecione um workspace para continuar.</div>;
-  }
-
-  const updateForm = <K extends keyof BrandingForm>(field: K, value: BrandingForm[K]) => {
-    setForm((prev) => (prev ? { ...prev, [field]: value } : prev));
-  };
-
-  const handleSave = async () => {
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
     try {
-      setSaving(true);
-      await saveBranding(
-        {
-          workspace_id: form.workspace_id,
-          display_name: form.display_name,
-          logo_url: form.logo_url,
-          primary_color: form.primary_color,
-          secondary_color: form.secondary_color,
-          custom_domain: form.custom_domain,
-          support_email: form.support_email,
-        },
-        form.workspaceName,
-      );
-      toast.success("Configuracoes do workspace salvas.");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Nao foi possivel salvar as configuracoes.");
+      unwrap(await supabase.from("workspaces").update({ name: name.trim() }).eq("id", workspaceId));
+      await refresh();
+      toast.success("Nome atualizado.");
+    } catch (err) {
+      toast.error(err);
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
-  };
+  }
 
   return (
-    <div className="space-y-6 p-8">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Configuracoes</h1>
-          <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-            Gerencie o branding do workspace, o nome exibido no white-label e os dados basicos de suporte.
-          </p>
-        </div>
-        <Button onClick={handleSave} disabled={!canEdit || saving}>
-          <Save className="h-4 w-4" />
-          {saving ? "Salvando..." : "Salvar configuracoes"}
-        </Button>
-      </div>
+    <Card>
+      <CardHeader title="Workspace" description={workspace ? `Identificador: ${workspace.slug}` : undefined} />
+      <CardBody>
+        <form onSubmit={submit} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <Input wrapperClassName="flex-1" label="Nome" value={name} onChange={(e) => setName(e.target.value)} minLength={2} maxLength={120} required />
+          <Button type="submit" loading={busy} disabled={name.trim() === workspace?.name}>Salvar</Button>
+        </form>
+      </CardBody>
+    </Card>
+  );
+}
 
-      {!canEdit && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Seu perfil atual pode visualizar esta area, mas somente `owner` e `admin` podem editar o workspace.
-        </div>
-      )}
+function BrandingCard() {
+  const { workspaceId, branding } = useRequiredWorkspace();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [form, setForm] = useState<Partial<WorkspaceBranding>>({});
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <Settings2 className="h-5 w-5 text-primary" />
-            <div>
-              <CardTitle>Dados do workspace</CardTitle>
-              <CardDescription>Informacoes principais do tenant no painel administrativo.</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="grid gap-4 lg:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="workspaceName">Nome do workspace</Label>
+  useEffect(() => {
+    setForm({
+      display_name: branding?.display_name ?? "",
+      logo_url: branding?.logo_url ?? "",
+      primary_color: branding?.primary_color ?? DEFAULT_PRIMARY,
+      secondary_color: branding?.secondary_color ?? DEFAULT_SECONDARY,
+      custom_domain: branding?.custom_domain ?? "",
+      support_email: branding?.support_email ?? "",
+    });
+  }, [branding]);
+
+  // Pré-visualização ao vivo no shell; volta ao salvo ao sair da página.
+  useEffect(() => {
+    if (HEX.test(form.primary_color ?? "") && HEX.test(form.secondary_color ?? "")) applyBranding(form.primary_color, form.secondary_color);
+  }, [form.primary_color, form.secondary_color]);
+  useEffect(() => () => applyBranding(branding?.primary_color, branding?.secondary_color), [branding]);
+
+  const save = useMutation({
+    mutationFn: async () =>
+      unwrap(
+        await supabase
+          .from("workspace_branding")
+          .upsert({
+            workspace_id: workspaceId,
+            display_name: form.display_name?.trim() || null,
+            logo_url: form.logo_url?.trim() || null,
+            primary_color: form.primary_color,
+            secondary_color: form.secondary_color,
+            custom_domain: form.custom_domain?.trim().toLowerCase() || null,
+            support_email: form.support_email?.trim() || null,
+          })
+          .select("*")
+          .single(),
+      ) as WorkspaceBranding,
+    onSuccess: (row) => {
+      qc.setQueryData(["branding", workspaceId], row);
+      toast.success("Identidade visual salva.");
+    },
+    onError: (e) => toast.error(/duplicate|unique/i.test(String((e as Error).message)) ? "Este domínio já está em uso por outro workspace." : e),
+  });
+
+  const colorsValid = HEX.test(form.primary_color ?? "") && HEX.test(form.secondary_color ?? "");
+
+  return (
+    <Card>
+      <CardHeader title="Identidade visual" description="Nome, logo e cores exibidos no painel (white-label)." />
+      <CardBody>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (colorsValid) save.mutate();
+          }}
+          className="space-y-4"
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Input label="Nome exibido" value={form.display_name ?? ""} onChange={(e) => setForm({ ...form, display_name: e.target.value })} />
+            <Input label="URL do logo" type="url" value={form.logo_url ?? ""} onChange={(e) => setForm({ ...form, logo_url: e.target.value })} placeholder="https://" />
+            <ColorField label="Cor principal" value={form.primary_color ?? ""} onChange={(v) => setForm({ ...form, primary_color: v })} />
+            <ColorField label="Cor de destaque" value={form.secondary_color ?? ""} onChange={(v) => setForm({ ...form, secondary_color: v })} />
             <Input
-              id="workspaceName"
-              value={form.workspaceName}
-              onChange={(e) => updateForm("workspaceName", e.target.value)}
-              disabled={!canEdit}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="displayName">Nome publico</Label>
-            <Input
-              id="displayName"
-              value={form.display_name ?? ""}
-              onChange={(e) => updateForm("display_name", e.target.value || null)}
-              disabled={!canEdit}
-              placeholder="Callia Chat"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="supportEmail">Email de suporte</Label>
-            <Input
-              id="supportEmail"
-              type="email"
-              value={form.support_email ?? ""}
-              onChange={(e) => updateForm("support_email", e.target.value || null)}
-              disabled={!canEdit}
-              placeholder="suporte@empresa.com"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="customDomain">Dominio customizado</Label>
-            <Input
-              id="customDomain"
+              label="Domínio personalizado"
               value={form.custom_domain ?? ""}
-              onChange={(e) => updateForm("custom_domain", normalizeCustomDomain(e.target.value))}
-              disabled={!canEdit}
-              placeholder="app.suaempresa.com"
+              onChange={(e) => setForm({ ...form, custom_domain: e.target.value })}
+              placeholder="atendimento.suaempresa.com"
+              hint="Requer apontamento DNS e certificado no servidor."
             />
+            <Input label="E-mail de suporte" type="email" value={form.support_email ?? ""} onChange={(e) => setForm({ ...form, support_email: e.target.value })} />
           </div>
-        </CardContent>
-      </Card>
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-brand-fg">Botão principal</span>
+            <span className="rounded-lg bg-brand/10 px-3 py-1.5 text-sm font-medium text-brand">Item ativo</span>
+            <span className="rounded-lg bg-brand-accent px-3 py-1.5 text-sm font-medium text-slate-900">Destaque</span>
+            <Button type="submit" className="ml-auto" loading={save.isPending} disabled={!colorsValid}>Salvar</Button>
+          </div>
+        </form>
+      </CardBody>
+    </Card>
+  );
+}
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <Palette className="h-5 w-5 text-primary" />
-            <div>
-              <CardTitle>White-label e branding</CardTitle>
-              <CardDescription>Defina logo, cores e identidade visual basica do workspace.</CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="grid gap-4 lg:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="logoUrl">Logo URL</Label>
-            <Input
-              id="logoUrl"
-              value={form.logo_url ?? ""}
-              onChange={(e) => updateForm("logo_url", e.target.value || null)}
-              disabled={!canEdit}
-              placeholder="https://empresa.com/logo.png"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="primaryColor">Cor primaria</Label>
-            <div className="flex gap-3">
-              <Input
-                id="primaryColor"
-                type="color"
-                value={form.primary_color ?? "#111827"}
-                onChange={(e) => updateForm("primary_color", e.target.value)}
-                disabled={!canEdit}
-                className="h-10 w-20 p-1"
-              />
-              <Input
-                value={form.primary_color ?? "#111827"}
-                onChange={(e) => updateForm("primary_color", e.target.value)}
-                disabled={!canEdit}
-              />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="secondaryColor">Cor secundaria</Label>
-            <div className="flex gap-3">
-              <Input
-                id="secondaryColor"
-                type="color"
-                value={form.secondary_color ?? "#6366f1"}
-                onChange={(e) => updateForm("secondary_color", e.target.value)}
-                disabled={!canEdit}
-                className="h-10 w-20 p-1"
-              />
-              <Input
-                value={form.secondary_color ?? "#6366f1"}
-                onChange={(e) => updateForm("secondary_color", e.target.value)}
-                disabled={!canEdit}
-              />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="previewName">Preview do branding</Label>
-            <div className="rounded-xl border p-4">
-              <div
-                className="rounded-lg px-4 py-3 text-sm font-medium text-white"
-                style={{ backgroundColor: form.primary_color ?? "#111827" }}
-              >
-                {form.display_name || form.workspaceName}
-              </div>
-              <div
-                className="mt-3 rounded-lg px-4 py-3 text-sm"
-                style={{
-                  border: `1px solid ${form.secondary_color ?? "#6366f1"}`,
-                  color: form.secondary_color ?? "#6366f1",
-                }}
-              >
-                Botao secundario / destaque de marca
-              </div>
-            </div>
-          </div>
-          <div className="space-y-2 lg:col-span-2">
-            <Label htmlFor="supportNotes">Observacoes internas</Label>
-            <Textarea
-              id="supportNotes"
-              value={form.supportNotes}
-              onChange={(e) => updateForm("supportNotes", e.target.value)}
-              disabled={!canEdit}
-              placeholder="Ex.: este campo pode ser expandido no futuro para orientacoes internas do time"
-            />
-          </div>
-        </CardContent>
-      </Card>
+function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const valid = HEX.test(value);
+  return (
+    <div className="space-y-1.5">
+      <span className="block text-sm font-medium text-slate-700 dark:text-slate-300">{label}</span>
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          value={valid ? value : "#000000"}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-10 w-12 shrink-0 cursor-pointer rounded-lg border border-slate-300 bg-white p-1 dark:border-slate-700 dark:bg-slate-900"
+          aria-label={label}
+        />
+        <Input value={value} onChange={(e) => onChange(e.target.value)} wrapperClassName="flex-1" error={valid ? undefined : "Use #RRGGBB"} aria-label={`${label} (hex)`} />
+      </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- conectores
+function ConnectorsPointer() {
+  return (
+    <Card>
+      <CardHeader
+        title="Conectores"
+        description="As integrações agora ficam em Integrações: WhatsApp, sistema de reservas (Hospedin) e link de reservas."
+        actions={
+          <Link to="/integrations" className="inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline">
+            Abrir Integrações <ArrowRight className="h-4 w-4" />
+          </Link>
+        }
+      />
+    </Card>
   );
 }
