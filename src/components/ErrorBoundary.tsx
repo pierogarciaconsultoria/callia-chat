@@ -1,10 +1,12 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { isStaleBuildError, reloadForNewVersion } from "@/lib/stale-build";
 
 interface Props {
   children: ReactNode;
 }
 interface State {
   error: Error | null;
+  reloading?: boolean;
 }
 
 export class ErrorBoundary extends Component<Props, State> {
@@ -15,11 +17,22 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
+    if (isStaleBuildError(error) && reloadForNewVersion()) {
+      this.setState({ reloading: true });
+      return;
+    }
     console.error("[callia] erro não tratado na interface", error, info.componentStack);
   }
 
   render() {
     if (!this.state.error) return this.props.children;
+    if (this.state.reloading) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6 text-sm text-slate-600 dark:bg-slate-950 dark:text-slate-400">
+          Atualizando para a nova versão do painel…
+        </div>
+      );
+    }
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6 dark:bg-slate-950">
         <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">

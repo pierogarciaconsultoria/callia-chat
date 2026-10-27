@@ -20,6 +20,11 @@ if [[ "$what" == "all" || "$what" == "frontend" ]]; then
   VITE_SUPABASE_URL=https://callia.sistemalexis.com.br VITE_SUPABASE_PUBLISHABLE_KEY="$ANON" npm run build
   rel="$WEB/releases/$(date -u +%Y%m%d-%H%M%S)"
   mkdir -p "$rel" && cp -a dist/. "$rel/"
+  # Abas abertas com a versão anterior ainda pedem os chunks antigos (nomes com hash): mantém os
+  # dos últimos 14 dias na versão nova para não dar 404. cp -n nunca sobrescreve os atuais.
+  for old in "$WEB"/releases/*/assets; do
+    [[ "$old" == "$rel/assets" ]] || find "$old" -type f -mtime -14 -exec cp -an {} "$rel/assets/" \;
+  done
   ln -sfn "$rel" "$WEB/current" && chown -R deploy:deploy "$WEB"
   # Mantém as 5 releases mais recentes para rollback.
   ls -1dt "$WEB"/releases/* | tail -n +6 | xargs -r rm -rf

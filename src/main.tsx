@@ -6,7 +6,13 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { ToastProvider } from "@/components/ui";
 import { AuthProvider } from "@/lib/auth";
 import { WorkspaceProvider } from "@/lib/workspace";
+import { reloadForNewVersion } from "@/lib/stale-build";
 import "./index.css";
+
+// Chunk da versão anterior sumiu (novo deploy): recarrega em vez de quebrar a tela.
+window.addEventListener("vite:preloadError", (event) => {
+  if (reloadForNewVersion()) event.preventDefault();
+});
 
 const queryClient = new QueryClient({
   defaultOptions: {
