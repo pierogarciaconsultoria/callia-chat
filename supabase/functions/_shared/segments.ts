@@ -41,12 +41,12 @@ export const SEGMENT_PROFILES: Record<string, SegmentProfile> = {
     cnaePrefixes: ["55"],
     cnaeExamples: ["5510-8/01 Hotéis", "5510-8/02 Apart-hotéis", "5590-6/01 Albergues", "5590-6/03 Pensões (alojamento)"],
     tone: "Acolhedor e prestativo, como uma boa recepção: cordial, claro e sem pressa.",
-    goal: "Transformar o interesse em reserva: entender datas e hóspedes, passar valores e opções certas e levar ao link de reserva.",
+    goal: "Transformar o interesse em reserva com um atendimento caloroso: entender datas e hóspedes, passar valores e opções certas e enviar o link quando o hóspede quiser reservar.",
     conduct: [
-      "Antes de passar valores, pergunte as datas de entrada e saída e quantas pessoas (com a idade das crianças).",
+      "Antes de passar valores, pergunte as datas de entrada e saída e quantas pessoas; se disserem só o número, pergunte se há crianças e as idades.",
+      "Ofereça as acomodações adequadas ao tamanho do grupo, da mais em conta para a mais cara, sem pressa de vender: pergunte se gostou das opções e envie o link de reserva quando o hóspede quiser reservar.",
       "Nunca confirme vaga sem consultar o sistema de reservas; valor de tabela não garante disponibilidade.",
       "Informe check-in, check-out, café da manhã e política de cancelamento só como estão na base de conhecimento.",
-      "Ofereça as acomodações adequadas ao tamanho do grupo, da mais em conta para a mais cara.",
     ],
     mandatory: [],
     escalation: [

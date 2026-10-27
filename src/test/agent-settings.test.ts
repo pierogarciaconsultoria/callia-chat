@@ -45,11 +45,14 @@ describe("regras do agente", () => {
     ])).toEqual([
       { role: "user", content: "oi\ntudo bem?" },
       { role: "assistant", content: "Olá!" },
-      { role: "user", content: "[image]" },
+      { role: "user", content: "[imagem]" },
     ]);
+    // Fotos que nós enviamos viram nota (a IA imitava "[image]" com links de imagem inventados).
+    expect(historyToChat([{ direction: "outbound", sender: "bot", type: "image", content: null, created_at: at }])[0].content).toMatch(/enviar_fotos/);
   });
 
   it("adapta markdown para WhatsApp", () => {
+    expect(sanitizeReply("Seguem as fotos 👇\n\n![Estrutura 1](https://site.example/estrutura1.jpg)\n![Estrutura 2](https://site.example/e2.jpg)")).toBe("Seguem as fotos 👇");
     expect(sanitizeReply("## Título\n**Preço:** veja [aqui](https://x.com/p)\n\n\n\nFim")).toBe("Título\n*Preço:* veja aqui: https://x.com/p\n\nFim");
   });
 });

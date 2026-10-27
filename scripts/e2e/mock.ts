@@ -12,6 +12,8 @@ const record = async (kind: string, req: Request, path: string) => {
   calls[kind].push({ at: new Date().toISOString(), path, headers: Object.fromEntries(req.headers), body });
   return body as Record<string, unknown>;
 };
+// PDF de comprovante (texto: "Comprovante PIX Sicredi" / "Valor R$ 2.490,00") que a Evolution falsa devolve como mídia.
+const PROOF_PDF = "JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAzMDAgMTQ0XSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCAvRm9udCA8PCAvRjEgNSAwIFIgPj4gPj4gPj4KZW5kb2JqCjQgMCBvYmoKPDwgL0xlbmd0aCA4NiA+PgpzdHJlYW0KQlQgL0YxIDEyIFRmIDIwIDEwMCBUZCAoQ29tcHJvdmFudGUgUElYIFNpY3JlZGkpIFRqIDAgLTIwIFRkIChWYWxvciBSJCAyLjQ5MCwwMCkgVGogRVQKZW5kc3RyZWFtCmVuZG9iago1IDAgb2JqCjw8IC9UeXBlIC9Gb250IC9TdWJ0eXBlIC9UeXBlMSAvQmFzZUZvbnQgL0hlbHZldGljYSA+PgplbmRvYmoKeHJlZgowIDYKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDA5IDAwMDAwIG4gCjAwMDAwMDAwNTggMDAwMDAgbiAKMDAwMDAwMDExNSAwMDAwMCBuIAowMDAwMDAwMjQxIDAwMDAwIG4gCjAwMDAwMDAzNzcgMDAwMDAgbiAKdHJhaWxlcgo8PCAvU2l6ZSA2IC9Sb290IDEgMCBSID4+CnN0YXJ0eHJlZgo0NDcKJSVFT0YK";
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { "content-type": "application/json" } });
 
 async function proxy(req: Request, target: string): Promise<Response> {
@@ -41,6 +43,7 @@ Deno.serve({ hostname: bind, port: 54321, onListen: () => console.log("mock read
     if (req.headers.get("apikey") !== "evo-test-key") return json({ message: "unauthorized" }, 401);
     const body = await record("evolution", req, path + new URL(req.url).search);
     if (path.startsWith("/message/send")) return json({ key: { id: `EVO-${++evoSeq}`, fromMe: true, remoteJid: `${body?.number}@s.whatsapp.net` }, status: "PENDING" });
+    if (path.startsWith("/chat/getBase64FromMediaMessage")) return json({ base64: PROOF_PDF, mimetype: "application/pdf" });
     if (path.startsWith("/instance/connectionState")) return json({ instance: { state: "open" } });
     if (path.startsWith("/instance/connect/")) {
       const number = new URL(req.url).searchParams.get("number");

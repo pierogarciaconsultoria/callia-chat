@@ -1,15 +1,17 @@
 // Liga o pipeline puro ao banco, à IA, ao conector hbook e ao agente externo.
 import type { AgentConfig, Product } from "./agent-core.ts";
 import type { PipelineDeps } from "./agent-pipeline.ts";
-import { type AiProvider, aiProviderFromEnv, base64FromBytes, bytesFromBase64 } from "./ai.ts";
-import { evolutionFor, type InstanceRow } from "./channel.ts";
+import { type AiProvider, aiProviderFromEnv, base64FromBytes } from "./ai.ts";
+import type { InstanceRow } from "./channel.ts";
 import { callExternalAgent, resolveExternalSecret } from "./external-agent.ts";
 import { buildBookingLink, type HbookConfig } from "./hbook.ts";
 import { bookingLinkFrom, loadAvailabilityProvider, loadConnectors } from "./availability.ts";
 import { RuntimeError } from "./http.ts";
+import { cleanMime, loadMediaBytes, looksLikePaymentProof, mediaNote, mergeMessageMetadata } from "./inbox-media.ts";
 import { searchKnowledge } from "./knowledge.ts";
 import { type Entitlements, hasFeature } from "./entitlements.ts";
 import { photoGroups } from "./media.ts";
+import { pdfToText } from "./pdf.ts";
 import { isOpenNight, priceTableSchema, quoteStay, withDeposit } from "./pricing.ts";
 import type { PaymentInfo } from "./agent-core.ts";
 import type { Db } from "./supabase.ts";
@@ -173,9 +175,15 @@ interface MediaMessage {
   metadata: Record<string, unknown>;
 }
 
+const DOC_TEXT_LIMIT = 3000;
+const VISION_PROMPT =
+  "Descreva objetivamente esta imagem enviada por um cliente no WhatsApp, em português, em até 3 frases. Transcreva textos visíveis (ex.: códigos, preços). " +
+  "Se for comprovante de pagamento (PIX, transferência, depósito, boleto pago), comece com \"Comprovante de pagamento:\" e transcreva valor, data, pagador e favorecido.";
+
 /**
- * Converte mídia em texto para o agente: áudio → transcrição (STT), imagem → descrição (visão).
- * O resultado fica em messages.metadata para não repetir o custo e para aparecer na inbox.
+ * Converte mídia em texto para o agente: áudio → transcrição (STT), imagem → descrição (visão), PDF → texto.
+ * O resultado fica em messages.metadata para não repetir o custo e para aparecer na inbox;
+ * comprovante de pagamento reconhecido ganha metadata.payment_proof (a conversa vai para a equipe conferir).
  */
 export async function preprocessMedia(
   db: Db,
@@ -185,32 +193,44 @@ export async function preprocessMedia(
   language: string,
 ): Promise<string | null> {
   const meta = msg.metadata ?? {};
-  if (msg.type === "audio" && typeof meta.transcript === "string") return meta.transcript;
-  if (msg.type === "image" && typeof meta.image_description === "string") {
-    return [msg.content, `[imagem: ${meta.image_description}]`].filter(Boolean).join("\n");
-  }
-  if (msg.type === "document") return [msg.content, `[documento enviado: ${meta.file_name ?? "arquivo"}]`].filter(Boolean).join("\n");
+  const cached = mediaNote(msg);
+  const done = typeof meta.transcript === "string" || typeof meta.image_description === "string" || typeof meta.document_text === "string";
+  if (cached !== null && (done || msg.type !== "document")) return cached;
   if (msg.type === "location" || msg.type === "contact") return msg.content ? `[${msg.type}] ${msg.content}` : `[${msg.type}]`;
-  if (msg.type !== "audio" && msg.type !== "image") return msg.content;
-  if (!ai || !instance || !meta.wa_key) return msg.content ?? `[${msg.type} recebido]`;
+  if (msg.type !== "audio" && msg.type !== "image" && msg.type !== "document") return msg.content;
+
+  const mime = cleanMime(msg.media_mime);
+  const isPdf = mime === "application/pdf" || /\.pdf$/i.test(String(meta.file_name ?? ""));
+  const isPicture = msg.type === "image" || mime.startsWith("image/");
+  const noted = (patch: Record<string, unknown>) => mediaNote({ ...msg, metadata: { ...meta, ...patch } });
+  // Documento que não dá para ler (DOCX, planilha...): o agente sabe que chegou, a equipe abre na inbox.
+  if (msg.type === "document" && !isPdf && !isPicture) return noted({});
+  if (!instance && typeof meta.media_path !== "string") return cached ?? msg.content ?? `[${msg.type} recebido]`;
+  if (!ai && !isPdf) return cached ?? msg.content ?? `[${msg.type} recebido]`;
 
   try {
-    const media = await evolutionFor(instance).getMediaBase64(instance.instance_name, meta.wa_key as Record<string, unknown>);
-    const mime = media.mimetype ?? msg.media_mime ?? (msg.type === "audio" ? "audio/ogg" : "image/jpeg");
+    const media = await loadMediaBytes(db, instance, msg);
+    let patch: Record<string, unknown>;
     if (msg.type === "audio") {
-      const transcript = await ai.transcribe(bytesFromBase64(media.base64), mime, language);
-      await db.from("messages").update({ metadata: { ...meta, transcript } }).eq("id", msg.id);
+      const transcript = await ai!.transcribe(media.bytes, media.mime.startsWith("audio/") ? media.mime : "audio/ogg", language);
+      await mergeMessageMetadata(db, msg.id, { transcript });
       return transcript || "[áudio sem fala reconhecível]";
     }
-    const description = await ai.describeImage(
-      `data:${mime.split(";")[0]};base64,${media.base64}`,
-      "Descreva objetivamente esta imagem enviada por um cliente no WhatsApp, em português, em até 3 frases. Transcreva textos visíveis (ex.: comprovantes, códigos, preços).",
-    );
-    await db.from("messages").update({ metadata: { ...meta, image_description: description } }).eq("id", msg.id);
-    return [msg.content, `[imagem: ${description}]`].filter(Boolean).join("\n");
+    if (isPicture) {
+      const pictureMime = media.mime.startsWith("image/") ? media.mime : "image/jpeg";
+      const description = await ai!.describeImage(`data:${pictureMime};base64,${base64FromBytes(media.bytes)}`, VISION_PROMPT);
+      patch = { image_description: description };
+    } else {
+      const text = (await pdfToText(media.bytes)).replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+      patch = { document_text: text.slice(0, DOC_TEXT_LIMIT) };
+    }
+    const read = String(patch.image_description ?? patch.document_text ?? "");
+    if (looksLikePaymentProof(read)) patch.payment_proof = true;
+    await mergeMessageMetadata(db, msg.id, patch);
+    return noted(patch);
   } catch (err) {
     console.warn(JSON.stringify({ level: "warn", msg: "media_preprocess_failed", type: msg.type, error: String(err) }));
-    return msg.content ?? `[${msg.type} recebido — não foi possível processar]`;
+    return msg.type === "document" ? noted({}) : msg.content ?? `[${msg.type} recebido — não foi possível processar]`;
   }
 }
 

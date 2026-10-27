@@ -29,7 +29,12 @@ export interface PipelineInput {
   /** Últimas mensagens da conversa, em ordem cronológica, incluindo as pendentes. */
   history: HistoryItem[];
   products: Product[];
+  /** Entre as pendentes há foto ou PDF com cara de comprovante de pagamento. */
+  paymentProof?: boolean;
 }
+
+/** A IA não confere pagamento: agradece e passa para a equipe confirmar. */
+export const PAYMENT_PROOF_REPLY = "Recebi o seu comprovante, obrigado! Já passei para a equipe conferir o pagamento, e eles confirmam com você por aqui.";
 
 export interface PipelineDeps {
   config: AgentConfig;
@@ -106,6 +111,26 @@ const GUESTS = /\b(\d{1,2}|uma?|dois|duas|tr[eê]s|quatro|cinco|seis|sete)\s*(pe
 /** O hóspede já disse quantas pessoas são. */
 export function mentionsGuests(text: string): boolean {
   return GUESTS.test(text);
+}
+
+const CHILDREN_INFO = /crian[cç]as?|filh[oa]s?|beb[eê]s?|nen[eê]m?|adultos?|casal|sozinh[oa]|\b\d{1,2}\s*anos\b|maiores de idade/i;
+const NO_CHILDREN = /^\s*(n[aã]o|nenhuma?|sem|nada|negativo|s[oó]\s+(n[oó]s|eu))\b/i;
+
+/**
+ * O hóspede já disse se vêm crianças: citou crianças/adultos/casal/idades, ou respondeu "não" logo depois de
+ * perguntarmos. "3" sozinho não diz: a tarifa e a acomodação dependem das idades.
+ */
+export function childrenAddressed(history: Array<Pick<HistoryItem, "direction" | "content">>, pendingText = ""): boolean {
+  let askedKids = false;
+  for (const h of history) {
+    const text = h.content ?? "";
+    if (h.direction === "outbound") {
+      askedKids = /crian[cç]a/i.test(text);
+      continue;
+    }
+    if (CHILDREN_INFO.test(text) || (askedKids && NO_CHILDREN.test(text))) return true;
+  }
+  return CHILDREN_INFO.test(pendingText);
 }
 
 /** "Está disponível", "temos o 205 disponível", "há vaga", "disponibilidade confirmada". */
@@ -277,6 +302,10 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
   // 1. Pedido explícito de humano vence tudo.
   const keyword = matchHandoffKeyword(input.pendingText, config.handoff_keywords);
   if (keyword) return handoff("internal", `keyword:${keyword}`);
+  if (input.paymentProof) {
+    const later = withinHours === false && config.out_of_hours_message?.trim() ? `\n\n${config.out_of_hours_message.trim()}` : "";
+    return handoff("internal", "payment_proof", PAYMENT_PROOF_REPLY + later);
+  }
 
   // 2. Agente externo (opcional). Qualquer falha cai no pipeline interno.
   if (config.external_agent_enabled && deps.callExternal) {
@@ -341,6 +370,9 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
       childrenAges: Array.isArray(args.idades_criancas) ? args.idades_criancas.map(Number) : [],
       unit: typeof args.acomodacao === "string" ? args.acomodacao : null,
     });
+  // Trava: sem saber se vêm crianças (ex.: o hóspede respondeu só "3"), pergunta antes de cotar.
+  const kidsKnown = (args: Record<string, unknown>) =>
+    (Array.isArray(args.idades_criancas) && args.idades_criancas.length > 0) || childrenAddressed(input.history, input.pendingText);
   const sentAlbums = new Set<string>();
   const sendAlbum = async (album: string, wanted: number) => {
     const room = MAX_PHOTOS_PER_REPLY - outcome.media.length;
@@ -453,6 +485,11 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
           toolResult = hits.length
             ? hits.map((h) => ({ fonte: h.source_title, trecho: h.content }))
             : "Nada encontrado na base de conhecimento.";
+        } else if ((call.function.name === "calcular_valor" || call.function.name === "consultar_disponibilidade") && !kidsKnown(args)) {
+          toolResult = {
+            pergunte_criancas: true,
+            instrucao: "Antes de passar valores, pergunte com simpatia se entre as pessoas há alguma criança e, se houver, a idade de cada uma (a tarifa e a acomodação dependem disso). Não informe valores nem envie link nesta resposta.",
+          };
         } else if (call.function.name === "calcular_valor" && deps.priceTable) {
           toolResult = stripPmsIds(sized(args, quoteFrom(args)));
         } else if (call.function.name === "enviar_fotos" && deps.photos) {
@@ -497,9 +534,9 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
               ...(deps.priceTable
                 ? {
                   valores_tabela: stripPmsIds(sized(args, table ?? quoteFrom(args))),
-                  instrucao: "Consulta indisponível: informe os valores_tabela (já calculados pela tabela oficial) exatamente como estão e envie o link_reserva para confirmar. A disponibilidade NÃO foi confirmada: não diga que há vaga.",
+                  instrucao: "Consulta indisponível: informe os valores_tabela (já calculados pela tabela oficial) exatamente como estão; quando o hóspede quiser reservar, o link_reserva confirma a vaga. A disponibilidade NÃO foi confirmada: não diga que há vaga.",
                 }
-                : { instrucao: "Consulta indisponível: informe o valor pela tabela de preços da base de conhecimento, se houver, e envie o link_reserva para confirmar." }),
+                : { instrucao: "Consulta indisponível: informe o valor pela tabela de preços da base de conhecimento, se houver; quando o hóspede quiser reservar, envie o link_reserva para confirmar." }),
             };
           }
         } else {

@@ -3,6 +3,7 @@
 import { createHandler, json, readJson, RuntimeError, runInBackground, sleep } from "../_shared/http.ts";
 import { sha256Hex, timingSafeEqual } from "../_shared/crypto.ts";
 import { type EvolutionMessageEvent, looksAutomatedFromPhone, parseEvolutionWebhook } from "../_shared/evolution.ts";
+import { archiveInboundMedia } from "../_shared/inbox-media.ts";
 import { adminDb, type Db, functionUrl, internalHeaders, optionalEnv } from "../_shared/supabase.ts";
 import { emitEvent } from "../_shared/webhooks.ts";
 
@@ -10,6 +11,7 @@ interface Instance {
   id: string;
   workspace_id: string;
   instance_name: string;
+  provider_secret_ref: string;
   webhook_token_hash: string | null;
   status: string;
 }
@@ -23,7 +25,7 @@ Deno.serve(createHandler("whatsapp-webhook", async ({ req, url, correlationId, l
   const db = adminDb();
   const { data: instance } = await db
     .from("whatsapp_instances")
-    .select("id, workspace_id, instance_name, webhook_token_hash, status")
+    .select("id, workspace_id, instance_name, provider_secret_ref, webhook_token_hash, status")
     .eq("id", instanceId)
     .maybeSingle<Instance>();
   if (!instance?.webhook_token_hash || !timingSafeEqual(await sha256Hex(token), instance.webhook_token_hash)) {
@@ -127,6 +129,7 @@ async function handleMessage(
       p_status: "sent",
     });
     const row = data?.[0];
+    if (row && !row.duplicate) archiveInBackground(db, instance, ev, row, { ...metadata, echo: true, from_device: true }, log);
     // Saudação/ausência automática do WhatsApp Business não é a equipe respondendo.
     let automated = false;
     if (row && !row.duplicate && row.conversation_mode === "bot") {
@@ -172,6 +175,8 @@ async function handleMessage(
   }
   await finish("processed");
   if (row.duplicate) return { kind: "message", duplicate: true };
+  // Comprovantes e documentos ficam guardados no Callia para a equipe abrir na inbox, com ou sem bot.
+  archiveInBackground(db, instance, ev, row, metadata, log);
 
   await emitEvent(db, {
     workspaceId: instance.workspace_id,
@@ -201,6 +206,27 @@ async function handleMessage(
     );
   }
   return { kind: "message", message_id: row.message_id, mode: row.conversation_mode };
+}
+
+function archiveInBackground(
+  db: Db,
+  instance: Instance,
+  ev: EvolutionMessageEvent,
+  row: { conversation_id: string; message_id: string },
+  metadata: Record<string, unknown>,
+  log: { info: (m: string, e?: Record<string, unknown>) => void },
+) {
+  if (!["image", "document", "audio", "video"].includes(ev.type)) return;
+  runInBackground(
+    archiveInboundMedia(db, instance, {
+      id: row.message_id,
+      workspace_id: instance.workspace_id,
+      conversation_id: row.conversation_id,
+      type: ev.type,
+      media_mime: ev.mediaMime,
+      metadata,
+    }).catch((err) => log.info("inbound_media_archive_failed", { message_id: row.message_id, error: String(err) })),
+  );
 }
 
 async function isOurOwnSend(db: Db, workspaceId: string, providerId: string, phone: string): Promise<boolean> {

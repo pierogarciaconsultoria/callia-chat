@@ -453,6 +453,31 @@ check("hóspede no WhatsApp recebe o texto e as fotos", Boolean(sentMedia?.text)
 const convPhotos = await rest("GET", `/messages?workspace_id=eq.${tenantId}&type=eq.image&direction=eq.outbound&select=media_url,status`);
 check("fotos ficam registradas na conversa (inbox)", convPhotos.length === 2 && convPhotos.every((m: any) => m.status === "sent"), convPhotos);
 
+// Hóspede manda o comprovante em PDF: o arquivo fica guardado para a inbox, a IA lê e a conversa vai para a equipe.
+await fetch(`${MOCK}/__reset`);
+await fetch(`${GATEWAY}/functions/v1/whatsapp-webhook?instance=${tenantInst.id}&token=${tenantToken}`, {
+  method: "POST", headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ event: "messages.upsert", instance: tenantInst.instance_name, data: { key: { remoteJid: "5548922223333@s.whatsapp.net", fromMe: false, id: "WAMID-PROOF-1" }, pushName: "Neli", message: { documentMessage: { mimetype: "application/pdf", fileName: "sicredi_123.pdf" } }, messageTimestamp: Math.floor(Date.now() / 1000) } }),
+});
+const proofSent = await waitFor(async () => {
+  const cc = await calls();
+  return cc.evolution.find((x) => x.path.startsWith("/message/sendText") && x.body?.number === "5548922223333") ?? null;
+}, 30000);
+check("comprovante: o hóspede recebe o agradecimento e que a equipe vai conferir", /Recebi o seu comprovante/.test(String(proofSent?.body?.text)), proofSent);
+const [proofMsg] = await rest("GET", `/messages?workspace_id=eq.${tenantId}&type=eq.document&select=metadata,conversation_id`);
+const [proofConv] = await rest("GET", `/conversations?id=eq.${proofMsg?.conversation_id}&select=mode`);
+check("comprovante: PDF lido, marcado e conversa com a equipe", /Comprovante PIX/.test(proofMsg?.metadata?.document_text ?? "") && proofMsg?.metadata?.payment_proof === true && proofConv?.mode === "human", { proofMsg, proofConv });
+const proofFile = await waitFor(async () => {
+  const [m] = await rest("GET", `/messages?workspace_id=eq.${tenantId}&type=eq.document&select=metadata`);
+  return typeof m?.metadata?.media_path === "string" ? m.metadata.media_path as string : null;
+}, 15000);
+const stored = proofFile ? await fetch(`${GATEWAY}/storage/v1/object/inbox-media/${proofFile}`, { headers: { Authorization: `Bearer ${ownerToken}`, apikey: ANON } }) : null;
+const storedBytes = stored ? new Uint8Array(await stored.arrayBuffer()) : null;
+check("comprovante: arquivo guardado na inbox e aberto pelo dono do workspace", Boolean(proofFile?.startsWith(`${tenantId}/`)) && stored?.status === 200 && new TextDecoder().decode(storedBytes!.slice(0, 5)) === "%PDF-", { proofFile, status: stored?.status });
+const strangerFile = proofFile ? await fetch(`${GATEWAY}/storage/v1/object/inbox-media/${proofFile}`, { headers: { Authorization: `Bearer ${ANON}`, apikey: ANON } }) : null;
+check("comprovante: anônimo não abre o arquivo", (strangerFile?.status ?? 400) >= 400, strangerFile?.status);
+await strangerFile?.body?.cancel();
+
 r = await media({ action: "delete", asset_id: uploadedId });
 const gonePhoto = await fetch(`${GATEWAY}/storage/v1/object/public/media/${upPath}`);
 check("excluir remove a foto e o arquivo", r.status === 200 && gonePhoto.status >= 400, gonePhoto.status);

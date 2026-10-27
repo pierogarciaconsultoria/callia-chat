@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AiProvider, ChatResult } from "../../supabase/functions/_shared/ai.ts";
 import type { AgentConfig, KnowledgeHit } from "../../supabase/functions/_shared/agent-core.ts";
-import { claimsAvailability, mentionsGuests, mentionsStayDates, type PipelineDeps, type PipelineInput, promisesAction, promisesPhotos, runAgentPipeline, stripAvailabilityClaims, stripPhotoPromise } from "../../supabase/functions/_shared/agent-pipeline.ts";
+import { childrenAddressed, claimsAvailability, mentionsGuests, PAYMENT_PROOF_REPLY, mentionsStayDates, type PipelineDeps, type PipelineInput, promisesAction, promisesPhotos, runAgentPipeline, stripAvailabilityClaims, stripPhotoPromise } from "../../supabase/functions/_shared/agent-pipeline.ts";
 import { callExternalAgent, ExternalAgentError, resolveExternalSecret } from "../../supabase/functions/_shared/external-agent.ts";
 
 const config: AgentConfig = {
@@ -140,7 +140,7 @@ describe("pipeline do agente", () => {
       { toolCalls: [{ id: "t1", type: "function", function: { name: "consultar_disponibilidade", arguments: '{"checkin":"10/12/2026","checkout":"12/12/2026","adultos":2,"idades_criancas":[6]}' } }] },
       { content: "Temos a Suíte Mar por R$ 900 (2 noites)." },
     ]);
-    const out = await runAgentPipeline(input("tem quarto de 10 a 12/12?"), deps({ ai, checkAvailability }));
+    const out = await runAgentPipeline(input("tem quarto de 10 a 12/12? 2 adultos"), deps({ ai, checkAvailability }));
     expect(checkAvailability).toHaveBeenCalledWith({ checkin: "10/12/2026", checkout: "12/12/2026", adults: 2, childrenAges: [6] });
     expect(out.reply).toBe("Temos a Suíte Mar por R$ 900 (2 noites).");
     expect(out.toolCalls[0].name).toBe("consultar_disponibilidade");
@@ -160,10 +160,11 @@ describe("pipeline do agente", () => {
       { toolCalls: [{ id: "t1", type: "function", function: { name: "consultar_disponibilidade", arguments: '{"checkin":"10/12/2026","checkout":"12/12/2026"}' } }] },
       { content: "Não consegui ver os preços agora, mas você pode consultar aqui: https://hbook.example/Booking?x=1" },
     ]);
-    const out = await runAgentPipeline(input("tem quarto de 10 a 12/12?"), deps({ ai, checkAvailability }));
+    const out = await runAgentPipeline(input("tem quarto de 10 a 12/12? 2 adultos"), deps({ ai, checkAvailability }));
     expect(out.toolCalls[0].result).toMatchObject({ erro: "Motor de reservas indisponível.", link_reserva: "https://hbook.example/Booking?x=1", instrucao: expect.stringMatching(/tabela de preços/) });
     const system = (ai.calls[0] as { messages: Array<{ content: string }> }).messages[0].content;
-    expect(system).toContain("Sempre envie o link de reserva do resultado");
+    expect(system).toContain("Quando o hóspede quiser reservar");
+    expect(system).toContain("Na primeira apresentação dos valores, não mande o link");
   });
 
   it("IA envia fotos do álbum certo, com limite por pedido", async () => {
@@ -274,7 +275,7 @@ describe("pipeline do agente", () => {
       { toolCalls: [{ id: "t1", type: "function", function: { name: "consultar_disponibilidade", arguments: '{"checkin":"27/12/2026","checkout":"01/01/2027","adultos":4}' } }] },
       { content: "Pela tabela: R$ 5.000,00." },
     ]);
-    const out = await runAgentPipeline(input("réveillon para 4"), deps({ ai, checkAvailability, priceTable: { quote } }));
+    const out = await runAgentPipeline(input("réveillon para 4 adultos"), deps({ ai, checkAvailability, priceTable: { quote } }));
     expect(quote).toHaveBeenCalledWith({ checkin: "27/12/2026", checkout: "01/01/2027", adults: 4, childrenAges: [], unit: null });
     expect(out.toolCalls[0].result).toMatchObject({ valores_tabela: { opcoes: [expect.objectContaining({ total: 5000 })] }, link_reserva: "https://hbook.example/x" });
     const first = ai.calls[0] as { tools: Array<{ function: { name: string } }>; messages: Array<{ content: string }> };
@@ -302,7 +303,7 @@ describe("pipeline do agente", () => {
       { toolCalls: [{ id: "t1", type: "function", function: { name: "calcular_valor", arguments: '{"checkin":"27/12/2026","checkout":"01/01/2027","adultos":4}' } }] },
       { content: "O Apartamento 205 fica R$ 5.000,00 para as 5 diárias." },
     ]);
-    const out = await runAgentPipeline(input("Quero o 205 de 27/12/2026 a 01/01/2027, somos 4"), deps({ ai, priceTable: { quote } }));
+    const out = await runAgentPipeline(input("Quero o 205 de 27/12/2026 a 01/01/2027, somos 4 adultos"), deps({ ai, priceTable: { quote } }));
     expect((ai.calls[0] as { toolChoice?: unknown }).toolChoice).toEqual({ type: "function", function: { name: "calcular_valor" } });
     expect((ai.calls[1] as { toolChoice?: unknown }).toolChoice).toBeUndefined();
     expect(quote).toHaveBeenCalledTimes(1);
@@ -333,7 +334,7 @@ describe("pipeline do agente", () => {
       { content: claim },
     ]);
     const paymentInfo = { legal_name: "Pousada Exemplo Ltda", cnpj: null, bank_name: null, bank_code: null, agency: null, account: null, account_type: null, payee_name: null, pix_key_type: "telefone", pix_key: "48 90000 0000", deposit_percent: 50, payment_instructions: null };
-    const out = await runAgentPipeline(input("205 de 27/12/2026 a 01/01/2027, somos 4"), deps({ ai, priceTable: { quote }, paymentInfo }));
+    const out = await runAgentPipeline(input("205 de 27/12/2026 a 01/01/2027, somos 4 adultos"), deps({ ai, priceTable: { quote }, paymentInfo }));
     expect((ai.calls[2] as { messages: Array<{ content: string }> }).messages.at(-1)?.content).toContain("NÃO foi confirmada");
     expect(out.reply).toBe("Total *R$ 5.000,00*.\n- PIX (telefone): 48 90000 0000\n\nAntes de pagar por PIX, aguarde nossa equipe confirmar a vaga para essas datas.");
   });
@@ -353,7 +354,7 @@ describe("pipeline do agente", () => {
       { toolCalls: [{ id: "t1", type: "function", function: { name: "consultar_disponibilidade", arguments: '{"checkin":"27/12/2026","checkout":"01/01/2027","adultos":4}' } }] },
       { content: "Temos o 205 disponível: R$ 5.000,00." },
     ]);
-    const out = await runAgentPipeline(input("205 de 27/12/2026 a 01/01/2027, somos 4"), deps({ ai, priceTable: { quote }, checkAvailability } as never));
+    const out = await runAgentPipeline(input("205 de 27/12/2026 a 01/01/2027, somos 4 adultos"), deps({ ai, priceTable: { quote }, checkAvailability } as never));
     expect(checkAvailability).toHaveBeenCalledWith(expect.objectContaining({ categoryIds: [275, 276] }));
     const result = out.toolCalls[0].result as { opcoes: Array<Record<string, unknown>>; sem_vaga: string[]; disponibilidade_confirmada: boolean };
     expect(result.disponibilidade_confirmada).toBe(true);
@@ -420,7 +421,7 @@ describe("pipeline do agente", () => {
       { content: reply },
     ]);
     const checkAvailability = vi.fn(async () => ({ checkin: "27/12/2026", checkout: "01/01/2027", nights: 5, adults: 4, children: 0, children_ages: [], currency: "BRL", sold_out: false, rooms: [{ name: "205" }], booking_link: null }));
-    const out = await runAgentPipeline(input("205 de 27/12/2026 a 01/01/2027, somos 4"), deps({ ai, checkAvailability } as never));
+    const out = await runAgentPipeline(input("205 de 27/12/2026 a 01/01/2027, somos 4 adultos"), deps({ ai, checkAvailability } as never));
     expect(out.reply).toBe(reply);
   });
 
@@ -428,7 +429,7 @@ describe("pipeline do agente", () => {
     expect(mentionsStayDates("de 27/12/2026 a 01/01/2027")).toBe(true);
     expect(mentionsStayDates("de 27 a 31 de dezembro")).toBe(true);
     expect(mentionsStayDates("check-in dia 20/01")).toBe(false);
-    expect(mentionsGuests("somos 4")).toBe(true);
+    expect(mentionsGuests("somos 4 adultos")).toBe(true);
     expect(mentionsGuests("2 adultos e uma criança")).toBe(true);
     expect(mentionsGuests("um casal")).toBe(true);
     expect(mentionsGuests("tem vaga?")).toBe(false);
@@ -512,5 +513,42 @@ describe("chamada HTTP ao agente externo", () => {
     expect(resolveExternalSecret("EXTERNAL_AGENT_LOJA", env)).toBe("abc");
     expect(() => resolveExternalSecret("SUPABASE_SERVICE_ROLE_KEY", env)).toThrow(/EXTERNAL_AGENT_/);
     expect(() => resolveExternalSecret("EXTERNAL_AGENT_FALTA", env)).toThrow(/não está definido/);
+  });
+
+  describe("crianças antes do orçamento", () => {
+    const h = (direction: "inbound" | "outbound", content: string) => ({ direction, content });
+    it("só o número de pessoas não diz se há crianças", () => {
+      expect(childrenAddressed([h("outbound", "Quantas pessoas? E se houver crianças, me diga as idades."), h("inbound", "3")])).toBe(false);
+      expect(childrenAddressed([h("inbound", "somos 4")])).toBe(false);
+    });
+    it("adultos, casal, idades ou um \"não\" depois da pergunta resolvem", () => {
+      expect(childrenAddressed([h("inbound", "3 adultos")])).toBe(true);
+      expect(childrenAddressed([h("inbound", "um casal")])).toBe(true);
+      expect(childrenAddressed([h("inbound", "2 e uma de 6 anos")])).toBe(true);
+      expect(childrenAddressed([h("outbound", "Tem alguma criança entre as 3 pessoas?"), h("inbound", "Não")])).toBe(true);
+      expect(childrenAddressed([h("inbound", "Não")])).toBe(false);
+    });
+    it("a ferramenta não cota sem saber das crianças e pede para perguntar", async () => {
+      const quote = vi.fn(() => ({ opcoes: [] }));
+      const ai = fakeAi([
+        { toolCalls: [{ id: "t1", type: "function", function: { name: "calcular_valor", arguments: '{"checkin":"18/12/2026","checkout":"26/12/2026","adultos":3}' } }] },
+        { content: "Ótimo! Entre as 3 pessoas tem alguma criança? Se tiver, me conta a idade 😊" },
+      ]);
+      const base = input("3");
+      const out = await runAgentPipeline({ ...base, history: [{ direction: "outbound", sender: "bot", type: "text", content: "Quantas pessoas vêm?", created_at: base.trigger.created_at }, ...base.history] }, deps({ ai, priceTable: { quote } }));
+      expect(quote).not.toHaveBeenCalled();
+      expect(out.toolCalls[0].result).toMatchObject({ pergunte_criancas: true });
+      expect(out.reply).toMatch(/criança/);
+    });
+  });
+
+  it("comprovante de pagamento: agradece e transfere para a equipe conferir, sem chamar a IA", async () => {
+    const ai = fakeAi([]);
+    const base = input('[documento "sicredi.pdf": Comprovante PIX R$ 2.490,00]');
+    const out = await runAgentPipeline({ ...base, paymentProof: true }, deps({ ai }));
+    expect(out.action).toBe("handoff");
+    expect(out.handoffReason).toBe("payment_proof");
+    expect(out.reply).toBe(PAYMENT_PROOF_REPLY);
+    expect(ai.calls).toHaveLength(0);
   });
 });

@@ -1,12 +1,12 @@
 // Indexação de fontes da base de conhecimento (compartilhada por knowledge-index e agent-setup).
 // Tipos: texto, URL, documento (PDF/DOCX/TXT/MD), site inteiro e rede social → chunks (+ embeddings se o plano incluir IA).
-import { extractText as extractPdfText, getDocumentProxy } from "npm:unpdf@0.12.1";
 import { strFromU8, unzipSync } from "npm:fflate@0.8.2";
 import { RuntimeError, runInBackground } from "./http.ts";
 import { type AiProvider, toPgVector } from "./ai.ts";
 import { aiFromEnv } from "./agent-runtime.ts";
 import { chunkText, extractHtmlTitle, htmlToText } from "./knowledge.ts";
 import { assertPublicHttpUrl } from "./net.ts";
+import { pdfToText } from "./pdf.ts";
 import { crawlSite } from "./site-crawler.ts";
 import type { Db } from "./supabase.ts";
 import { assertActive, assertCanAdd, hasFeature, loadEntitlements } from "./entitlements.ts";
@@ -89,9 +89,7 @@ async function extractSourceText(db: Db, source: Record<string, any>): Promise<E
     const bytes = new Uint8Array(await file.arrayBuffer());
     if (kind === "text") return { text: new TextDecoder().decode(bytes) };
     if (kind === "docx") return { text: docxToText(bytes) };
-    const pdf = await getDocumentProxy(bytes);
-    const { text } = await extractPdfText(pdf, { mergePages: true });
-    return { text: Array.isArray(text) ? text.join("\n\n") : text };
+    return { text: await pdfToText(bytes) };
   }
   throw new RuntimeError("unprocessable", "FAQ e produtos são indexados automaticamente.");
 }

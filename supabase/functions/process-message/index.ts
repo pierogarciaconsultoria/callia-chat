@@ -12,6 +12,7 @@ import {
   synthesizeVoice,
 } from "../_shared/agent-runtime.ts";
 import { type InstanceRow, sendOutbound } from "../_shared/channel.ts";
+import { looksLikePaymentProof, mediaNote } from "../_shared/inbox-media.ts";
 import { adminDb, type Db, isInternalCall, optionalEnv, requireUser, requireWorkspaceRole } from "../_shared/supabase.ts";
 import { emitEvent } from "../_shared/webhooks.ts";
 import { assertActive, hasFeature, loadEntitlements, monthlyMessagesLeft } from "../_shared/entitlements.ts";
@@ -125,9 +126,11 @@ async function processMessage(db: Db, messageId: string, correlationId: string, 
     const lastOutboundIdx = chronological.map((m: { direction: string }) => m.direction).lastIndexOf("outbound");
     const pending = chronological.slice(lastOutboundIdx + 1).filter((m: { sender: string }) => m.sender === "customer");
     const history: HistoryItem[] = [];
+    let paymentProof = false;
     for (const m of chronological) {
       const isPending = pending.some((p: { id: string }) => p.id === m.id);
       const text = isPending ? await preprocessMedia(db, ai, instance as InstanceRow | null, m, config.language) : textForHistory(m);
+      if (isPending && (m.type === "image" || m.type === "document") && looksLikePaymentProof(text)) paymentProof = true;
       history.push({ direction: m.direction, sender: m.sender, type: m.type, content: text, created_at: m.created_at });
     }
     const pendingText = history.slice(history.length - pending.length).map((h) => h.content).filter(Boolean).join("\n") ||
@@ -141,6 +144,7 @@ async function processMessage(db: Db, messageId: string, correlationId: string, 
       pendingText,
       history,
       products: await loadProducts(db, msg.workspace_id),
+      paymentProof,
     };
     const deps = await buildPipelineDeps(db, { workspaceId: msg.workspace_id, config, ai, entitlements, correlationId, log: log.info });
     const outcome = await runAgentPipeline(input, deps);
@@ -216,12 +220,7 @@ async function processMessage(db: Db, messageId: string, correlationId: string, 
 }
 
 function textForHistory(m: { type: string; content: string | null; metadata: Record<string, unknown> | null }): string | null {
-  const meta = m.metadata ?? {};
-  if (m.type === "audio" && typeof meta.transcript === "string") return meta.transcript;
-  if (m.type === "image" && typeof meta.image_description === "string") {
-    return [m.content, `[imagem: ${meta.image_description}]`].filter(Boolean).join("\n");
-  }
-  return m.content;
+  return mediaNote(m) ?? m.content;
 }
 
 /**

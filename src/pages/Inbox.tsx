@@ -19,6 +19,7 @@ import {
 import { invokeFunction } from "@/lib/functions";
 import { cn } from "@/lib/cn";
 import { JourneyCard } from "@/components/onboarding/Journey";
+import { PaymentProofBadge, ReceivedMedia, receivedMediaPath } from "@/components/inbox/ReceivedMedia";
 import { useAuth } from "@/lib/auth";
 import { useRequiredWorkspace } from "@/lib/workspace";
 import { formatPhone, formatRelativeShort, initials } from "@/lib/format";
@@ -374,6 +375,9 @@ function Bubble({ message: m }: { message: Message }) {
   const description = typeof m.metadata?.image_description === "string" ? (m.metadata.image_description as string) : null;
   const Icon = MEDIA_ICON[m.type as keyof typeof MEDIA_ICON];
   const isMedia = m.type !== "text";
+  const stored = receivedMediaPath(m) !== null;
+  const proof = m.metadata?.payment_proof === true;
+  const documentText = typeof m.metadata?.document_text === "string" ? (m.metadata.document_text as string) : null;
 
   return (
     <div className={cn("flex max-w-[85%] flex-col sm:max-w-[70%]", outbound ? "items-end self-end" : "items-start self-start")}>
@@ -387,7 +391,10 @@ function Bubble({ message: m }: { message: Message }) {
             : "rounded-bl-sm bg-white text-slate-900 dark:bg-slate-800 dark:text-slate-100",
         )}
       >
-        {m.type === "image" && m.media_url ? (
+        {proof && <PaymentProofBadge />}
+        {stored ? (
+          <ReceivedMedia message={m} />
+        ) : m.type === "image" && m.media_url ? (
           <a href={m.media_url} target="_blank" rel="noreferrer" className="-mx-1 -mt-0.5 mb-1 block overflow-hidden rounded-xl">
             <img src={m.media_url} alt={m.content ?? "Imagem"} loading="lazy" className="max-h-64 w-full max-w-xs object-cover" />
           </a>
@@ -405,7 +412,13 @@ function Bubble({ message: m }: { message: Message }) {
             Transcrição: {transcript}
           </p>
         )}
-        {description && <p className="mt-1 break-words text-xs italic opacity-80">Imagem: {description}</p>}
+        {description && <p className="mt-1 break-words text-xs italic opacity-80">{m.type === "document" ? "Lido" : "Imagem"}: {description}</p>}
+        {documentText && (
+          <details className="mt-1 text-xs opacity-80">
+            <summary className="cursor-pointer">Texto lido do documento</summary>
+            <p className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap break-words">{documentText}</p>
+          </details>
+        )}
       </div>
       <div className="mt-0.5 flex items-center gap-1 px-1 text-[11px] text-slate-400">
         <span>{SENDER_LABEL[m.sender]}</span>
