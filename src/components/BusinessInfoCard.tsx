@@ -3,17 +3,19 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRequiredWorkspace } from "@/lib/workspace";
 import { supabase } from "@/lib/supabase";
 import { unwrap } from "@/lib/functions";
-import { EMPTY_BUSINESS_INFO, maskCnpj, paymentPreview, type AccountType, type BusinessInfo, type PixKeyType } from "@/lib/business-info";
+import { Link } from "react-router-dom";
+import { EMPTY_BUSINESS_INFO, formatCnae, lookupCnpj, maskCnpj, paymentPreview, type AccountType, type BusinessInfo, type PixKeyType } from "@/lib/business-info";
+import { resolveSegmentFromCnae } from "@/lib/segments";
 import { Button, Card, CardBody, CardHeader, ErrorState, Input, Select, Spinner, Switch, Textarea, useToast } from "@/components/ui";
 
 type TextField = Exclude<keyof BusinessInfo, "deposit_percent" | "share_payment_info" | "account_type" | "pix_key_type">;
 interface FormState { text: Record<TextField, string>; account_type: AccountType | ""; pix_key_type: PixKeyType | ""; deposit: string; share: boolean }
 
-const TEXT_FIELDS: TextField[] = ["legal_name", "cnpj", "state_registration", "address", "phone", "email", "bank_name", "bank_code", "agency", "account", "payee_name", "pix_key", "payment_instructions", "pre_reservation_url"];
+const TEXT_FIELDS: TextField[] = ["legal_name", "cnpj", "state_registration", "address", "phone", "email", "cnae_code", "cnae_description", "bank_name", "bank_code", "agency", "account", "payee_name", "pix_key", "payment_instructions", "pre_reservation_url"];
 
 function toForm(info: BusinessInfo): FormState {
   return {
-    text: Object.fromEntries(TEXT_FIELDS.map((f) => [f, info[f] ?? ""])) as Record<TextField, string>,
+    text: Object.fromEntries(TEXT_FIELDS.map((f) => [f, f === "cnae_code" ? formatCnae(info[f] ?? "") : info[f] ?? ""])) as Record<TextField, string>,
     account_type: info.account_type ?? "",
     pix_key_type: info.pix_key_type ?? "",
     deposit: info.deposit_percent !== null && info.deposit_percent !== undefined ? String(info.deposit_percent).replace(".", ",") : "",
@@ -29,7 +31,7 @@ function parseDeposit(value: string): number | null | "invalid" {
 }
 
 function fromForm(form: FormState, deposit: number | null): BusinessInfo {
-  const text = Object.fromEntries(TEXT_FIELDS.map((f) => [f, form.text[f].trim() || null])) as Record<TextField, string | null>;
+  const text = Object.fromEntries(TEXT_FIELDS.map((f) => [f, (f === "cnae_code" ? form.text[f].replace(/\D/g, "") : form.text[f].trim()) || null])) as Record<TextField, string | null>;
   return { ...text, account_type: form.account_type || null, pix_key_type: form.pix_key_type || null, deposit_percent: deposit, share_payment_info: form.share };
 }
 
@@ -47,6 +49,7 @@ export function BusinessInfoCard() {
   });
   const [form, setForm] = useState<FormState>(() => toForm(EMPTY_BUSINESS_INFO));
   const [busy, setBusy] = useState(false);
+  const [looking, setLooking] = useState(false);
   useEffect(() => {
     if (query.data) setForm(toForm(query.data));
   }, [query.data]);
@@ -55,18 +58,45 @@ export function BusinessInfoCard() {
   const preview = useMemo(() => paymentPreview(fromForm(form, deposit === "invalid" ? null : deposit)), [form, deposit]);
   const preReservationInvalid = Boolean(form.text.pre_reservation_url.trim()) && !/^https:\/\/\S+$/.test(form.text.pre_reservation_url.trim());
   const hasPaymentData = Boolean(form.text.pix_key.trim() || form.text.account.trim() || form.text.pre_reservation_url.trim());
+  const cnaeDigits = form.text.cnae_code.replace(/\D/g, "");
+  const cnaeInvalid = cnaeDigits.length > 0 && cnaeDigits.length !== 7;
+  const suggestedSegment = cnaeDigits.length === 7 ? resolveSegmentFromCnae(cnaeDigits) : undefined;
   const dirty = query.data ? JSON.stringify(toForm(query.data)) !== JSON.stringify(form) : false;
 
   const setText = (field: TextField) => (e: { target: { value: string } }) =>
-    setForm((f) => ({ ...f, text: { ...f.text, [field]: field === "cnpj" ? maskCnpj(e.target.value) : e.target.value } }));
+    setForm((f) => ({
+      ...f,
+      text: { ...f.text, [field]: field === "cnpj" ? maskCnpj(e.target.value) : field === "cnae_code" ? formatCnae(e.target.value) : e.target.value },
+    }));
+
+  // Preenche só os campos vazios (o que o dono digitou fica); o CNAE vem sempre da Receita.
+  async function fillFromCnpj() {
+    setLooking(true);
+    try {
+      const found = await lookupCnpj(form.text.cnpj);
+      setForm((f) => {
+        const text = { ...f.text };
+        for (const k of ["legal_name", "address", "phone", "email"] as const) if (!text[k].trim() && found[k]) text[k] = found[k]!;
+        if (found.cnae_code) text.cnae_code = formatCnae(found.cnae_code);
+        if (found.cnae_description) text.cnae_description = found.cnae_description;
+        return { ...f, text };
+      });
+      toast.success("Dados da Receita preenchidos. Confira e salve.");
+    } catch (err) {
+      toast.error(err);
+    } finally {
+      setLooking(false);
+    }
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    if (deposit === "invalid" || preReservationInvalid) return;
+    if (deposit === "invalid" || preReservationInvalid || cnaeInvalid) return;
     setBusy(true);
     try {
       unwrap(await supabase.from("workspace_business_info").upsert({ workspace_id: workspaceId, ...fromForm(form, deposit) }, { onConflict: "workspace_id" }));
       await queryClient.invalidateQueries({ queryKey: ["business-info", workspaceId] });
+      await queryClient.invalidateQueries({ queryKey: ["business-info-cnae", workspaceId] });
       toast.success("Dados da empresa salvos.");
     } catch (err) {
       toast.error(err);
@@ -89,12 +119,32 @@ export function BusinessInfoCard() {
               <legend className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Empresa</legend>
               <div className="grid gap-3 sm:grid-cols-2">
                 <Input label="Razão social" value={form.text.legal_name} onChange={setText("legal_name")} maxLength={200} />
-                <Input label="CNPJ" inputMode="numeric" placeholder="00.000.000/0000-00" value={form.text.cnpj} onChange={setText("cnpj")} />
+                <div className="flex items-end gap-2">
+                  <Input label="CNPJ" inputMode="numeric" placeholder="00.000.000/0000-00" value={form.text.cnpj} onChange={setText("cnpj")} wrapperClassName="flex-1" />
+                  <Button type="button" variant="secondary" onClick={() => void fillFromCnpj()} loading={looking} disabled={form.text.cnpj.replace(/\D/g, "").length !== 14}>
+                    Buscar
+                  </Button>
+                </div>
                 <Input label="Inscrição estadual" value={form.text.state_registration} onChange={setText("state_registration")} maxLength={40} />
                 <Input label="Telefone" type="tel" value={form.text.phone} onChange={setText("phone")} maxLength={40} />
                 <Input label="E-mail" type="email" value={form.text.email} onChange={setText("email")} maxLength={200} />
                 <Input label="Endereço" value={form.text.address} onChange={setText("address")} maxLength={300} />
+                <Input
+                  label="CNAE principal"
+                  inputMode="numeric"
+                  placeholder="0000-0/00"
+                  value={form.text.cnae_code}
+                  onChange={setText("cnae_code")}
+                  error={cnaeInvalid ? "O CNAE tem 7 dígitos (ex.: 5510-8/02)." : undefined}
+                  hint={form.text.cnae_description || "Preenchido pelo botão Buscar ou digitado."}
+                />
               </div>
+              {suggestedSegment && (
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Segmento sugerido pelo CNAE: <strong className="text-slate-700 dark:text-slate-300">{suggestedSegment.label}</strong>. Escolha ou confirme em{" "}
+                  <Link to="/agent" className="text-brand underline">Agente de IA</Link>.
+                </p>
+              )}
             </fieldset>
 
             <fieldset className="space-y-3">

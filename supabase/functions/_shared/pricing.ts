@@ -283,7 +283,7 @@ export function mergeAvailability(quote: TableQuote, rooms: PmsRoom[], opts: { o
     ...(sem_vaga.length ? { sem_vaga } : {}),
     ...(nao_verificadas.length ? { nao_verificadas } : {}),
     observacao: disponiveis.length
-      ? "Vaga confirmada agora no sistema do hotel para as opcoes listadas; valores da tabela de preços oficial (informe exatamente como estão). As acomodações em sem_vaga estão lotadas nessas datas."
+      ? "Há vaga agora no sistema do hotel para as opcoes listadas; valores da tabela de preços oficial (informe exatamente como estão). As acomodações em sem_vaga estão lotadas nessas datas. Diga que há vaga, nunca que a reserva está confirmada: ela só existe depois que o hóspede conclui pelo link (ou a equipe confirma o pagamento)."
       : "Nenhuma acomodação que comporta o grupo tem vaga nessas datas no sistema do hotel. Informe isso e sugira outras datas.",
   };
 }

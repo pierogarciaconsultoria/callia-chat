@@ -2,6 +2,7 @@
 import { z } from "npm:zod@3.23.8";
 import type { ChatMessage } from "./ai.ts";
 import type { BusinessHours, Weekday } from "./agent-core.ts";
+import { getSegmentProfile, SEGMENT_LIST } from "./segments.ts";
 
 const WEEKDAYS: Weekday[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 const HHMM = /^([01]\d|2[0-4]):[0-5]\d$/;
@@ -17,6 +18,8 @@ export interface ExistingSetup {
   agent_name: string;
   persona_prompt: string;
   guardrails: string | null;
+  /** Segmento já escolhido: o perfil orienta o tom e as regras da persona gerada. */
+  segment_id?: string | null;
   faqs: Array<{ question: string }>;
   products: Array<{ name: string }>;
 }
@@ -37,9 +40,9 @@ export const SETUP_JSON_SCHEMA = {
     business: {
       type: "object",
       additionalProperties: false,
-      required: ["name", "summary", "segment", "city", "address", "phone", "whatsapp", "email", "website_url", "instagram", "tone_observed"],
+      required: ["name", "summary", "segment", "segment_id", "city", "address", "phone", "whatsapp", "email", "website_url", "instagram", "tone_observed"],
       properties: {
-        name: str, summary: str, segment: str, city: nstr, address: nstr, phone: nstr, whatsapp: nstr, email: nstr,
+        name: str, summary: str, segment: str, segment_id: { type: "string", enum: [...SEGMENT_LIST.map((p) => p.id), "outro"] }, city: nstr, address: nstr, phone: nstr, whatsapp: nstr, email: nstr,
         website_url: nstr, instagram: nstr, tone_observed: str,
       },
     },
@@ -105,7 +108,10 @@ export const SETUP_JSON_SCHEMA = {
 const zRange = z.object({ start: z.string(), end: z.string() });
 const zRawDraft = z.object({
   business: z.object({
-    name: z.string(), summary: z.string(), segment: z.string(), city: z.string().nullable(), address: z.string().nullable(),
+    name: z.string(), summary: z.string(), segment: z.string(),
+    // Opcional: rascunhos gerados antes do catálogo de segmentos não têm o campo.
+    segment_id: z.string().nullable().optional(),
+    city: z.string().nullable(), address: z.string().nullable(),
     phone: z.string().nullable(), whatsapp: z.string().nullable(), email: z.string().nullable(), website_url: z.string().nullable(),
     instagram: z.string().nullable(), tone_observed: z.string(),
   }),
@@ -188,9 +194,10 @@ Regras obrigatórias:
 
 Como preencher:
 - business: dados da empresa encontrados; "tone_observed" descreve o tom de comunicação que a empresa já usa (formal, acolhedor, divertido…).
+- business.segment_id: o segmento que melhor descreve a empresa, entre: ${SEGMENT_LIST.map((p) => `${p.id} (${p.label})`).join(", ")}. Use "outro" se nenhum servir.
 - agent.agent_name: um nome curto e simpático para o atendente, coerente com a marca (ex.: "Lia da Pousada X"); se a empresa já usa um nome de atendente, use-o.
 - agent.persona_prompt: texto em segunda pessoa ("Você é…"), 150 a 400 palavras, que define quem é o atendente, o tom (baseado no tom observado), o que a empresa oferece, para quem, os diferenciais, como conduzir a conversa (cumprimentar, entender a necessidade, responder com objetividade, oferecer o próximo passo) e fatos estáveis essenciais (localização, tipo de negócio). Não repita listas longas de preços: isso fica na base de conhecimento.
-- agent.guardrails: regras específicas deste negócio em linhas iniciadas por "- " (ex.: não confirmar reserva sem pagamento, enviar o link de reserva, não prometer disponibilidade sem consultar, política de pets/crianças se existir). Não repita regras genéricas de segurança.
+- agent.guardrails: regras específicas deste negócio em linhas iniciadas por "- " (ex.: não confirmar reserva sem pagamento, enviar o link de reserva, não prometer disponibilidade sem consultar, política de pets/crianças se existir). Não repita regras genéricas de segurança nem as do perfil do segmento (o sistema já as aplica).
 - business_hours: horário de atendimento humano por dia (HH:MM, 24h) se aparecer nas fontes; senão null. Fuso padrão America/Sao_Paulo salvo indicação contrária.
 - handoff.keywords: 4 a 8 expressões que um cliente usaria para pedir uma pessoa; handoff.message: mensagem curta e no tom da marca avisando que alguém da equipe vai continuar; out_of_hours_message: se houver horário, avise quando a equipe volta.
 - payment_links: só links de pagamento/reserva explícitos nas fontes.
@@ -198,6 +205,18 @@ Como preencher:
 - products: produtos/serviços/acomodações com descrição; price só se o valor estiver explícito (número, sem símbolo); currency em código ISO (BRL padrão).
 - missing_information: o que falta para um bom atendimento (ex.: horários de check-in/check-out, política de cancelamento, formas de pagamento, estacionamento, pets).
 - sources_used: as fontes que de fato contribuíram.`;
+
+/** Perfil do segmento escolhido como ponto de partida da persona (o que a empresa já comunica prevalece). */
+function segmentBrief(segmentId: string | null | undefined): string | null {
+  const p = getSegmentProfile(segmentId);
+  if (!p) return null;
+  return [
+    `Segmento escolhido pelo dono: ${p.label}. Use este perfil como ponto de partida para o tom e o objetivo da persona; o tom que a empresa já usa nas fontes prevalece.`,
+    `Tom padrão: ${p.tone}`,
+    `Objetivo principal: ${p.goal}`,
+    `Exemplos de respostas no tom do segmento (inspiração, não copie):\n${p.examples.map((e) => `- ${e}`).join("\n")}`,
+  ].join("\n");
+}
 
 export function buildSetupMessages(materials: SetupMaterial[], existing: ExistingSetup, extraText: string | null): { messages: ChatMessage[]; truncated: string[] } {
   const { text, truncated } = assembleMaterials(
@@ -207,6 +226,7 @@ export function buildSetupMessages(materials: SetupMaterial[], existing: Existin
     `Nome atual do atendente: ${existing.agent_name}`,
     `Persona atual: ${existing.persona_prompt}`,
     existing.guardrails ? `Regras atuais: ${existing.guardrails}` : null,
+    segmentBrief(existing.segment_id),
     existing.faqs.length ? `Perguntas já cadastradas (não repetir):\n${existing.faqs.map((f) => `- ${f.question}`).join("\n")}` : null,
     existing.products.length ? `Produtos já cadastrados (não repetir):\n${existing.products.map((p) => `- ${p.name}`).join("\n")}` : null,
   ].filter(Boolean).join("\n\n");
@@ -260,7 +280,7 @@ export function normalizeDraft(raw: unknown): DraftContent {
   const seenQ = new Set<string>();
   const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   return {
-    business: d.business,
+    business: { ...d.business, segment_id: getSegmentProfile(d.business.segment_id) ? d.business.segment_id : null },
     agent: {
       agent_name: d.agent.agent_name.trim().slice(0, 60) || "Assistente",
       language: d.agent.language.trim() || "pt-BR",

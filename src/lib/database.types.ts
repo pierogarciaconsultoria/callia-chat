@@ -328,6 +328,8 @@ export interface AgentConfig {
   external_agent_url: string | null;
   external_agent_secret_ref: string | null;
   external_agent_timeout_ms: number;
+  segment_id: string | null;
+  emoji_policy: "none" | "light" | "free" | null;
   updated_at: string;
 }
 

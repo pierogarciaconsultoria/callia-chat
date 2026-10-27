@@ -5,6 +5,7 @@ import { useRequiredWorkspace } from "@/lib/workspace";
 import { invokeFunction } from "@/lib/functions";
 import type { AgentConfig, FollowUpRule, SimulateResult } from "@/lib/database.types";
 import { BusinessHoursEditor, KeywordChips, PaymentLinksEditor } from "@/components/agent-editors";
+import { SegmentFields } from "@/components/SegmentFields";
 import { useAgentConfig, useSaveAgentConfig, type AgentConfigPatch } from "@/hooks/use-agent-config";
 import { useEntitlements } from "@/hooks/use-entitlements";
 import { hasFeature } from "@/lib/entitlements";
@@ -135,6 +136,12 @@ export default function Agent() {
                 value={form.guardrails ?? ""}
                 onChange={(e) => set("guardrails", e.target.value)}
                 hint="O que o agente nunca deve fazer. Ex.: não prometer descontos, não falar de concorrentes."
+              />
+              <SegmentFields
+                workspaceId={workspaceId}
+                segmentId={form.segment_id ?? null}
+                emojiPolicy={form.emoji_policy ?? null}
+                onChange={(patch) => setForm((f) => (f ? { ...f, ...patch } : f))}
               />
               <div className="grid gap-4 sm:grid-cols-3">
                 <Input

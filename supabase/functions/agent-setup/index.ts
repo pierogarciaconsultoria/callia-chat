@@ -42,7 +42,7 @@ async function generateDraft(db: Db, workspaceId: string, sourceIds: string[] | 
   }
 
   const [{ data: cfg }, { data: faqs }, { data: products }] = await Promise.all([
-    db.from("agent_configs").select("agent_name, persona_prompt, guardrails").eq("workspace_id", workspaceId).single(),
+    db.from("agent_configs").select("agent_name, persona_prompt, guardrails, segment_id").eq("workspace_id", workspaceId).single(),
     db.from("faqs").select("question").eq("workspace_id", workspaceId),
     db.from("products").select("name").eq("workspace_id", workspaceId),
   ]);
@@ -50,6 +50,7 @@ async function generateDraft(db: Db, workspaceId: string, sourceIds: string[] | 
     agent_name: cfg?.agent_name ?? "Assistente",
     persona_prompt: cfg?.persona_prompt ?? "",
     guardrails: cfg?.guardrails ?? null,
+    segment_id: cfg?.segment_id ?? null,
     faqs: faqs ?? [],
     products: products ?? [],
   }, extraText);
@@ -216,6 +217,10 @@ Deno.serve(createHandler("agent-setup", async ({ req, correlationId }) => {
       if (Object.keys(patch).length) {
         const { error } = await db.from("agent_configs").update(patch).eq("workspace_id", row.workspace_id);
         if (error) throw new RuntimeError("internal_error", "Falha ao atualizar o agente.", { db: error.message });
+      }
+      // Segmento detectado: só preenche se o dono ainda não escolheu um.
+      if (sections.profile && d.business.segment_id) {
+        await db.from("agent_configs").update({ segment_id: d.business.segment_id }).eq("workspace_id", row.workspace_id).is("segment_id", null);
       }
 
       const faqIdx = indices(sections.faqs, d.faqs.length);
