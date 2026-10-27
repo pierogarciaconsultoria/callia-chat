@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { invokeFunction } from "@/lib/functions";
 import { cn } from "@/lib/cn";
-import { OnboardingChecklist } from "@/components/OnboardingChecklist";
+import { JourneyCard } from "@/components/onboarding/Journey";
 import { useAuth } from "@/lib/auth";
 import { useRequiredWorkspace } from "@/lib/workspace";
 import { formatPhone, formatRelativeShort, initials } from "@/lib/format";
@@ -114,9 +114,9 @@ export default function Inbox() {
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {/* No celular o painel da direita não aparece: os primeiros passos ficam no topo da lista. */}
+          {/* No celular o painel da direita não aparece: a jornada de configuração fica no topo da lista. */}
           <div className="p-3 empty:hidden md:hidden">
-            <OnboardingChecklist key={workspaceId} compact />
+            <JourneyCard key={workspaceId} compact />
           </div>
           {conversations.isLoading ? (
             <div className="flex justify-center p-8 text-slate-400">
@@ -188,7 +188,7 @@ export default function Inbox() {
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center p-4">
             <EmptyState icon={InboxIcon} title="Selecione uma conversa" description="Escolha uma conversa à esquerda para ver as mensagens." />
-            <OnboardingChecklist key={workspaceId} className="mx-auto mt-4" />
+            <JourneyCard key={workspaceId} compact className="mx-auto mt-4 max-w-md" />
           </div>
         )}
       </section>

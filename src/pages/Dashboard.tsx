@@ -14,6 +14,7 @@ import {
   CHANNEL_LABELS, TOOL_LABELS, trimFuture, waitingFor, type DashboardData, type QuotesReservations as QuotesData, type RangePreset,
 } from "@/lib/dashboard";
 import { BarList, ChartCard, ColumnChart, DataTable, Legend, LineChart, StackedBar } from "@/components/charts";
+import { JourneyCard } from "@/components/onboarding/Journey";
 import { Badge, Card, CardBody, CardHeader, ErrorState, Input, PageHeader, Select, Spinner } from "@/components/ui";
 
 const C = { guest: "var(--viz-1)", ai: "var(--viz-2)", team: "var(--viz-3)", handoff: "var(--viz-4)", none: "var(--viz-muted)" };
@@ -52,6 +53,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-5">
       <PageHeader title="Painel de atendimentos" description={`Como a ${agent} e a equipe estão atendendo os hóspedes no período escolhido.`} />
+      <JourneyCard />
 
       {/* Filtros: uma linha, valem para tudo abaixo. */}
       <div className="flex flex-wrap items-end gap-3">

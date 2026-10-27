@@ -6,6 +6,7 @@ import { invokeFunction } from "@/lib/functions";
 import type { AgentConfig, FollowUpRule, SimulateResult } from "@/lib/database.types";
 import { BusinessHoursEditor, KeywordChips, PaymentLinksEditor } from "@/components/agent-editors";
 import { SegmentFields } from "@/components/SegmentFields";
+import { markJourneyTested } from "@/hooks/use-journey";
 import { useAgentConfig, useSaveAgentConfig, type AgentConfigPatch } from "@/hooks/use-agent-config";
 import { useEntitlements } from "@/hooks/use-entitlements";
 import { hasFeature } from "@/lib/entitlements";
@@ -137,6 +138,7 @@ export default function Agent() {
                 onChange={(e) => set("guardrails", e.target.value)}
                 hint="O que o agente nunca deve fazer. Ex.: não prometer descontos, não falar de concorrentes."
               />
+              <div id="segmento" className="scroll-mt-4" />
               <SegmentFields
                 workspaceId={workspaceId}
                 segmentId={form.segment_id ?? null}
@@ -311,7 +313,7 @@ Resposta esperada:
         </form>
 
         <div className="min-w-0 xl:sticky xl:top-6 xl:self-start">
-          <Simulator workspaceId={workspaceId} />
+          <div id="simulador" className="scroll-mt-4"><Simulator workspaceId={workspaceId} /></div>
         </div>
       </div>
     </>
@@ -373,6 +375,7 @@ function Simulator({ workspaceId }: { workspaceId: string }) {
         messages: next.map(({ role, text: t }) => ({ role, text: t })),
       });
       setTurns([...next, { role: "bot", text: res.reply ?? (res.handoff ? "(transferido para humano)" : "(sem resposta)"), result: res }]);
+      markJourneyTested(workspaceId);
     } catch (err) {
       toast.error(err);
     } finally {

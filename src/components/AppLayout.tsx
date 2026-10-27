@@ -1,4 +1,4 @@
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { ArrowLeft, LogOut, Menu, MessageCircle, PanelLeftClose, PanelLeftOpen, ShieldCheck, X } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -7,6 +7,7 @@ import { useWorkspace } from "@/lib/workspace";
 import { PageLoader } from "@/components/ui";
 import { NAV_ITEMS, PLATFORM_NAV_ITEMS } from "./nav";
 import { PlanBanner } from "./PlanBanner";
+import { JourneyBar } from "./onboarding/Journey";
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   cn(
@@ -51,6 +52,21 @@ export function AppLayout() {
   const location = useLocation();
   const isInbox = location.pathname.startsWith("/inbox");
   const inConsole = location.pathname.startsWith("/admin");
+
+  // Links da jornada apontam para uma seção (#simulador, #empresa): rola até ela quando a tela carregar.
+  useEffect(() => {
+    const id = location.hash.slice(1);
+    if (!id) return;
+    let tries = 0;
+    const timer = window.setInterval(() => {
+      const el = document.getElementById(id);
+      if (el || ++tries > 20) {
+        window.clearInterval(timer);
+        el?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 150);
+    return () => window.clearInterval(timer);
+  }, [location.pathname, location.hash]);
   const items = workspace ? NAV_ITEMS.filter((i) => isAdmin || !i.adminOnly) : [];
   const title = inConsole ? "Console da plataforma" : branding?.display_name || workspace?.name || "Callia Chat";
 
@@ -202,6 +218,7 @@ export function AppLayout() {
           <span className="truncate text-sm font-semibold">{title}</span>
         </header>
         {workspace && !inConsole && <PlanBanner />}
+        {workspace && !inConsole && !isInbox && <JourneyBar />}
         <main className={cn("min-w-0 flex-1", isInbox ? "" : "mx-auto w-full max-w-6xl px-4 py-6 sm:px-6")}>
           <Suspense fallback={<PageLoader />}>
             <Outlet />

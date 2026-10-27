@@ -22,7 +22,7 @@ export default function Settings() {
         <PlanUsageCard />
         <WorkspaceNameCard />
         <BrandingCard />
-        {isAdmin && <BusinessInfoCard />}
+        {isAdmin && <div id="empresa" className="scroll-mt-4"><BusinessInfoCard /></div>}
         <ConnectorsPointer />
       </div>
     </>
