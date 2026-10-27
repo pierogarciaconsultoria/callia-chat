@@ -7,7 +7,8 @@ import { parseBrDate } from "./hbook.ts";
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 export const priceTableSchema = z.object({
-  /** Período usado nas noites que não caem em nenhum intervalo (ex.: baixa temporada). */
+  /** Período usado nas noites que não caem em nenhum intervalo (ex.: baixa temporada). Se ele tiver datas próprias,
+   *  a tabela é por temporada: noites antes do primeiro ou depois do último intervalo não são cotadas. */
   default_period: z.string().min(1),
   periods: z.array(z.object({
     id: z.string().regex(/^[a-z0-9_-]{1,30}$/),
@@ -124,6 +125,26 @@ export function quoteStay(table: PriceTableData, q: QuoteQuery, currency = "BRL"
       opcoes: [],
       observacao: `O hotel estará fechado nessas datas (${when}). Não cote nem ofereça reserva para elas; informe o fechamento e sugira datas fora desse período.`,
     };
+  }
+
+  // Período padrão com datas próprias = tabela por temporada: fora de todos os intervalos não há tarifa.
+  const defaultRanges = table.periods.find((p) => p.id === table.default_period)?.ranges ?? [];
+  if (defaultRanges.length) {
+    const all = table.periods.flatMap((p) => p.ranges);
+    const first = all.reduce((m, [s]) => (s < m ? s : m), all[0][0]);
+    const last = all.reduce((m, [, e]) => (e > m ? e : m), all[0][1]);
+    if (nights.some((n) => n < first || n > last)) {
+      const season = `${brDate(first)} a ${brDate(last)}`;
+      return {
+        checkin: q.checkin,
+        checkout: q.checkout,
+        noites: nights.length,
+        sem_tarifa: true,
+        temporada_cadastrada: season,
+        opcoes: [],
+        observacao: `Não há tarifas cadastradas para essas datas (a tabela vai de ${season}). Não informe valores, não confirme vaga e não ofereça reserva para elas; diga que ainda não temos valores para esse período e sugira datas dentro de ${season} ou ofereça falar com a equipe.`,
+      };
+    }
   }
 
   const periodOf = nights.map((n) => periodForNight(table, n));

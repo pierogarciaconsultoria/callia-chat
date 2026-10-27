@@ -78,7 +78,7 @@ function PriceTableView({ table, workspaceId }: { table: PriceTable; workspaceId
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="font-medium">{p.name}</span>
                 {p.min_nights ? <Badge>mín. {p.min_nights} diárias</Badge> : null}
-                {p.id === default_period && <Badge tone="brand">padrão fora dos períodos</Badge>}
+                {p.id === default_period && <Badge tone="brand">{p.ranges.length ? "padrão nas lacunas da temporada" : "padrão fora dos períodos"}</Badge>}
               </div>
               <p className="mt-1 text-xs text-slate-500">{p.ranges.map(([a, b]) => `${brDate(a)} a ${brDate(b)}`).join(" · ") || "—"}</p>
             </li>

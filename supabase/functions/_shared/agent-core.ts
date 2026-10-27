@@ -290,6 +290,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
       "- Só diga que uma acomodação não comporta o grupo se ela estiver em nao_comportam, e que está sem vaga só se estiver em sem_vaga. Nunca invente o motivo de uma opção não ter sido mostrada.",
       "- Se atende_estadia_minima for falso, avise a estadia mínima antes do valor.",
       "- Se o resultado vier com fechado, informe que o hotel estará fechado nessas datas (periodos_fechados) e não cote nem ofereça reserva para elas.",
+      "- Se o resultado vier com sem_tarifa, diga que ainda não temos valores para essas datas (temporada_cadastrada) e não cote, não confirme vaga nem ofereça reserva para elas.",
       "- Valor da tabela NÃO confirma disponibilidade. Nunca diga que há vaga ou que a disponibilidade está confirmada, a menos que consultar_disponibilidade tenha retornado disponibilidade_confirmada ou quartos disponíveis.",
     ].join("\n"));
   }

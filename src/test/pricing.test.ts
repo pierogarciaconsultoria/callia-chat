@@ -42,11 +42,23 @@ describe("tabela de preços: cálculo (gabarito confirmado com o hotel)", () => 
     expect(best({ checkin: "27/12/2026", checkout: "01/01/2027", adults: 4 })[0]).toMatchObject({ acomodacao: "Apartamentos 205 e 206", total: 5000 });
   });
 
-  it("kitnet casal 01 a 06/12/2026 → R$ 1.600; novembro cai na baixa → R$ 2.000 nos apartamentos", () => {
+  it("kitnet casal 01 a 06/12/2026 → R$ 1.600; fevereiro entre alta e Carnaval usa a baixa", () => {
     expect(best({ checkin: "01/12/2026", checkout: "06/12/2026", adults: 2, unit: "kitnet" })[0]).toMatchObject({ total: 1600 });
-    const nov = best({ checkin: "10/11/2026", checkout: "15/11/2026", adults: 2 });
-    expect(nov[0]).toMatchObject({ acomodacao: "Kitnet", total: 1600 });
-    expect(nov.find((x) => x.acomodacao.startsWith("Apartamentos 101"))?.total).toBe(2000);
+    const r = quoteStay(table, { checkin: "05/02/2027", checkout: "06/02/2027", adults: 2 }) as { periodos?: string[]; sem_tarifa?: boolean };
+    expect(r.sem_tarifa).toBeUndefined();
+    expect(r.periodos).toEqual(["Baixa temporada"]);
+  });
+
+  it("fora da temporada cadastrada não cota (novembro antes da abertura, abril depois da Páscoa)", () => {
+    for (const [checkin, checkout] of [["10/11/2026", "15/11/2026"], ["28/11/2026", "02/12/2026"], ["27/03/2027", "30/03/2027"]]) {
+      const r = quoteStay(table, { checkin, checkout, adults: 2 }) as { sem_tarifa?: boolean; opcoes: unknown[]; temporada_cadastrada?: string };
+      expect(r.sem_tarifa).toBe(true);
+      expect(r.opcoes).toEqual([]);
+      expect(r.temporada_cadastrada).toBe("30/11/2026 a 28/03/2027");
+    }
+    // Tabela sem datas no período padrão vale o ano todo.
+    const yearRound = priceTableSchema.parse({ ...table, periods: table.periods.map((p) => (p.id === table.default_period ? { ...p, ranges: [] } : p)) });
+    expect((quoteStay(yearRound, { checkin: "10/11/2026", checkout: "15/11/2026", adults: 2 }) as { opcoes: unknown[] }).opcoes.length).toBeGreaterThan(0);
   });
 
   it("Páscoa 3 adultos, 26 a 29/03/2027 → 3 noites × R$ 600 = R$ 1.800", () => {
@@ -96,17 +108,17 @@ describe("sinal", () => {
 });
 
 describe("tabela de preços: períodos fechados", () => {
-  const closedTable = priceTableSchema.parse({ ...table, closed: [{ name: "Inverno", from: "2027-06-21", to: "2027-09-22" }] });
+  const closedTable = priceTableSchema.parse({ ...table, closed: [{ name: "Reforma", from: "2027-03-10", to: "2027-03-20" }] });
 
   it("estadia que toca o fechamento não é cotada", () => {
-    const r = quoteStay(closedTable, { checkin: "18/06/2027", checkout: "23/06/2027", adults: 2 }) as { fechado?: boolean; opcoes: unknown[]; periodos_fechados?: string };
+    const r = quoteStay(closedTable, { checkin: "08/03/2027", checkout: "12/03/2027", adults: 2 }) as { fechado?: boolean; opcoes: unknown[]; periodos_fechados?: string };
     expect(r.fechado).toBe(true);
     expect(r.opcoes).toEqual([]);
-    expect(r.periodos_fechados).toBe("Inverno: 21/06/2027 a 22/09/2027");
+    expect(r.periodos_fechados).toBe("Reforma: 10/03/2027 a 20/03/2027");
   });
 
   it("checkout no 1º dia fechado ainda é cotado (a noite anterior está aberta)", () => {
-    const r = quoteStay(closedTable, { checkin: "16/06/2027", checkout: "21/06/2027", adults: 2 }) as { fechado?: boolean; opcoes: unknown[] };
+    const r = quoteStay(closedTable, { checkin: "05/03/2027", checkout: "10/03/2027", adults: 2 }) as { fechado?: boolean; opcoes: unknown[] };
     expect(r.fechado).toBeUndefined();
     expect(r.opcoes.length).toBeGreaterThan(0);
   });

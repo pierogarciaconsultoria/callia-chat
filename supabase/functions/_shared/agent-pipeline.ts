@@ -464,10 +464,10 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
           }
         } else if (call.function.name === "consultar_disponibilidade" && deps.checkAvailability) {
           // Com tabela de preços: fechamento primeiro, vaga pelo PMS (categorias vinculadas) e preço pela tabela.
-          const table = deps.priceTable ? quoteFrom(args) as { fechado?: boolean; erro?: string; opcoes?: Array<{ pms_category_ids?: number[] }> } : null;
+          const table = deps.priceTable ? quoteFrom(args) as { fechado?: boolean; sem_tarifa?: boolean; erro?: string; opcoes?: Array<{ pms_category_ids?: number[] }> } : null;
           const categoryIds = [...new Set((table?.opcoes ?? []).flatMap((o) => o.pms_category_ids ?? []))];
           try {
-            if (table?.fechado || table?.erro) {
+            if (table?.fechado || table?.sem_tarifa || table?.erro) {
               toolResult = stripPmsIds(table);
             } else {
               const found = await deps.checkAvailability({

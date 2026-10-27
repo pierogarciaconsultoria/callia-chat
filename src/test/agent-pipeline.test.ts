@@ -373,6 +373,17 @@ describe("pipeline do agente", () => {
     expect(checkAvailability).not.toHaveBeenCalled();
   });
 
+  it("fora da temporada cadastrada: nem consulta o Hospedin e não afirma vaga", async () => {
+    const quote = vi.fn(() => ({ sem_tarifa: true, temporada_cadastrada: "30/11/2026 a 28/03/2027", opcoes: [] }));
+    const checkAvailability = vi.fn();
+    const ai = fakeAi([
+      { toolCalls: [{ id: "t1", type: "function", function: { name: "consultar_disponibilidade", arguments: '{"checkin":"10/11/2026","checkout":"15/11/2026","adultos":2}' } }] },
+      { content: "Ainda não temos valores para essas datas; a temporada vai de 30/11/2026 a 28/03/2027." },
+    ]);
+    await runAgentPipeline(input("Do dia 10/11/26 ao dia 15/11/26, 2 adultos"), deps({ ai, priceTable: { quote }, checkAvailability } as never));
+    expect(checkAvailability).not.toHaveBeenCalled();
+  });
+
   it("com vaga confirmada pelo sistema de reservas, a resposta não é alterada", async () => {
     const reply = "O apartamento 205 está disponível: R$ 5.000,00.";
     const ai = fakeAi([
