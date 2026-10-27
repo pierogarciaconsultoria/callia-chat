@@ -21,6 +21,8 @@ export interface HbookRoom {
   total_price: number;
   price_per_night: number;
   available_units: number | null;
+  /** Vagas por noite no entorno da estadia (só com aroundNights): mostra se a estadia curta é uma janela entre reservas. */
+  nightly?: Record<string, number>;
 }
 
 export interface HbookAvailability {
@@ -67,6 +69,8 @@ export interface AvailabilityQuery {
   childrenAges?: number[];
   /** Só estas categorias do PMS, sem filtrar pela ocupação cadastrada lá (a capacidade vem da tabela de preços). */
   categoryIds?: number[];
+  /** Lê também a vaga destas noites antes e depois da estadia (estadia mínima: janela entre reservas). */
+  aroundNights?: number;
 }
 
 export function validateQuery(

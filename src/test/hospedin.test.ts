@@ -97,6 +97,20 @@ describe("Hospedin: cliente e consulta", () => {
     expect(ratesCall).toContain("begin_date=2026-12-20&end_date=2026-12-21");
   });
 
+  it("estadia mínima: lê a vaga em volta (nunca antes de hoje) e devolve por noite", async () => {
+    const fetchImpl = fakeHospedin();
+    const client = new HospedinClient({ email: "n@b.com", password: "certa" }, { baseUrl: "https://h.test", fetchImpl: fetchImpl as unknown as typeof fetch });
+    const out = await fetchHospedinAvailability(
+      { account_id: "morada", price_unit: "reais", booking_link: null },
+      client,
+      { checkin: "20/12/2026", checkout: "22/12/2026", adults: 2, categoryIds: [2], aroundNights: 3 },
+      { today: new Date("2026-12-18T00:00:00Z") },
+    );
+    const ratesCall = fetchImpl.mock.calls.map(([u]) => String(u)).find((u) => u.includes("/place_types/2/"));
+    expect(ratesCall).toContain("begin_date=2026-12-18&end_date=2026-12-24");
+    expect(out.rooms[0].nightly).toEqual({ "2026-12-20": 2, "2026-12-21": 2 });
+  });
+
   it("reaproveita o token e renova quando expira (401)", async () => {
     let first = true;
     const base = fakeHospedin();

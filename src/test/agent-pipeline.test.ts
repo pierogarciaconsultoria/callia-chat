@@ -373,6 +373,35 @@ describe("pipeline do agente", () => {
     expect(checkAvailability).not.toHaveBeenCalled();
   });
 
+  it("abaixo da estadia mínima: consulta a vaga em volta e marca a janela entre reservas", async () => {
+    const quote = vi.fn(() => ({ checkin: "10/01/2027", checkout: "13/01/2027", noites: 3, estadia_minima: 5, atende_estadia_minima: false, hospedes: 2, opcoes: [{ acomodacao: "Kitnet", lugares: 2, pms_category_ids: [276] }] }));
+    const checkAvailability = vi.fn(async () => ({ checkin: "10/01/2027", checkout: "13/01/2027", nights: 3, adults: 2, children: 0, children_ages: [], currency: "BRL", sold_out: false, booking_link: null,
+      rooms: [{ name: "Kit", category_id: 276, rate: null, total_price: 990, price_per_night: 330, available_units: 1, nightly: { "2027-01-09": 0, "2027-01-10": 1, "2027-01-11": 1, "2027-01-12": 1, "2027-01-13": 0 } }] }));
+    const ai = fakeAi([
+      { toolCalls: [{ id: "t1", type: "function", function: { name: "consultar_disponibilidade", arguments: '{"checkin":"10/01/2027","checkout":"13/01/2027","adultos":2}' } }] },
+      { content: "A Kitnet tem essa janela de 3 diárias." },
+    ]);
+    const out = await runAgentPipeline(input("de 10/01/2027 a 13/01/2027, um casal"), deps({ ai, priceTable: { quote, isOpen: () => true }, checkAvailability } as never));
+    expect(checkAvailability).toHaveBeenCalledWith(expect.objectContaining({ categoryIds: [276], aroundNights: 2 }));
+    const result = out.toolCalls.find((t: { name: string }) => t.name === "consultar_disponibilidade")?.result as { opcoes: Array<{ estadia_curta?: string }> };
+    expect(result.opcoes[0].estadia_curta).toBe("permitida");
+  });
+
+  it("orçamento do tamanho do grupo; acomodação pedida aparece mesmo se maior", async () => {
+    const quote = vi.fn(() => ({ hospedes: 2, opcoes: [{ acomodacao: "Kitnet", lugares: 2 }, { acomodacao: "Verdes Mares", lugares: 7 }] }));
+    const call = (args: string) => ({ toolCalls: [{ id: "t1", type: "function", function: { name: "calcular_valor", arguments: args } }] });
+    const run = async (args: string) => {
+      const ai = fakeAi([call(args), { content: "Valores enviados." }]);
+      const out = await runAgentPipeline(input("valores para o casal de 01/12/2026 a 06/12/2026"), deps({ ai, priceTable: { quote } } as never));
+      return out.toolCalls.find((t: { name: string }) => t.name === "calcular_valor")?.result as { opcoes: Array<{ acomodacao: string }>; maiores_que_o_grupo?: string[] };
+    };
+    const casal = await run('{"checkin":"01/12/2026","checkout":"06/12/2026","adultos":2}');
+    expect(casal.opcoes.map((o) => o.acomodacao)).toEqual(["Kitnet"]);
+    expect(casal.maiores_que_o_grupo).toEqual(["Verdes Mares"]);
+    const pedido = await run('{"checkin":"01/12/2026","checkout":"06/12/2026","adultos":2,"acomodacao":"Verdes Mares"}');
+    expect(pedido.opcoes).toHaveLength(2);
+  });
+
   it("fora da temporada cadastrada: nem consulta o Hospedin e não afirma vaga", async () => {
     const quote = vi.fn(() => ({ sem_tarifa: true, temporada_cadastrada: "30/11/2026 a 28/03/2027", opcoes: [] }));
     const checkAvailability = vi.fn();

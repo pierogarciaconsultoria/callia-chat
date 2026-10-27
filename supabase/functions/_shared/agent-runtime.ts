@@ -10,7 +10,7 @@ import { RuntimeError } from "./http.ts";
 import { searchKnowledge } from "./knowledge.ts";
 import { type Entitlements, hasFeature } from "./entitlements.ts";
 import { photoGroups } from "./media.ts";
-import { priceTableSchema, quoteStay, withDeposit } from "./pricing.ts";
+import { isOpenNight, priceTableSchema, quoteStay, withDeposit } from "./pricing.ts";
 import type { PaymentInfo } from "./agent-core.ts";
 import type { Db } from "./supabase.ts";
 
@@ -134,6 +134,7 @@ async function loadPriceTable(db: Db, workspaceId: string, depositPercent: numbe
         : base;
       return link ? { ...result, link_reserva: link } : result;
     },
+    isOpen: (night) => isOpenNight(parsed.data, night),
   };
 }
 

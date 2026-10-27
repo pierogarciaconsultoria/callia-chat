@@ -66,6 +66,7 @@ Eventos válidos: `message.received`, `message.sent`, `conversation.handoff`, `p
 | `create_text` | `workspace_id`, `title`, `content` | `{ source }` |
 | `create_url` | `workspace_id`, `url`, `title?` | `{ source }` |
 | `create_document` | `workspace_id`, `title`, `storage_path`, `mime_type` | `{ source }` |
+| `update_text` | `source_id`, `title`, `content` | `{ source }` — só `kind = text`; reindexa (trechos e embeddings refeitos); fixada: máx. 12 mil caracteres |
 | `reindex` | `source_id` | `{ source }` |
 | `delete` | `source_id` | `{ deleted: true }` |
 | `embed_pending` | `workspace_id` | `{ embedded: n }` |

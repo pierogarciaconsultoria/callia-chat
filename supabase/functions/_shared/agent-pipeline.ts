@@ -17,7 +17,7 @@ import {
 import { ExternalAgentError, type ExternalAgentPayload, type ExternalAgentReply } from "./external-agent.ts";
 import type { AvailabilityQuery, HbookAvailability } from "./hbook.ts";
 import { matchAlbum, mentionedAlbums } from "./media.ts";
-import { mergeAvailability, stripPmsIds } from "./pricing.ts";
+import { fitToGroup, mergeAvailability, stripPmsIds } from "./pricing.ts";
 
 export interface PipelineInput {
   workspaceId: string;
@@ -49,7 +49,11 @@ export interface PipelineDeps {
   /** Dados de pagamento da empresa (seção de pagamento no prompt). */
   paymentInfo?: import("./agent-core.ts").PaymentInfo | null;
   /** Tabela de preços estruturada: cálculo exato do valor (a IA não faz conta). */
-  priceTable?: { quote: (q: { checkin: string; checkout: string; adults: number; childrenAges: number[]; unit?: string | null }) => unknown };
+  priceTable?: {
+    quote: (q: { checkin: string; checkout: string; adults: number; childrenAges: number[]; unit?: string | null }) => unknown;
+    /** Noite (AAAA-MM-DD) em que o hotel funciona: fora de fechamentos e da temporada cadastrada. */
+    isOpen?: (night: string) => boolean;
+  };
   log?: (msg: string, extra?: Record<string, unknown>) => void;
 }
 
@@ -232,6 +236,7 @@ function agentTools(hasAvailability: boolean, photoAlbums: string[] = [], hasPri
               items: { type: "integer", minimum: 0, maximum: 17 },
               description: "Idade de cada criança (0 a 17 anos). Se houver crianças, pergunte as idades antes de consultar. Vazio se não houver.",
             },
+            ...(hasPriceTable ? { acomodacao: { type: "string", description: "Opcional: acomodação pedida pelo hóspede (ex.: kitnet, Verdes Mares)." } } : {}),
           },
           required: ["checkin", "checkout"],
         },
@@ -326,6 +331,8 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
   ];
   if (messages[messages.length - 1]?.role !== "user") messages.push({ role: "user", content: input.pendingText });
   const tools = agentTools(hasAvailability, deps.photos?.albums.map((a) => a.name) ?? [], Boolean(deps.priceTable));
+  // Com acomodação pedida pelo hóspede, mostra mesmo que seja maior que o grupo.
+  const sized = <T>(args: Record<string, unknown>, result: T): T => typeof args.acomodacao === "string" && args.acomodacao.trim() ? result : fitToGroup(result);
   const quoteFrom = (args: Record<string, unknown>) =>
     deps.priceTable!.quote({
       checkin: String(args.checkin ?? ""),
@@ -447,7 +454,7 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
             ? hits.map((h) => ({ fonte: h.source_title, trecho: h.content }))
             : "Nada encontrado na base de conhecimento.";
         } else if (call.function.name === "calcular_valor" && deps.priceTable) {
-          toolResult = stripPmsIds(quoteFrom(args));
+          toolResult = stripPmsIds(sized(args, quoteFrom(args)));
         } else if (call.function.name === "enviar_fotos" && deps.photos) {
           const names = deps.photos.albums.map((a) => a.name);
           const album = matchAlbum(String(args.album ?? ""), names);
@@ -464,8 +471,10 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
           }
         } else if (call.function.name === "consultar_disponibilidade" && deps.checkAvailability) {
           // Com tabela de preços: fechamento primeiro, vaga pelo PMS (categorias vinculadas) e preço pela tabela.
-          const table = deps.priceTable ? quoteFrom(args) as { fechado?: boolean; sem_tarifa?: boolean; erro?: string; opcoes?: Array<{ pms_category_ids?: number[] }> } : null;
+          const table = deps.priceTable ? quoteFrom(args) as { fechado?: boolean; sem_tarifa?: boolean; erro?: string; noites?: number; estadia_minima?: number; atende_estadia_minima?: boolean; opcoes?: Array<{ pms_category_ids?: number[] }> } : null;
           const categoryIds = [...new Set((table?.opcoes ?? []).flatMap((o) => o.pms_category_ids ?? []))];
+          // Abaixo do mínimo: lê a vaga em volta para saber se é uma janela entre reservas.
+          const aroundNights = table?.atende_estadia_minima === false && categoryIds.length ? Math.max(0, (table.estadia_minima ?? 0) - (table.noites ?? 0)) : 0;
           try {
             if (table?.fechado || table?.sem_tarifa || table?.erro) {
               toolResult = stripPmsIds(table);
@@ -476,8 +485,9 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
                 adults: args.adultos === undefined ? undefined : Number(args.adultos),
                 childrenAges: Array.isArray(args.idades_criancas) ? args.idades_criancas.map(Number) : [],
                 ...(categoryIds.length ? { categoryIds } : {}),
+                ...(aroundNights ? { aroundNights } : {}),
               });
-              toolResult = table && categoryIds.length ? mergeAvailability(table as never, found.rooms) : found;
+              toolResult = table && categoryIds.length ? sized(args, mergeAvailability(table as never, found.rooms, { open: deps.priceTable?.isOpen })) : found;
             }
           } catch (err) {
             const link = (err as { details?: { booking_link?: unknown } })?.details?.booking_link;
@@ -486,7 +496,7 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
               ...(typeof link === "string" ? { link_reserva: link } : {}),
               ...(deps.priceTable
                 ? {
-                  valores_tabela: stripPmsIds(table ?? quoteFrom(args)),
+                  valores_tabela: stripPmsIds(sized(args, table ?? quoteFrom(args))),
                   instrucao: "Consulta indisponível: informe os valores_tabela (já calculados pela tabela oficial) exatamente como estão e envie o link_reserva para confirmar. A disponibilidade NÃO foi confirmada: não diga que há vaga.",
                 }
                 : { instrucao: "Consulta indisponível: informe o valor pela tabela de preços da base de conhecimento, se houver, e envie o link_reserva para confirmar." }),

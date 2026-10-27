@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { mergeAvailability, periodForNight, priceTableSchema, quoteStay } from "../../supabase/functions/_shared/pricing.ts";
+import { canExtendToMinimum, fitToGroup, isOpenNight, mergeAvailability, periodForNight, priceTableSchema, quoteStay } from "../../supabase/functions/_shared/pricing.ts";
 
 const table = priceTableSchema.parse(JSON.parse(readFileSync("scripts/data/morada-price-table.json", "utf8")));
 const best = (q: Parameters<typeof quoteStay>[1]) => {
@@ -11,7 +11,8 @@ const best = (q: Parameters<typeof quoteStay>[1]) => {
 describe("tabela de preços: período de cada noite", () => {
   it("datas que encostam: vale o período que começa na data", () => {
     expect(periodForNight(table, "2026-12-19")).toBe("baixa");
-    expect(periodForNight(table, "2026-12-20")).toBe("alta");
+    expect(periodForNight(table, "2026-12-20")).toBe("baixa"); // alta de dezembro começa em 21/12, como no site
+    expect(periodForNight(table, "2026-12-21")).toBe("alta");
     expect(periodForNight(table, "2026-12-24")).toBe("natal");
     expect(periodForNight(table, "2027-01-03")).toBe("natal");
     expect(periodForNight(table, "2027-01-04")).toBe("alta");
@@ -77,10 +78,10 @@ describe("tabela de preços: cálculo (gabarito confirmado com o hotel)", () => 
       opcoes: Array<{ total: number; detalhamento: Array<{ periodo: string; noites: number; diaria: number }> }>;
     };
     expect(r.opcoes[0].detalhamento).toEqual([
-      expect.objectContaining({ periodo: "Baixa temporada", noites: 2, diaria: 320 }),
-      expect.objectContaining({ periodo: "Alta temporada", noites: 3, diaria: 420 }),
+      expect.objectContaining({ periodo: "Baixa temporada", noites: 3, diaria: 320 }),
+      expect.objectContaining({ periodo: "Alta temporada", noites: 2, diaria: 420 }),
     ]);
-    expect(r.opcoes[0].total).toBe(2 * 320 + 3 * 420);
+    expect(r.opcoes[0].total).toBe(3 * 320 + 2 * 420);
   });
 
   it("avisa estadia abaixo do mínimo e grupos que não cabem em nenhuma acomodação", () => {
@@ -104,6 +105,75 @@ describe("sinal", () => {
     const r = withDeposit(quoteStay(table, { checkin: "27/12/2026", checkout: "01/01/2027", adults: 4 }) as { opcoes: Array<{ total: number }> }, 30) as { opcoes: Array<{ total: number; sinal: number; sinal_formatado: string }> };
     expect(r.opcoes[0]).toMatchObject({ total: 5000, sinal: 1500 });
     expect(r.opcoes[0].sinal_formatado).toMatch(/1\.500,00/);
+  });
+});
+
+describe("tabela de preços: valor igual ao site e tamanho do grupo", () => {
+  it("3 adultos de 18 a 26/12/2026 → R$ 4.820 (3 baixa + 3 alta + 2 Natal), igual ao site", () => {
+    const apt = best({ checkin: "18/12/2026", checkout: "26/12/2026", adults: 3 }).find((o) => o.acomodacao.startsWith("Apartamentos 101"));
+    expect(apt?.total).toBe(4820);
+  });
+
+  const sizedNames = (adults: number) =>
+    (fitToGroup(quoteStay(table, { checkin: "01/12/2026", checkout: "06/12/2026", adults })) as { opcoes: Array<{ acomodacao: string }>; maiores_que_o_grupo?: string[] });
+
+  it("casal não recebe acomodações para 4 ou 7 pessoas", () => {
+    const r = sizedNames(2);
+    expect(r.opcoes.map((o) => o.acomodacao)).toEqual(expect.arrayContaining(["Kitnet"]));
+    expect(r.opcoes.some((o) => /205|Verdes/.test(o.acomodacao))).toBe(false);
+    expect(r.maiores_que_o_grupo).toEqual(expect.arrayContaining(["Apartamentos 205 e 206", "Condomínio Verdes Mares"]));
+  });
+
+  it("3 pessoas: até o 205/206 (4 lugares), sem o Verdes Mares; 6 pessoas: Verdes Mares", () => {
+    const three = sizedNames(3).opcoes.map((o) => o.acomodacao);
+    expect(three).toContain("Apartamentos 205 e 206");
+    expect(three).not.toContain("Condomínio Verdes Mares");
+    expect(sizedNames(6).opcoes.map((o) => o.acomodacao)).toEqual(["Condomínio Verdes Mares"]);
+  });
+
+  it("se as do tamanho certo estão lotadas, mostra as maiores", () => {
+    const withIds = priceTableSchema.parse({ ...table, units: table.units.map((u, i) => ({ ...u, pms_category_ids: [100 + i] })) });
+    const q = quoteStay(withIds, { checkin: "01/12/2026", checkout: "06/12/2026", adults: 2 });
+    const bigOnly = (q as { opcoes: Array<{ acomodacao: string; pms_category_ids: number[] }> }).opcoes
+      .filter((o) => /205|Verdes/.test(o.acomodacao)).map((o) => ({ category_id: o.pms_category_ids[0], available_units: 1 }));
+    const merged = fitToGroup(mergeAvailability(q, bigOnly)) as { opcoes: Array<{ acomodacao: string }>; maiores_que_o_grupo?: string[] };
+    expect(merged.opcoes.map((o) => o.acomodacao).sort()).toEqual(["Apartamentos 205 e 206", "Condomínio Verdes Mares"]);
+    expect(merged.maiores_que_o_grupo).toBeUndefined();
+  });
+});
+
+describe("estadia mínima: janela entre reservas", () => {
+  const days = (from: string, n: number, units = 1) => Object.fromEntries(Array.from({ length: n }, (_, i) => [new Date(Date.parse(`${from}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10), units]));
+  const stay = ["2027-01-10", "2027-01-11", "2027-01-12"];
+
+  it("3 noites livres entre reservas não estendem até 5: estadia curta permitida", () => {
+    expect(canExtendToMinimum(stay, 5, { ...days("2027-01-07", 10, 0), ...days("2027-01-10", 3) })).toBe(false);
+  });
+
+  it("com vaga para estender (antes ou depois), exige o mínimo", () => {
+    expect(canExtendToMinimum(stay, 5, days("2027-01-10", 5))).toBe(true); // depois
+    expect(canExtendToMinimum(stay, 5, days("2027-01-08", 5))).toBe(true); // antes
+    expect(canExtendToMinimum(stay, 5, { ...days("2027-01-09", 4), "2027-01-14": 1 })).toBe(false); // furo em 13/01
+  });
+
+  it("noite fechada não conta como extensão possível", () => {
+    expect(canExtendToMinimum(stay, 5, days("2027-01-05", 15), (n) => n !== "2027-01-13" && n !== "2027-01-09")).toBe(false);
+    expect(isOpenNight(table, "2026-12-01")).toBe(true);
+    expect(isOpenNight(table, "2027-04-10")).toBe(false); // depois da temporada cadastrada
+  });
+
+  it("merge marca cada opção como permitida ou exige_minimo", () => {
+    const withIds = priceTableSchema.parse({ ...table, units: table.units.map((u, i) => ({ ...u, pms_category_ids: [100 + i] })) });
+    const q = quoteStay(withIds, { checkin: "10/01/2027", checkout: "13/01/2027", adults: 2 }) as { atende_estadia_minima: boolean; opcoes: Array<{ acomodacao: string; pms_category_ids: number[] }> };
+    expect(q.atende_estadia_minima).toBe(false);
+    const kit = q.opcoes.find((o) => o.acomodacao === "Kitnet")!.pms_category_ids[0];
+    const apt = q.opcoes.find((o) => o.acomodacao.startsWith("Apartamentos 101"))!.pms_category_ids[0];
+    const merged = mergeAvailability(q as never, [
+      { category_id: kit, available_units: 1, nightly: { ...days("2027-01-07", 10, 0), ...days("2027-01-10", 3) } },
+      { category_id: apt, available_units: 2, nightly: days("2027-01-07", 10) },
+    ]) as { opcoes: Array<{ acomodacao: string; estadia_curta?: string }> };
+    expect(merged.opcoes.find((o) => o.acomodacao === "Kitnet")?.estadia_curta).toBe("permitida");
+    expect(merged.opcoes.find((o) => o.acomodacao.startsWith("Apartamentos 101"))?.estadia_curta).toBe("exige_minimo");
   });
 });
 

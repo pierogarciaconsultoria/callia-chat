@@ -74,6 +74,40 @@ function isoNights(checkin: Date, checkout: Date): string[] {
   return out;
 }
 
+/** Período padrão com datas próprias = tabela por temporada: fora de todos os intervalos não há tarifa. */
+function seasonBounds(table: PriceTableData): { first: string; last: string } | null {
+  const defaultRanges = table.periods.find((p) => p.id === table.default_period)?.ranges ?? [];
+  if (!defaultRanges.length) return null;
+  const all = table.periods.flatMap((p) => p.ranges);
+  return {
+    first: all.reduce((m, [s]) => (s < m ? s : m), all[0][0]),
+    last: all.reduce((m, [, e]) => (e > m ? e : m), all[0][1]),
+  };
+}
+
+/** Noite em que o hotel funciona e tem tarifa (fora de fechamentos e dentro da temporada cadastrada). */
+export function isOpenNight(table: PriceTableData, night: string): boolean {
+  if ((table.closed ?? []).some((c) => c.from <= night && night <= c.to)) return false;
+  const season = seasonBounds(table);
+  return !season || (season.first <= night && night <= season.last);
+}
+
+/**
+ * Estadia menor que o mínimo: dá para estendê-la até o mínimo com vaga em todas as noites?
+ * Se não dá, é uma janela entre reservas e a estadia curta pode ser reservada.
+ */
+export function canExtendToMinimum(nights: string[], min: number, nightly: Record<string, number>, open: (night: string) => boolean = () => true): boolean {
+  if (!nights.length || nights.length >= min) return true;
+  const day = (iso: string, d: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + d * 86_400_000).toISOString().slice(0, 10);
+  const extra = min - nights.length;
+  for (let back = extra; back >= 0; back--) {
+    const start = day(nights[0], -back);
+    const window = Array.from({ length: min }, (_, i) => day(start, i));
+    if (window.every((n) => (nightly[n] ?? 0) > 0 && open(n))) return true;
+  }
+  return false;
+}
+
 /** Período da noite: o intervalo que contém a data e começou por último; sem intervalo, o período padrão. */
 export function periodForNight(table: PriceTableData, night: string): string {
   let best: { id: string; start: string } | null = null;
@@ -127,12 +161,9 @@ export function quoteStay(table: PriceTableData, q: QuoteQuery, currency = "BRL"
     };
   }
 
-  // Período padrão com datas próprias = tabela por temporada: fora de todos os intervalos não há tarifa.
-  const defaultRanges = table.periods.find((p) => p.id === table.default_period)?.ranges ?? [];
-  if (defaultRanges.length) {
-    const all = table.periods.flatMap((p) => p.ranges);
-    const first = all.reduce((m, [s]) => (s < m ? s : m), all[0][0]);
-    const last = all.reduce((m, [, e]) => (e > m ? e : m), all[0][1]);
+  const season = seasonBounds(table);
+  if (season) {
+    const { first, last } = season;
     if (nights.some((n) => n < first || n > last)) {
       const season = `${brDate(first)} a ${brDate(last)}`;
       return {
@@ -186,6 +217,7 @@ export function quoteStay(table: PriceTableData, q: QuoteQuery, currency = "BRL"
       product_ids: unit.product_ids,
       pms_category_ids: unit.pms_category_ids ?? [],
       tarifa: row.label ?? `até ${row.guests} pessoa(s)`,
+      lugares: row.guests,
       total,
       total_formatado: formatMoney(total, currency),
       detalhamento: [...byPeriod.values()].map((b) => ({ ...b, diaria_formatada: formatMoney(b.diaria, currency), subtotal_formatado: formatMoney(b.subtotal, currency) })),
@@ -210,17 +242,28 @@ export function quoteStay(table: PriceTableData, q: QuoteQuery, currency = "BRL"
   };
 }
 
-interface PmsRoom { category_id?: number | null; available_units: number | null }
+interface PmsRoom { category_id?: number | null; available_units: number | null; nightly?: Record<string, number> }
 type TableQuote = ReturnType<typeof quoteStay>;
 
 /**
  * Vaga pelo PMS, preço pela tabela: cada opção da tabela recebe as unidades livres das suas categorias.
  * Opções sem categoria vinculada ficam como "não verificadas" (o hóspede confirma no link).
  */
-export function mergeAvailability(quote: TableQuote, rooms: PmsRoom[]) {
+export function mergeAvailability(quote: TableQuote, rooms: PmsRoom[], opts: { open?: (night: string) => boolean } = {}) {
   const opcoes = (quote as { opcoes?: Array<{ acomodacao: string; pms_category_ids?: number[] }> }).opcoes ?? [];
   const free = new Map<number, number>();
   for (const r of rooms) if (r.category_id) free.set(r.category_id, (free.get(r.category_id) ?? 0) + Math.max(0, r.available_units ?? 1));
+  // Estadia abaixo do mínimo: permitida só quando é a janela livre entre reservas (não dá para estender).
+  const q = quote as { atende_estadia_minima?: boolean; estadia_minima?: number; checkin?: string; checkout?: string };
+  const ci = q.checkin ? toDate(q.checkin) : null;
+  const co = q.checkout ? toDate(q.checkout) : null;
+  const stay = q.atende_estadia_minima === false && ci && co ? isoNights(ci, co) : [];
+  const shortStay = (ids: number[]) => {
+    const withNightly = rooms.filter((r) => r.category_id && ids.includes(r.category_id) && r.nightly);
+    if (!stay.length || !withNightly.length) return {};
+    const extendable = withNightly.some((r) => canExtendToMinimum(stay, q.estadia_minima ?? 1, r.nightly!, opts.open));
+    return { estadia_curta: extendable ? "exige_minimo" : "permitida" };
+  };
   const disponiveis = [];
   const sem_vaga: string[] = [];
   const nao_verificadas = [];
@@ -230,7 +273,7 @@ export function mergeAvailability(quote: TableQuote, rooms: PmsRoom[]) {
       continue;
     }
     const units = ids.reduce((sum, id) => sum + (free.get(id) ?? 0), 0);
-    if (units > 0) disponiveis.push({ ...o, unidades_disponiveis: units });
+    if (units > 0) disponiveis.push({ ...o, unidades_disponiveis: units, ...shortStay(ids) });
     else sem_vaga.push(o.acomodacao);
   }
   return {
@@ -243,6 +286,26 @@ export function mergeAvailability(quote: TableQuote, rooms: PmsRoom[]) {
       ? "Vaga confirmada agora no sistema do hotel para as opcoes listadas; valores da tabela de preços oficial (informe exatamente como estão). As acomodações em sem_vaga estão lotadas nessas datas."
       : "Nenhuma acomodação que comporta o grupo tem vaga nessas datas no sistema do hotel. Informe isso e sugira outras datas.",
   };
+}
+
+/**
+ * Orçamento do tamanho do grupo: esconde acomodações cuja tarifa é para mais de 1 pessoa além do grupo
+ * (ex.: casal não recebe o apartamento para 7). Se nenhuma do tamanho certo sobrar (lotadas), mantém as maiores.
+ */
+export function fitToGroup<T>(result: T): T {
+  const r = result as { hospedes?: number; opcoes?: Array<{ acomodacao: string; lugares?: number }>; nao_verificadas?: Array<{ acomodacao: string; lugares?: number }> } | null;
+  const guests = r?.hospedes;
+  if (!r || !guests) return result;
+  const fits = (o: { lugares?: number }) => o.lugares === undefined || o.lugares <= guests + 1;
+  const all = [...(r.opcoes ?? []), ...(r.nao_verificadas ?? [])];
+  if (!all.some(fits) || all.every(fits)) return result;
+  const bigger = all.filter((o) => !fits(o)).map((o) => o.acomodacao);
+  return {
+    ...r,
+    ...(r.opcoes ? { opcoes: r.opcoes.filter(fits) } : {}),
+    ...(r.nao_verificadas ? { nao_verificadas: r.nao_verificadas.filter(fits) } : {}),
+    maiores_que_o_grupo: bigger,
+  } as T;
 }
 
 /** Tira os ids de categoria do PMS do resultado mostrado à IA (só servem para o cruzamento). */

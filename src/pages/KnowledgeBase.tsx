@@ -11,6 +11,7 @@ import { formatDateTime, formatMoney } from "@/lib/format";
 import { KNOWLEDGE_ACCEPT, uploadKnowledgeDocument } from "@/lib/knowledge-upload";
 import { useQueryClient } from "@tanstack/react-query";
 import { sourcesKey } from "@/hooks/use-knowledge";
+import { supabase } from "@/lib/supabase";
 import { invalidateEntitlements } from "@/hooks/use-entitlements";
 import type { Faq, KnowledgeSource, Product } from "@/lib/database.types";
 import {
@@ -208,8 +209,10 @@ function DocsTab() {
   const toast = useToast();
   const sources = useKnowledgeSources(workspaceId);
   const actions = useKnowledgeActions(workspaceId);
-  const [dialog, setDialog] = useState<"text" | "url" | null>(null);
+  const [dialog, setDialog] = useState<"text" | "url" | "edit" | null>(null);
   const [draft, setDraft] = useState({ title: "", content: "", url: "" });
+  const [editing, setEditing] = useState<KnowledgeSource | null>(null);
+  const [loadingContent, setLoadingContent] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const qc = useQueryClient();
@@ -231,14 +234,41 @@ function DocsTab() {
     }
   }
 
+  function closeDialog() {
+    setDialog(null);
+    if (editing) {
+      setEditing(null);
+      setDraft({ title: "", content: "", url: "" });
+    }
+  }
+
+  // O conteúdo não vem na lista (pode ser grande): busca só ao abrir a edição.
+  async function openEdit(source: KnowledgeSource) {
+    setEditing(source);
+    setDraft({ title: source.title, content: "", url: "" });
+    setDialog("edit");
+    setLoadingContent(true);
+    const { data, error } = await supabase.from("knowledge_sources").select("content").eq("id", source.id).single();
+    setLoadingContent(false);
+    if (error) {
+      toast.error(error);
+      closeDialog();
+      return;
+    }
+    setDraft({ title: source.title, content: (data as { content: string | null }).content ?? "", url: "" });
+  }
+
   async function submitDialog(e: FormEvent) {
     e.preventDefault();
     const ok =
-      dialog === "text"
+      dialog === "edit" && editing
+        ? await run({ action: "update_text", source_id: editing.id, title: draft.title.trim(), content: draft.content }, "Texto atualizado; reindexando.")
+        : dialog === "text"
         ? await run({ action: "create_text", workspace_id: workspaceId, title: draft.title.trim(), content: draft.content }, "Texto adicionado.")
         : await run({ action: "create_url", workspace_id: workspaceId, url: draft.url.trim(), title: draft.title.trim() || undefined }, "URL adicionada para indexação.");
     if (ok) {
       setDialog(null);
+      setEditing(null);
       setDraft({ title: "", content: "", url: "" });
     }
   }
@@ -329,6 +359,11 @@ function DocsTab() {
                   <TD className="whitespace-nowrap">{formatDateTime(s.indexed_at ?? s.updated_at)}</TD>
                   <TD className="text-right">
                     <div className="flex justify-end gap-1">
+                      {s.kind === "text" && (
+                        <Button size="sm" variant="ghost" aria-label="Editar" title="Editar texto" onClick={() => void openEdit(s)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      )}
                       {/* Fixa: a IA lê sempre esta fonte (tabela de preços, políticas), sem depender da busca. */}
                       <Button
                         size="sm"
@@ -363,13 +398,13 @@ function DocsTab() {
 
       <Modal
         open={dialog !== null}
-        onClose={() => setDialog(null)}
-        title={dialog === "text" ? "Adicionar texto" : "Adicionar página web"}
-        size={dialog === "text" ? "lg" : "md"}
+        onClose={closeDialog}
+        title={dialog === "edit" ? "Editar texto" : dialog === "text" ? "Adicionar texto" : "Adicionar página web"}
+        size={dialog === "url" ? "md" : "lg"}
         footer={
           <>
-            <Button variant="secondary" onClick={() => setDialog(null)}>Cancelar</Button>
-            <Button type="submit" form="source-form" loading={actions.isPending}>Adicionar</Button>
+            <Button variant="secondary" onClick={closeDialog}>Cancelar</Button>
+            <Button type="submit" form="source-form" loading={actions.isPending} disabled={loadingContent}>{dialog === "edit" ? "Salvar" : "Adicionar"}</Button>
           </>
         }
       >
@@ -379,12 +414,17 @@ function DocsTab() {
           )}
           <Input
             label={dialog === "url" ? "Título (opcional)" : "Título"}
-            required={dialog === "text"}
+            required={dialog !== "url"}
             value={draft.title}
             onChange={(e) => setDraft({ ...draft, title: e.target.value })}
           />
-          {dialog === "text" && (
-            <Textarea label="Conteúdo" rows={12} required value={draft.content} onChange={(e) => setDraft({ ...draft, content: e.target.value })} />
+          {dialog === "edit" && editing?.metadata?.pinned && (
+            <Notice>Fixado no agente: a IA lê este texto sempre (máx. 12 mil caracteres). Ao salvar, os trechos são reindexados.</Notice>
+          )}
+          {dialog !== "url" && (
+            loadingContent
+              ? <div className="flex justify-center py-8"><Spinner /></div>
+              : <Textarea label="Conteúdo" rows={dialog === "edit" ? 18 : 12} required value={draft.content} onChange={(e) => setDraft({ ...draft, content: e.target.value })} />
           )}
         </form>
       </Modal>

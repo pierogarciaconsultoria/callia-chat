@@ -271,11 +271,19 @@ export async function fetchHospedinAvailability(
   const fitting = (wanted ? placeTypes.filter((p) => wanted.has(Number(p.id))) : placeTypes.filter((p) => !p.occupants || p.occupants >= guests)).slice(0, 12);
   const unit = cfg.price_unit ?? "reais";
 
+  // Entorno da estadia (estadia mínima): nunca antes de hoje.
+  const around = Math.min(10, Math.max(0, Math.trunc(query.aroundNights ?? 0)));
+  const shift = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+  const todayIso = (opts.today ?? new Date()).toISOString().slice(0, 10);
+  const begin = around ? [shift(nights[0], -around), todayIso].sort()[1] : nights[0];
+  const end = around ? shift(nights[nights.length - 1], around) : nights[nights.length - 1];
+
   const rooms: HbookRoom[] = [];
   await Promise.all(fitting.map(async (p) => {
-    const rates = await client.rates(cfg.account_id, p.id, nights[0], nights[nights.length - 1]).catch(() => null);
+    const rates = await client.rates(cfg.account_id, p.id, begin, end).catch(() => null);
     const quote = rates ? quoteStay(rates, nights, unit) : null;
-    if (quote) rooms.push({ name: p.title, category_id: Number(p.id), rate: null, capacity: p.occupants ?? null, ...quote });
+    const nightly = around && rates ? Object.fromEntries(rates.map((r) => [String(r.date).slice(0, 10), Math.max(0, Number(r.availability ?? 0))])) : null;
+    if (quote) rooms.push({ name: p.title, category_id: Number(p.id), rate: null, capacity: p.occupants ?? null, ...quote, ...(nightly ? { nightly } : {}) });
   }));
   rooms.sort((a, b) => a.total_price - b.total_price);
 

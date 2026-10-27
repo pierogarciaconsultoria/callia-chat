@@ -135,6 +135,22 @@ Deno.serve(createHandler("knowledge-index", async ({ req, correlationId }) => {
     await audit(db, { workspace_id: source.workspace_id, actor_user_id: user.id, action: pinned ? "knowledge.source.pinned" : "knowledge.source.unpinned", entity: "knowledge_source", entity_id: source.id, correlation_id: correlationId });
     return json({ source: data });
   }
+  if (body.action === "update_text") {
+    // Edita título e conteúdo de um texto livre e reindexa (trechos e embeddings refeitos).
+    if (source.kind !== "text") throw new RuntimeError("conflict", "Só textos podem ser editados; para outras fontes, reindexe ou envie de novo.");
+    assertActive(await loadEntitlements(db, source.workspace_id));
+    const content = body.content?.trim() ?? "";
+    if (!title()) throw new RuntimeError("invalid_request", "Título obrigatório.");
+    if (content.length < 20) throw new RuntimeError("invalid_request", "Texto muito curto (mínimo 20 caracteres).");
+    if (content.length > MAX_TEXT) throw new RuntimeError("invalid_request", "Texto acima de 400 mil caracteres.");
+    if (source.metadata?.pinned && content.length > 12_000) throw new RuntimeError("unprocessable", "Fonte fixada no agente: máx. 12 mil caracteres. Resuma o texto ou desafixe antes.");
+    const { data, error } = await db.from("knowledge_sources").update({ title: title(), content, status: "pending", error: null, updated_at: new Date().toISOString() })
+      .eq("id", source.id).select(SOURCE_COLUMNS).single();
+    if (error) throw new RuntimeError("internal_error", "Falha ao salvar o texto.", { db: error.message });
+    runInBackground(indexSource(db, source.id));
+    await audit(db, { workspace_id: source.workspace_id, actor_user_id: user.id, action: "knowledge.source.updated", entity: "knowledge_source", entity_id: source.id, details: { kind: "text", chars: content.length }, correlation_id: correlationId });
+    return json({ source: data });
+  }
   if (body.action === "reindex") {
     assertActive(await loadEntitlements(db, source.workspace_id));
     if (source.kind === "faq" || source.kind === "product") throw new RuntimeError("conflict", "FAQ e produtos são reindexados ao editar.");
