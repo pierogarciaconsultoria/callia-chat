@@ -114,6 +114,26 @@ export function forAi(result: unknown): unknown {
   }) };
 }
 
+const WANTS_LINK = /\blink\b|\breservar\b|\bfechar\b|\bfecho\b|\bquero (esse|essa|este|esta|o |a |reservar|fechar)|\bpode (reservar|marcar|fechar)|\bvamos fechar|\bgarantir\b|\bconfirmar a reserva/i;
+const SHORT_YES = /^\s*(sim|pode|pode ser|ok|okay|claro|quero|isso|por favor|manda|envia|pode mandar|pode enviar)\b[\s!.]*$/i;
+
+/** O hóspede pediu o link ou quer reservar, ou disse "sim" logo depois de a IA oferecer o link. */
+export function wantsBookingLink(history: Array<Pick<HistoryItem, "direction" | "content">>, pendingText: string): boolean {
+  if (WANTS_LINK.test(pendingText)) return true;
+  const lastOut = [...history].reverse().find((h) => h.direction === "outbound")?.content ?? "";
+  return SHORT_YES.test(pendingText) && /\blink\b|reservar/i.test(lastOut);
+}
+
+/**
+ * Primeira apresentação de valores: o link de reserva sai da resposta (a IA o mandava junto do orçamento,
+ * o que o hotel achou agressivo). Volta quando o hóspede quiser reservar ou pedir o link.
+ */
+export function trimEarlyLink(text: string, urls: string[]): string {
+  if (!urls.length) return text;
+  const lines = text.split("\n").filter((line) => !urls.some((u) => line.includes(u)));
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 /** A resposta traz um valor em reais (R$ 600,00 / 600 reais). */
 export function quotesPrice(text: string): boolean {
   return /R\$\s?\d|\b\d{1,3}(\.\d{3})+,\d{2}\b|\b\d+\s*reais\b/i.test(text);
@@ -449,8 +469,17 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
   const stayContext = () => mentionsStayDates(customerText) || outcome.toolCalls.some((t) => (actionTools as string[]).includes(t.name));
   const claimsUnconfirmed = (text: string) => stayContext() && !availabilityConfirmed() && claimsAvailability(text);
   let claimNudged = false;
+  // Links de reserva devolvidos pelas ferramentas nesta rodada (link_reserva / booking_link).
+  const bookingUrls = () =>
+    outcome.toolCalls.flatMap((t) => {
+      const r = t.result as { link_reserva?: unknown; booking_link?: unknown; valores_tabela?: { link_reserva?: unknown } } | null;
+      return [r?.link_reserva, r?.booking_link, r?.valores_tabela?.link_reserva].filter((u): u is string => typeof u === "string" && u.length > 0);
+    });
+  const quotedThisRound = () => outcome.toolCalls.some((t) => (actionTools as string[]).includes(t.name));
+  const withoutEarlyLink = (text: string) =>
+    quotedThisRound() && !wantsBookingLink(input.history, input.pendingText) ? trimEarlyLink(text, bookingUrls()) || text : text;
   const finalize = (text: string) => {
-    if (availabilityConfirmed()) return text;
+    if (availabilityConfirmed()) return withoutEarlyLink(text);
     let out = claimsUnconfirmed(text) ? stripAvailabilityClaims(text) : text;
     // PIX com pré-reserva: o endereço da pré-reserva sempre aparece (a IA às vezes manda "pelo mesmo link" do cartão).
     const pre = deps.paymentInfo?.pre_reservation_url?.trim();
@@ -459,7 +488,7 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
     }
     const pix = deps.paymentInfo?.pix_key?.trim();
     if (pix && out.includes(pix) && !out.includes(PIX_AVAILABILITY_WARNING)) out = `${out}\n\n${PIX_AVAILABILITY_WARNING}`;
-    return out;
+    return withoutEarlyLink(out);
   };
 
   try {

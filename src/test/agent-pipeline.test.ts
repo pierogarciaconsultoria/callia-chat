@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AiProvider, ChatResult } from "../../supabase/functions/_shared/ai.ts";
 import type { AgentConfig, KnowledgeHit } from "../../supabase/functions/_shared/agent-core.ts";
-import { childrenAddressed, claimsAvailability, mentionsGuests, PAYMENT_PROOF_REPLY, UNINTELLIGIBLE_AUDIO_REPLY, mentionsStayDates, type PipelineDeps, type PipelineInput, promisesAction, promisesPhotos, runAgentPipeline, stripAvailabilityClaims, stripPhotoPromise } from "../../supabase/functions/_shared/agent-pipeline.ts";
+import { childrenAddressed, claimsAvailability, mentionsGuests, PAYMENT_PROOF_REPLY, UNINTELLIGIBLE_AUDIO_REPLY, mentionsStayDates, trimEarlyLink, wantsBookingLink, type PipelineDeps, type PipelineInput, promisesAction, promisesPhotos, runAgentPipeline, stripAvailabilityClaims, stripPhotoPromise } from "../../supabase/functions/_shared/agent-pipeline.ts";
 import { callExternalAgent, ExternalAgentError, resolveExternalSecret } from "../../supabase/functions/_shared/external-agent.ts";
 
 const config: AgentConfig = {
@@ -402,6 +402,26 @@ describe("pipeline do agente", () => {
     expect(second.messages.some((m) => typeof m.content === "string" && m.content.includes("sem consultar a ferramenta"))).toBe(true);
     expect(out.toolCalls.map((t: { name: string }) => t.name)).toEqual(["calcular_valor"]);
     expect(out.reply).toContain("R$ 9.000,00");
+  });
+
+  it("link de reserva sai do primeiro orçamento e volta quando o hóspede quer reservar", async () => {
+    const link = "https://hbook.example/Booking?checkin=10%2F01%2F2027";
+    const quote = vi.fn(() => ({ hospedes: 2, opcoes: [{ acomodacao: "Kitnet", lugares: 2, total: 2100 }], link_reserva: link }));
+    const reply = `Para 10 a 15/01, a Kitnet sai R$ 2.100,00.\n\nReservar aqui: ${link}\n\nAlguma dúvida?`;
+    const run = async (text: string, history: PipelineInput["history"] = []) => {
+      const ai = fakeAi([
+        { toolCalls: [{ id: "t1", type: "function", function: { name: "calcular_valor", arguments: '{"checkin":"10/01/2027","checkout":"15/01/2027","adultos":2}' } }] },
+        { content: reply },
+      ]);
+      return (await runAgentPipeline({ ...input(text), history }, deps({ ai, priceTable: { quote } } as never))).reply;
+    };
+    expect(await run("valores para um casal de 10 a 15/01/2027")).toBe("Para 10 a 15/01, a Kitnet sai R$ 2.100,00.\n\nAlguma dúvida?");
+    expect(await run("quero reservar a kitnet de 10 a 15/01/2027, somos um casal")).toBe(reply);
+    const offered = [{ direction: "outbound" as const, sender: "bot" as const, type: "text", content: "Quer que eu envie o link para reservar?", created_at: "2026-10-25T15:00:00Z" }];
+    expect(await run("sim", offered)).toBe(reply);
+    expect(wantsBookingLink([], "pode me mandar o link?")).toBe(true);
+    expect(wantsBookingLink([], "e para 3 pessoas?")).toBe(false);
+    expect(trimEarlyLink("Só texto, sem link.", [link])).toBe("Só texto, sem link.");
   });
 
   it("grupo que nenhuma acomodação da tabela comporta: responde pela tabela, sem o Hospedin cru", async () => {

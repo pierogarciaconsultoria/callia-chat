@@ -50,7 +50,8 @@ describe("tabela de preços: texto para o prompt gerado da estrutura", () => {
     expect(text).toContain("- Baixa temporada: 30/11/2026 a 20/12/2026 (mínimo de 5 diárias)");
     expect(text).toContain("Noites fora de todos os períodos acima não têm valor cadastrado");
     expect(text).toContain("Fechado (não cote nem ofereça reserva): Inverno, 21/06/2027 a 22/09/2027.");
-    expect(text).toContain("- Apartamentos 101 a 104 (até 4 pessoas):");
+    // Capacidade com a ressalva da criança explícita (a IA resumia "até 4 pessoas").
+    expect(text).toContain("- Apartamentos 101 a 104: até 3 pessoas, ou 3 adultos + 1 criança de até 5 anos:");
     // Tarifas em ordem de pessoas, regra de idade explícita, diária por período.
     expect(text.indexOf("- 2 pessoas:")).toBeLessThan(text.indexOf("- 3 pessoas:"));
     // formatMoney usa espaço fixo (NBSP) depois de "R$".

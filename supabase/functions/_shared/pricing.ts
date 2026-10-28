@@ -266,7 +266,11 @@ export function priceTableSummary(table: PriceTableData, currency = "BRL"): stri
 
   lines.push("Acomodações e capacidade (crianças contam para a capacidade; só as tarifas com regra de idade tratam criança diferente de adulto):");
   for (const u of table.units) {
-    lines.push(`- ${u.name} (até ${u.max_guests} pessoa${u.max_guests > 1 ? "s" : ""}):`);
+    // Capacidade: a maior tarifa sem regra de idade; as com regra viram "ou 3 adultos + 1 criança de até 5 anos".
+    const plain = u.rates.filter((r) => !r.max_adults).map((r) => r.guests);
+    const base = plain.length ? Math.max(...plain) : u.max_guests;
+    const withKids = u.rates.filter((r) => r.max_adults).map((r) => r.label ?? `${r.max_adults} adultos + ${r.guests - r.max_adults!} criança(s) de até ${r.child_max_age ?? 17} anos`);
+    lines.push(`- ${u.name}: até ${base} pessoa${base > 1 ? "s" : ""}${withKids.length ? `, ou ${withKids.join(", ou ")}` : ""}:`);
     for (const r of [...u.rates].sort((a, b) => a.guests - b.guests)) {
       const rule = r.max_adults ? ` [até ${r.max_adults} adulto${r.max_adults > 1 ? "s" : ""}; criança de até ${r.child_max_age ?? 17} anos; a partir disso conta como adulto]` : "";
       const prices = table.periods.filter((p) => r.prices[p.id] !== undefined).map((p) => `${p.name} ${money(r.prices[p.id])}`).join(" | ");
