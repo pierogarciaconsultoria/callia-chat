@@ -12,7 +12,7 @@ import { searchKnowledge } from "./knowledge.ts";
 import { type Entitlements, hasFeature } from "./entitlements.ts";
 import { photoGroups } from "./media.ts";
 import { pdfToText } from "./pdf.ts";
-import { isOpenNight, priceTableSchema, quoteStay, withDeposit } from "./pricing.ts";
+import { isOpenNight, priceTableSchema, priceTableSummary, quoteStay, withDeposit } from "./pricing.ts";
 import type { PaymentInfo } from "./agent-core.ts";
 import type { Db } from "./supabase.ts";
 
@@ -91,6 +91,7 @@ export async function buildPipelineDeps(
     checkAvailability: availability?.fn,
     photos: await loadPhotos(db, args.workspaceId),
     pinnedKnowledge: await loadPinnedKnowledge(db, args.workspaceId),
+    policies: await loadPolicies(db, args.workspaceId),
     ...(await (async () => {
       const paymentInfo = await loadPaymentInfo(db, args.workspaceId);
       return { paymentInfo, priceTable: await loadPriceTable(db, args.workspaceId, paymentInfo?.deposit_percent ?? null) };
@@ -137,7 +138,15 @@ async function loadPriceTable(db: Db, workspaceId: string, depositPercent: numbe
       return link ? { ...result, link_reserva: link } : result;
     },
     isOpen: (night) => isOpenNight(parsed.data, night),
+    summary: priceTableSummary(parsed.data, data.currency ?? "BRL"),
   };
+}
+
+/** Políticas e informações oficiais da empresa (ativas, na ordem da tela). */
+async function loadPolicies(db: Db, workspaceId: string): Promise<Array<{ topic: string; title: string; content: string }>> {
+  const { data } = await db.from("workspace_policies").select("topic, title, content").eq("workspace_id", workspaceId)
+    .eq("active", true).order("position").order("created_at").limit(60);
+  return (data ?? []) as Array<{ topic: string; title: string; content: string }>;
 }
 
 /** Fontes marcadas como fixas no agente (metadata.pinned): tabela de preços, políticas. */

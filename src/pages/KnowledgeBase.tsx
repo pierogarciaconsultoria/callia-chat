@@ -2,6 +2,7 @@ import { useRef, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMedia } from "@/hooks/use-media";
 import { PriceTableCard } from "@/components/PriceTableCard";
+import { PoliciesCard } from "@/components/PoliciesCard";
 import { PhotosTab } from "@/components/media/PhotosTab";
 import { BookOpen, FileUp, Globe, Package, Pencil, Pin, PinOff, Plus, RefreshCw, Search, Sparkles, Trash2, Type } from "lucide-react";
 import { useRequiredWorkspace } from "@/lib/workspace";
@@ -50,8 +51,8 @@ import {
   useToast,
 } from "@/components/ui";
 
-type Tab = "faq" | "docs" | "catalog" | "fotos" | "search";
-const TAB_IDS: Tab[] = ["faq", "docs", "catalog", "fotos", "search"];
+type Tab = "faq" | "politicas" | "docs" | "catalog" | "fotos" | "search";
+const TAB_IDS: Tab[] = ["faq", "politicas", "docs", "catalog", "fotos", "search"];
 
 export default function KnowledgeBase() {
   // A aba fica na URL (?tab=fotos) para poder ser linkada.
@@ -79,6 +80,7 @@ export default function KnowledgeBase() {
         onChange={setTab}
         tabs={[
           { id: "faq", label: "Perguntas e respostas" },
+          { id: "politicas", label: "Políticas" },
           { id: "docs", label: "Documentos e textos" },
           { id: "catalog", label: "Catálogo" },
           { id: "fotos", label: "Fotos" },
@@ -86,6 +88,7 @@ export default function KnowledgeBase() {
         ]}
       />
       {tab === "faq" && <FaqTab />}
+      {tab === "politicas" && <PoliciesTab />}
       {tab === "docs" && <DocsTab />}
       {tab === "catalog" && <CatalogTab />}
       {tab === "fotos" && <PhotosTab />}
@@ -185,6 +188,11 @@ function FaqTab() {
       </Modal>
     </Card>
   );
+}
+
+function PoliciesTab() {
+  const { workspaceId } = useRequiredWorkspace();
+  return <PoliciesCard workspaceId={workspaceId} />;
 }
 
 // ---------------------------------------------------------------- Documentos

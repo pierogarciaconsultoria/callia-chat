@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { canExtendToMinimum, fitToGroup, isOpenNight, mergeAvailability, periodForNight, priceTableSchema, quoteStay } from "../../supabase/functions/_shared/pricing.ts";
+import { canExtendToMinimum, fitToGroup, isOpenNight, mergeAvailability, periodForNight, priceTableSchema, priceTableSummary, quoteStay } from "../../supabase/functions/_shared/pricing.ts";
 
 const table = priceTableSchema.parse(JSON.parse(readFileSync("scripts/data/morada-price-table.json", "utf8")));
 const best = (q: Parameters<typeof quoteStay>[1]) => {
@@ -24,6 +24,39 @@ describe("tabela de preços: período de cada noite", () => {
     expect(periodForNight(table, "2026-11-10")).toBe("baixa");
     expect(periodForNight(table, "2027-02-05")).toBe("baixa");
     expect(periodForNight(table, "2027-04-15")).toBe("baixa");
+  });
+});
+
+describe("tabela de preços: texto para o prompt gerado da estrutura", () => {
+  it("lista períodos com mínimo, fechamentos, capacidade com regra de idade e diárias por período", () => {
+    const t = priceTableSchema.parse({
+      default_period: "baixa",
+      periods: [
+        { id: "baixa", name: "Baixa temporada", min_nights: 5, ranges: [["2026-11-30", "2026-12-20"]] },
+        { id: "alta", name: "Alta temporada", min_nights: 5, ranges: [["2027-01-04", "2027-02-04"]] },
+      ],
+      units: [{
+        name: "Apartamentos 101 a 104", product_ids: [], pms_category_ids: [274], max_guests: 4,
+        rates: [
+          { guests: 3, label: "3 pessoas", prices: { baixa: 440, alta: 600 } },
+          { guests: 4, label: "3 adultos + 1 criança de até 5 anos", max_adults: 3, child_max_age: 5, prices: { baixa: 440, alta: 600 } },
+          { guests: 2, label: "2 pessoas", prices: { baixa: 400, alta: 550 } },
+        ],
+      }],
+      notes: ["Páscoa: 3 diárias."],
+      closed: [{ name: "Inverno", from: "2027-06-21", to: "2027-09-22" }],
+    });
+    const text = priceTableSummary(t);
+    expect(text).toContain("- Baixa temporada: 30/11/2026 a 20/12/2026 (mínimo de 5 diárias)");
+    expect(text).toContain("Noites fora de todos os períodos acima não têm valor cadastrado");
+    expect(text).toContain("Fechado (não cote nem ofereça reserva): Inverno, 21/06/2027 a 22/09/2027.");
+    expect(text).toContain("- Apartamentos 101 a 104 (até 4 pessoas):");
+    // Tarifas em ordem de pessoas, regra de idade explícita, diária por período.
+    expect(text.indexOf("- 2 pessoas:")).toBeLessThan(text.indexOf("- 3 pessoas:"));
+    // formatMoney usa espaço fixo (NBSP) depois de "R$".
+    expect(text).toMatch(/- 3 adultos \+ 1 criança de até 5 anos \[até 3 adultos; criança de até 5 anos; a partir disso conta como adulto\]: Baixa temporada R\$\s440,00 \| Alta temporada R\$\s600,00/);
+    expect(text).toContain("Observações: Páscoa: 3 diárias.");
+    expect(text).not.toMatch(/R\$\s[\d.]+,\d{2}[^\n]*\btotal\b/i); // nenhum total calculado no texto: só pela ferramenta
   });
 });
 

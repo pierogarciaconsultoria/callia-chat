@@ -361,6 +361,10 @@ describe("pipeline do agente", () => {
     expect(result.opcoes).toEqual([{ acomodacao: "Apartamentos 205 e 206", total: 5000, unidades_disponiveis: 1 }]);
     expect(result.sem_vaga).toEqual(["Kitnet"]);
     expect(out.reply).toBe("Temos o 205 disponível: R$ 5.000,00.");
+    // A contagem de unidades fica no registro, mas não vai para a IA (ela a repetia ao hóspede).
+    const toolMsg = (ai.calls[1] as { messages: Array<{ role: string; content: string }> }).messages.find((m) => m.role === "tool")!;
+    expect(toolMsg.content).not.toContain("unidades_disponiveis");
+    expect(toolMsg.content).toContain("\"disponibilidade_confirmada\":true");
   });
 
   it("acomodação pedida não comporta o grupo: cota as que comportam e diz que não cabe (não que está sem vaga)", async () => {

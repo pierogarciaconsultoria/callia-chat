@@ -349,6 +349,19 @@ export interface AgentRun {
   finished_at: string | null;
 }
 
+/** Política ou informação oficial da empresa (workspace_policies): sempre no prompt do agente. */
+export interface Policy {
+  id: string;
+  workspace_id: string;
+  topic: string;
+  title: string;
+  content: string;
+  active: boolean;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Faq {
   id: string;
   workspace_id: string;

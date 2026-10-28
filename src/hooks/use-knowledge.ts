@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { invokeFunction, unwrap } from "@/lib/functions";
-import type { Faq, KnowledgeSource, Product, SearchResult } from "@/lib/database.types";
+import type { Faq, KnowledgeSource, Policy, Product, SearchResult } from "@/lib/database.types";
 import { invalidateEntitlements } from "./use-entitlements";
 
 export const faqsKey = (ws: string) => ["faqs", ws] as const;
 export const productsKey = (ws: string) => ["products", ws] as const;
+export const policiesKey = (ws: string) => ["policies", ws] as const;
 export const sourcesKey = (ws: string) => ["knowledge_sources", ws] as const;
 
 export function useFaqs(workspaceId: string) {
@@ -15,6 +16,16 @@ export function useFaqs(workspaceId: string) {
       unwrap(
         await supabase.from("faqs").select("*").eq("workspace_id", workspaceId).order("position").order("created_at"),
       ) as Faq[],
+  });
+}
+
+export function usePolicies(workspaceId: string) {
+  return useQuery({
+    queryKey: policiesKey(workspaceId),
+    queryFn: async () =>
+      unwrap(
+        await supabase.from("workspace_policies").select("*").eq("workspace_id", workspaceId).order("position").order("created_at"),
+      ) as Policy[],
   });
 }
 
@@ -44,9 +55,9 @@ export function useKnowledgeSources(workspaceId: string, pollMs = 4000) {
 }
 
 // Mutação genérica para tabelas simples com RLS (faqs, products).
-export function useTableCrud<T extends { id: string }>(table: "faqs" | "products", workspaceId: string) {
+export function useTableCrud<T extends { id: string }>(table: "faqs" | "products" | "workspace_policies", workspaceId: string) {
   const qc = useQueryClient();
-  const key = table === "faqs" ? faqsKey(workspaceId) : productsKey(workspaceId);
+  const key = table === "faqs" ? faqsKey(workspaceId) : table === "products" ? productsKey(workspaceId) : policiesKey(workspaceId);
   const invalidate = () => {
     void qc.invalidateQueries({ queryKey: key });
     void qc.invalidateQueries({ queryKey: sourcesKey(workspaceId) });

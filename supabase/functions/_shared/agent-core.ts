@@ -186,8 +186,12 @@ export interface PromptContext {
   photoAlbums?: Array<{ name: string; count: number }>;
   /** Fontes marcadas como "fixas no agente" (tabela de preços, políticas): entram sempre no prompt. */
   pinnedKnowledge?: Array<{ title: string; content: string }>;
+  /** Políticas e informações oficiais da empresa (workspace_policies): sempre no prompt. */
+  policies?: Array<{ topic: string; title: string; content: string }>;
   /** Há tabela de preços estruturada (ferramenta calcular_valor). */
   hasPriceTable?: boolean;
+  /** Texto gerado da tabela de preços (períodos, fechamentos, capacidade, diárias). */
+  priceTableText?: string | null;
   /** Dados de pagamento da empresa (só quando o dono habilitou o compartilhamento). */
   paymentInfo?: PaymentInfo | null;
 }
@@ -271,10 +275,16 @@ export function buildSystemPrompt(ctx: PromptContext): string {
     );
   }
 
-  if (ctx.pinnedKnowledge?.length) {
-    let budget = 12_000;
+  // Fatos oficiais, cada um de um só lugar: políticas (registros), tabela de preços (gerada da estrutura) e fontes fixas.
+  const official: Array<{ title: string; content: string }> = [
+    ...(ctx.policies ?? []).map((p) => ({ title: p.title, content: p.content })),
+    ...(ctx.priceTableText?.trim() ? [{ title: "Tabela de preços (oficial)", content: ctx.priceTableText }] : []),
+    ...(ctx.pinnedKnowledge ?? []),
+  ];
+  if (official.length) {
+    let budget = 14_000;
     const blocks: string[] = [];
-    for (const k of ctx.pinnedKnowledge) {
+    for (const k of official) {
       if (budget <= 0) break;
       const body = k.content.trim().slice(0, budget);
       budget -= body.length;
@@ -356,7 +366,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
         "- Quando o hóspede quiser reservar (escolheu uma opção, disse que quer fechar ou pediu o link), envie o link de reserva do resultado (link_reserva ou booking_link). Na primeira apresentação dos valores, não mande o link: pergunte se gostou das opções ou se tem alguma dúvida.",
         ...(ctx.hasPriceTable
           ? [
-            "- Quando o resultado trouxer disponibilidade_confirmada, há vaga confirmada só para as opcoes listadas (unidades_disponiveis); as de sem_vaga estão lotadas nessas datas. Informe os valores dessas opções exatamente como vieram. Não cite ao hóspede quantas unidades estão livres.",
+            "- Quando o resultado trouxer disponibilidade_confirmada, há vaga confirmada só para as opcoes listadas; as de sem_vaga estão lotadas nessas datas. Informe os valores dessas opções exatamente como vieram.",
             "- Ter vaga não é ter reserva: nunca diga que a reserva está confirmada ou garantida. Ela só existe depois que o hóspede conclui pelo link de reserva (ou a equipe confirma o pagamento).",
             "- Se a consulta falhar, use os valores_tabela do resultado; o link_reserva confirma a vaga quando o hóspede quiser reservar.",
           ]

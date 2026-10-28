@@ -92,4 +92,18 @@ describe("pagamento no prompt", () => {
   it("com percentual de sinal, manda usar o valor calculado", () => {
     expect(prompt({ ...pay, deposit_percent: 30 })).toContain("Sinal para garantir a reserva: 30% do total");
   });
+
+  it("políticas e tabela gerada entram nas informações oficiais fixas, antes das fontes fixas", () => {
+    const p = buildSystemPrompt({
+      config: base, businessName: "Morada", now: new Date(), withinHours: null, knowledge: [], products: [], contactName: null, hasAvailabilityTool: false,
+      policies: [{ topic: "checkin", title: "Check-in", content: "Das 14h às 22h; depois, só com agendamento." }],
+      priceTableText: "Valores por diária...\n- Kitnet (até 2 pessoas):",
+      pinnedKnowledge: [{ title: "Regulamento", content: "Silêncio após as 22h." }],
+    });
+    const section = p.slice(p.indexOf("# Informações oficiais fixas"));
+    expect(section).toContain("## Check-in\nDas 14h às 22h; depois, só com agendamento.");
+    expect(section).toContain("## Tabela de preços (oficial)\nValores por diária...");
+    expect(section.indexOf("## Check-in")).toBeLessThan(section.indexOf("## Tabela de preços (oficial)"));
+    expect(section.indexOf("## Tabela de preços (oficial)")).toBeLessThan(section.indexOf("## Regulamento"));
+  });
 });

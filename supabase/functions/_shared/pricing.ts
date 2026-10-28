@@ -242,6 +242,41 @@ export function quoteStay(table: PriceTableData, q: QuoteQuery, currency = "BRL"
   };
 }
 
+/**
+ * Texto da tabela para o prompt do agente, gerado da estrutura (um só lugar para períodos, fechamentos,
+ * capacidade por idade e diárias). Totais continuam saindo só pela ferramenta calcular_valor.
+ */
+export function priceTableSummary(table: PriceTableData, currency = "BRL"): string {
+  const money = (v: number) => formatMoney(v, currency);
+  const range = ([a, b]: [string, string]) => (a === b ? brDate(a) : `${brDate(a)} a ${brDate(b)}`);
+  const defaultPeriod = table.periods.find((p) => p.id === table.default_period);
+  const lines: string[] = ["Valores por diária, por acomodação. Para qualquer total, use a ferramenta calcular_valor (ela escolhe o período de cada noite e a tarifa pelo número de pessoas e idades)."];
+
+  lines.push("Períodos:");
+  for (const p of table.periods) {
+    const when = p.ranges.length ? p.ranges.map(range).join("; ") : "demais datas";
+    lines.push(`- ${p.name}: ${when}${p.min_nights && p.min_nights > 1 ? ` (mínimo de ${p.min_nights} diárias)` : ""}`);
+  }
+  if (defaultPeriod) {
+    lines.push(defaultPeriod.ranges.length
+      ? `Noites fora de todos os períodos acima não têm valor cadastrado: não cote nem ofereça reserva para elas.`
+      : `Noites fora dos períodos acima valem como ${defaultPeriod.name}.`);
+  }
+  if (table.closed.length) lines.push(`Fechado (não cote nem ofereça reserva): ${table.closed.map((c) => `${c.name}, ${brDate(c.from)} a ${brDate(c.to)}`).join("; ")}.`);
+
+  lines.push("Acomodações e capacidade (crianças contam para a capacidade; só as tarifas com regra de idade tratam criança diferente de adulto):");
+  for (const u of table.units) {
+    lines.push(`- ${u.name} (até ${u.max_guests} pessoa${u.max_guests > 1 ? "s" : ""}):`);
+    for (const r of [...u.rates].sort((a, b) => a.guests - b.guests)) {
+      const rule = r.max_adults ? ` [até ${r.max_adults} adulto${r.max_adults > 1 ? "s" : ""}; criança de até ${r.child_max_age ?? 17} anos; a partir disso conta como adulto]` : "";
+      const prices = table.periods.filter((p) => r.prices[p.id] !== undefined).map((p) => `${p.name} ${money(r.prices[p.id])}`).join(" | ");
+      lines.push(`  - ${r.label ?? `até ${r.guests} pessoa(s)`}${rule}: ${prices || "sem valor"}`);
+    }
+  }
+  if (table.notes.length) lines.push(`Observações: ${table.notes.join(" ")}`);
+  return lines.join("\n");
+}
+
 interface PmsRoom { category_id?: number | null; available_units: number | null; nightly?: Record<string, number> }
 type TableQuote = ReturnType<typeof quoteStay>;
 

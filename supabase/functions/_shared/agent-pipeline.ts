@@ -54,6 +54,8 @@ export interface PipelineDeps {
   };
   /** Fontes "fixas no agente" (sempre no prompt). */
   pinnedKnowledge?: Array<{ title: string; content: string }>;
+  /** Políticas e informações oficiais da empresa (sempre no prompt). */
+  policies?: Array<{ topic: string; title: string; content: string }>;
   /** Dados de pagamento da empresa (seção de pagamento no prompt). */
   paymentInfo?: import("./agent-core.ts").PaymentInfo | null;
   /** Tabela de preços estruturada: cálculo exato do valor (a IA não faz conta). */
@@ -61,6 +63,8 @@ export interface PipelineDeps {
     quote: (q: { checkin: string; checkout: string; adults: number; childrenAges: number[]; unit?: string | null }) => unknown;
     /** Noite (AAAA-MM-DD) em que o hotel funciona: fora de fechamentos e da temporada cadastrada. */
     isOpen?: (night: string) => boolean;
+    /** Texto da tabela para o prompt (gerado da estrutura). */
+    summary?: string;
   };
   log?: (msg: string, extra?: Record<string, unknown>) => void;
 }
@@ -98,6 +102,16 @@ const ACTION_PROMISE = /\b(vou|irei|deixa eu|deixe-me|vou te|vou já|já vou)\b[
 
 export function promisesAction(text: string): boolean {
   return ACTION_PROMISE.test(text);
+}
+
+/** Resultado como a IA vê: sem a contagem de unidades livres (dado interno que ela repetia ao hóspede). */
+export function forAi(result: unknown): unknown {
+  const opcoes = (result as { opcoes?: unknown[] } | null)?.opcoes;
+  if (!Array.isArray(opcoes)) return result;
+  return { ...(result as object), opcoes: opcoes.map((o) => {
+    const { unidades_disponiveis: _n, ...rest } = o as { unidades_disponiveis?: unknown };
+    return rest;
+  }) };
 }
 
 /** A resposta traz um valor em reais (R$ 600,00 / 600 reais). */
@@ -362,7 +376,9 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
         hasAvailabilityTool: hasAvailability,
         photoAlbums: deps.photos?.albums,
         pinnedKnowledge: deps.pinnedKnowledge,
+        policies: deps.policies,
         hasPriceTable: Boolean(deps.priceTable),
+        priceTableText: deps.priceTable?.summary ?? null,
         paymentInfo: deps.paymentInfo ?? null,
       }),
     },
@@ -578,7 +594,7 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
         }
         if (tooSmall && toolResult && typeof toolResult === "object") toolResult = { acomodacao_pedida_nao_comporta: tooSmall, ...toolResult };
         outcome.toolCalls.push({ name: call.function.name, arguments: args, result: toolResult });
-        messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(toolResult).slice(0, 6000) });
+        messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(forAi(toolResult)).slice(0, 6000) });
       }
       if (promisedReply) {
         if (outcome.media.length) await sendMentioned(promisedReply);
