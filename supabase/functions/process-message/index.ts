@@ -222,7 +222,7 @@ async function processMessage(db: Db, messageId: string, correlationId: string, 
       reason: outcome.handoffReason,
       error: [outcome.externalError && `externo: ${outcome.externalError}`, outcome.aiError && `ia: ${outcome.aiError}`,
         failed ? `${failed} envio(s) falharam` : null].filter(Boolean).join(" | ") || null,
-      usage: { ...outcome.usage, tool_calls: outcome.toolCalls.map((t) => t.name), knowledge_hits: outcome.knowledge.length },
+      usage: { ...outcome.usage, model: outcome.model, tool_calls: outcome.toolCalls.map((t) => t.name), knowledge_hits: outcome.knowledge.length },
     });
     return { ok: true, action: outcome.action, engine: outcome.engine, sends };
   } catch (err) {

@@ -5,7 +5,8 @@ import type { SiteInfo } from "@/lib/site";
 
 const trial = { code: "trial", name: "Avaliação", description: "Período de teste.", price_cents: null, currency: "BRL", max_instances: 1, max_members: 3, max_monthly_messages: 500, max_knowledge_sources: 20, connectors_enabled: true, external_agent_enabled: true };
 const essencial = { ...trial, code: "essencial", name: "Essencial", description: null, price_cents: 14900, max_members: 5, max_monthly_messages: 3000, max_knowledge_sources: 100 };
-const site = { data: { platform_name: "Callia Chat", support_email: "oi@callia.com", self_service: true, trial_days: 14, plans: [trial, essencial] } as SiteInfo, isLoading: false };
+const premium = { ...trial, code: "premium", name: "Premium", description: null, price_cents: null, max_instances: null, max_members: null, max_monthly_messages: null, max_knowledge_sources: null };
+const site = { data: { platform_name: "Callia Chat", support_email: "oi@callia.com", self_service: true, trial_days: 14, plans: [trial, essencial, premium] } as SiteInfo, isLoading: false };
 const auth = { user: null as null | { id: string }, loading: false };
 vi.mock("@/lib/site", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/lib/site")>()), useSiteInfo: () => site }));
 vi.mock("@/lib/auth", () => ({ useAuth: () => auth }));
@@ -38,6 +39,10 @@ describe("landing comercial", () => {
     expect(screen.getByText("R$ 149/mês")).toBeTruthy();
     expect(screen.getByText("3.000 mensagens automáticas por mês")).toBeTruthy();
     expect(screen.getByText("Comece por aqui")).toBeTruthy(); // plano de avaliação em destaque
+    // Plano sob consulta: chamada de contato em vez de cadastro.
+    expect(screen.getByText("Sob consulta")).toBeTruthy();
+    expect(screen.getByText("números de WhatsApp sem limite")).toBeTruthy();
+    expect(screen.getAllByRole("link", { name: /Falar com a gente/ })[0].getAttribute("href")).toMatch(/^mailto:/);
   });
 
   it("sem autoatendimento: chamada vira contato por e-mail; logado: vai para o painel", () => {

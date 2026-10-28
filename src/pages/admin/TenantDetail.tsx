@@ -156,6 +156,12 @@ function Detail({ detail, plans }: { detail: PlatformTenantDetail; plans: Plan[]
                 {formatNumber(entitlements.usage.monthly_ai_tokens)} tokens · {formatNumber(counts.conversations)} conversas · {counts.api_keys} chaves de API ·{" "}
                 {counts.webhooks} webhooks
               </div>
+              <div className="text-sm sm:col-span-2" title={Object.entries(detail.ai_cost?.by_model ?? {}).map(([m, v]) => `${m}: ${v.runs} execuções, US$ ${v.usd.toFixed(2)}`).join("\n") || "Sem execuções no período"}>
+                <span className="font-medium">Custo de IA estimado no período:</span> US$ {(detail.ai_cost?.usd ?? 0).toFixed(2)}
+                {Object.keys(detail.ai_cost?.by_model ?? {}).length > 0 && (
+                  <span className="text-slate-500 dark:text-slate-400"> ({Object.entries(detail.ai_cost.by_model).map(([m, v]) => `${m} US$ ${v.usd.toFixed(2)}`).join(", ")}; só o chat, sem áudio e embeddings)</span>
+                )}
+              </div>
             </CardBody>
           </Card>
 

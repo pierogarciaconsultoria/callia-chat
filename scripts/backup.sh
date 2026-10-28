@@ -1,82 +1,58 @@
 #!/usr/bin/env bash
-# Backup do Callia Chat em produção: banco do Callia, banco e sessões da Evolution, arquivos (fotos/documentos)
-# e configuração/segredos do stack. Gera um único arquivo cifrado (AES-256) por execução.
-#
-# Instalação (uma vez): bash scripts/backup.sh --install
-# Execução manual:      /usr/local/sbin/callia-backup
-# Restaurar:            ver scripts/backup-restore-test.sh e DEPLOY_RUNBOOK.md ("Backup e restauração")
+# Cópia de segurança do Callia: banco (Supabase), banco da Evolution, arquivos (storage), sessões do WhatsApp e
+# segredos (.env). Pacote cifrado (gpg, senha em /root/.callia-backup.key) em /var/backups/callia e, se o rclone
+# tiver o remoto "callia-backup", também fora do servidor. Retenção: 14 dias local, 60 dias remoto.
+# Uso: bash scripts/backup.sh            (cron diário em /etc/cron.d/callia-backup)
+#      bash scripts/restore-test.sh      (restaura o último pacote num Postgres descartável e confere)
 set -euo pipefail
+STACK=/opt/supabase-callia
+EVO=/opt/callia-evolution
+DEST=/var/backups/callia
+KEYFILE=/root/.callia-backup.key
+REMOTE=callia-backup:callia-backups
+STAMP="$(date -u +%Y%m%d-%H%M%S)"
+WORK="$(mktemp -d /tmp/callia-backup.XXXXXX)"
+trap 'rm -rf "$WORK"' EXIT
+mkdir -p "$DEST"
+umask 077
 
-DEST_ROOT=/var/backups/callia
-KEY_FILE=/root/.callia-backup-key
-KEEP_DAILY_DAYS=14
-KEEP_WEEKLY_DAYS=60
-OFFSITE_CONF=/etc/callia-backup/offsite.conf   # opcional: RCLONE_REMOTE=nome:pasta
-LOG=/var/log/callia-backup.log
-
-if [[ "${1:-}" == "--install" ]]; then
-  install -m 750 "$0" /usr/local/sbin/callia-backup
-  if [[ ! -s "$KEY_FILE" ]]; then
-    umask 077
-    openssl rand -base64 48 > "$KEY_FILE"
-    echo "Chave de backup criada em $KEY_FILE — guarde uma cópia fora deste servidor."
-  fi
-  install -d -m 700 "$DEST_ROOT"
-  cat > /etc/cron.d/callia-backup <<'CRON'
-# Backup diário do Callia Chat (banco, Evolution, arquivos, configuração), cifrado.
-30 3 * * * root /usr/local/sbin/callia-backup >> /var/log/callia-backup.log 2>&1
-CRON
-  chmod 644 /etc/cron.d/callia-backup
-  echo "Instalado: /usr/local/sbin/callia-backup, cron 03:30, destino $DEST_ROOT"
-  exit 0
+if [[ ! -s "$KEYFILE" ]]; then
+  head -c 48 /dev/urandom | base64 -w0 > "$KEYFILE"
+  chmod 600 "$KEYFILE"
+  echo "chave de cifragem criada em $KEYFILE — guarde uma cópia fora do servidor; sem ela o backup não abre"
 fi
 
-[[ -s "$KEY_FILE" ]] || { echo "Chave $KEY_FILE ausente. Rode com --install." >&2; exit 1; }
-stamp=$(date +%Y-%m-%d_%H%M)
-work=$(mktemp -d /var/tmp/callia-backup.XXXXXX)
-trap 'rm -rf "$work"' EXIT
-echo "[$(date -Is)] início $stamp"
+# 1. Bancos (formato custom do pg_dump: restaura com pg_restore).
+docker exec callia-db pg_dump -U postgres -Fc --no-owner postgres > "$WORK/callia-db.dump"
+docker exec callia-evolution-db sh -c 'pg_dump -U "$POSTGRES_USER" -Fc --no-owner "$POSTGRES_DB"' > "$WORK/evolution-db.dump"
 
-# 1. Banco do Callia (inclui auth e storage). Formato custom: restaura por partes.
-docker exec callia-db pg_dump -U postgres -d postgres -Fc --no-owner > "$work/callia-db.dump"
-# 2. Evolution: banco e sessões do WhatsApp (evita ler o QR de novo após restaurar).
-docker exec callia-evolution-db pg_dump -U evolution -d evolution -Fc --no-owner > "$work/evolution-db.dump"
-docker exec callia-evolution tar czf - -C /evolution instances > "$work/evolution-instances.tgz"
-# 3. Arquivos do storage (fotos, documentos da base de conhecimento).
-tar czf "$work/storage.tgz" -C /opt/supabase-callia/volumes storage
-# 4. Configuração e segredos do stack (só cifrados dentro do pacote).
-tar czf "$work/config.tgz" \
-  /opt/supabase-callia/.env /opt/supabase-callia/functions.env \
-  /opt/supabase-callia/docker-compose.callia.yml /opt/supabase-callia/docker-compose.localonly.yml \
-  /opt/callia-evolution/.env /opt/callia-evolution/docker-compose.yml \
-  /etc/nginx/sites-available/callia.sistemalexis.com.br /etc/nginx/snippets/supabase-callia-proxy.conf 2>/dev/null
+# 2. Arquivos e sessões.
+tar -C "$STACK/volumes" -czf "$WORK/storage.tar.gz" storage
+docker run --rm -v callia-evolution_instances:/src:ro -v "$WORK":/out alpine:3.20 tar -C /src -czf /out/evolution-instances.tar.gz . 2>/dev/null || true
 
-# Manifesto para conferência na restauração.
+# 3. Segredos e configuração (ficam só dentro do pacote cifrado).
+mkdir -p "$WORK/config/supabase" "$WORK/config/evolution"
+cp "$STACK/.env" "$STACK/docker-compose.yml" "$WORK/config/supabase/"
+[[ -d "$EVO" ]] && cp "$EVO"/.env "$EVO"/docker-compose.yml "$WORK/config/evolution/" 2>/dev/null || true
+cp "$KEYFILE" "$WORK/config/backup.key"
+
+# 4. Pacote cifrado + manifesto.
 {
-  echo "stamp=$stamp"
-  docker exec callia-db psql -U postgres -tAc "select 'workspaces=' || count(*) from workspaces; select 'messages=' || count(*) from messages; select 'media_assets=' || count(*) from media_assets; select 'auth_users=' || count(*) from auth.users;"
-  (cd "$work" && sha256sum ./*.dump ./*.tgz)
-} > "$work/MANIFEST.txt"
+  echo "callia backup $STAMP"
+  echo "callia-db: $(docker exec callia-db psql -U postgres -At -c "select count(*)||' workspaces, '||(select count(*) from messages)||' mensagens' from workspaces")"
+  ls -l "$WORK" | awk 'NR>1 {print $5, $9}'
+} > "$WORK/MANIFEST.txt"
+OUT="$DEST/callia-$STAMP.tar.gz.gpg"
+tar -C "$WORK" -czf - . | gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase-file "$KEYFILE" -o "$OUT"
+chmod 600 "$OUT"
 
-out="$DEST_ROOT/callia-$stamp.tar.enc"
-tar cf - -C "$work" . | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass "file:$KEY_FILE" -out "$out.partial"
-mv "$out.partial" "$out"
-chmod 600 "$out"
-# Domingo: guarda também como semanal.
-if [[ "$(date +%u)" == "7" ]]; then cp -p "$out" "$DEST_ROOT/weekly-callia-$stamp.tar.enc"; fi
-
-# Retenção.
-find "$DEST_ROOT" -maxdepth 1 -name 'callia-*.tar.enc' -mtime +"$KEEP_DAILY_DAYS" -delete
-find "$DEST_ROOT" -maxdepth 1 -name 'weekly-callia-*.tar.enc' -mtime +"$KEEP_WEEKLY_DAYS" -delete
-
-# Cópia fora do servidor (quando configurada).
-if [[ -f "$OFFSITE_CONF" ]]; then
-  # shellcheck disable=SC1090
-  source "$OFFSITE_CONF"
-  if [[ -n "${RCLONE_REMOTE:-}" ]] && command -v rclone >/dev/null; then
-    rclone copy "$out" "$RCLONE_REMOTE" && echo "cópia externa: ok ($RCLONE_REMOTE)"
-  fi
+# 5. Retenção local e cópia remota.
+find "$DEST" -name 'callia-*.tar.gz.gpg' -mtime +14 -delete
+if rclone listremotes 2>/dev/null | grep -q '^callia-backup:'; then
+  rclone copy "$OUT" "$REMOTE/" --s3-no-check-bucket 2>&1 | tail -2
+  rclone delete "$REMOTE/" --min-age 60d 2>/dev/null || true
+  echo "remoto: ok ($(rclone ls "$REMOTE/" 2>/dev/null | wc -l) pacotes)"
+else
+  echo "remoto: rclone sem o remoto 'callia-backup' — só cópia local"
 fi
-
-date -Is > "$DEST_ROOT/.last-success"
-echo "[$(date -Is)] ok $out ($(du -h "$out" | cut -f1))"
+echo "backup: $OUT ($(du -h "$OUT" | cut -f1))"

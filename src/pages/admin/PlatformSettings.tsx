@@ -4,6 +4,7 @@ import { Save } from "lucide-react";
 import { platformAdmin } from "@/lib/platform-admin";
 import type { PlatformSettings as Settings } from "@/lib/database.types";
 import { Button, Card, CardBody, CardHeader, ErrorState, Input, PageHeader, PageLoader, Select, Switch, useToast } from "@/components/ui";
+import { BillingSettingsCard } from "./BillingSettingsCard";
 import { adminKeys } from "./shared";
 
 export default function PlatformSettings() {
@@ -97,6 +98,7 @@ export default function PlatformSettings() {
             />
           </CardBody>
         </Card>
+        <BillingSettingsCard />
       </div>
     </>
   );

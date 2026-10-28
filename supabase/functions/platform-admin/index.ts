@@ -3,6 +3,11 @@
 import { createHandler, json, readJson, RuntimeError } from "../_shared/http.ts";
 import { adminDb, audit, type Db, optionalEnv, requireUser } from "../_shared/supabase.ts";
 import { effectiveLimits } from "../_shared/entitlements.ts";
+import { estimateAiCost } from "../_shared/ai-pricing.ts";
+import { MercadoPagoClient } from "../_shared/mercadopago.ts";
+import { getPlatformSecret, PLATFORM_SECRET_KEYS, platformSecretStatus, setPlatformSecret } from "../_shared/platform-secrets.ts";
+
+const DEFAULT_AI_MODEL = optionalEnv("AI_DEFAULT_MODEL") ?? "gpt-4o-mini";
 
 type Body = Record<string, unknown> & { action?: string };
 
@@ -22,6 +27,10 @@ interface PlanRow {
   ai_enabled: boolean;
   external_agent_enabled: boolean;
   connectors_enabled: boolean;
+  price_cents: number | null;
+  currency: string;
+  active: boolean;
+  mp_preapproval_plan_id?: string | null;
   [k: string]: unknown;
 }
 
@@ -176,7 +185,9 @@ Deno.serve(createHandler("platform-admin", async ({ req, correlationId }) => {
       for (const [ws, n] of countBy(failedHooks)) {
         attention.push({ workspace_id: ws, workspace_name: nameOf.get(ws) ?? "", kind: "webhook_failures", detail: `${n} webhook(s) sem entrega nas últimas 24 h.` });
       }
-      return json({ totals, attention });
+      const monthStart = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString();
+      const { data: monthRuns } = await db.from("agent_runs").select("usage").gte("created_at", monthStart).limit(50_000);
+      return json({ totals: { ...totals, monthly_ai_cost_usd: estimateAiCost((monthRuns ?? []) as Array<{ usage: Record<string, unknown> | null }>, DEFAULT_AI_MODEL).usd }, attention });
     }
 
     case "list_tenants":
@@ -196,9 +207,13 @@ Deno.serve(createHandler("platform-admin", async ({ req, correlationId }) => {
       ]);
       const { data: users } = await db.rpc("platform_list_users", { p_search: null });
       const emailOf = new Map((users ?? []).map((u: { id: string; email: string }) => [u.id, u.email]));
+      // Custo de IA do período de uso (mesmo recorte da cota): tokens por modelo em agent_runs.
+      const periodStart = (entitlements as { usage?: { period_start?: string } } | null)?.usage?.period_start ?? new Date(new Date().setUTCDate(1)).toISOString();
+      const { data: monthRuns } = await db.from("agent_runs").select("usage").eq("workspace_id", id).gte("created_at", periodStart).limit(20_000);
       return json({
         tenant,
         entitlements,
+        ai_cost: estimateAiCost((monthRuns ?? []) as Array<{ usage: Record<string, unknown> | null }>, DEFAULT_AI_MODEL),
         members: (memberRows ?? []).map((m: { user_id: string }) => ({ ...m, email: emailOf.get(m.user_id) ?? null })),
         instances: instances ?? [],
         counts: { api_keys: apiKeys.count ?? 0, webhooks: webhooks.count ?? 0, conversations: conversations.count ?? 0 },
@@ -323,6 +338,7 @@ Deno.serve(createHandler("platform-admin", async ({ req, correlationId }) => {
         connectors_enabled: p.connectors_enabled !== false,
         active: p.active !== false,
         position: Number.isInteger(p.position) ? p.position : 0,
+        ...(typeof p.mp_preapproval_plan_id === "string" ? { mp_preapproval_plan_id: p.mp_preapproval_plan_id.trim() || null } : {}),
       };
       if (!/^[a-z0-9_-]{2,40}$/.test(row.code as string)) throw new RuntimeError("invalid_request", "Código: letras minúsculas, números, - ou _.");
       if (row.max_members === 0) throw new RuntimeError("invalid_request", "max_members deve ser ≥ 1.");
@@ -385,6 +401,49 @@ Deno.serve(createHandler("platform-admin", async ({ req, correlationId }) => {
 
     case "get_settings":
       return json({ settings: await readSettings(db) });
+
+    // ---- Cobrança (Mercado Pago): segredos cifrados, teste de conexão e planos de assinatura.
+    case "get_billing": {
+      const secrets = await platformSecretStatus(db, PLATFORM_SECRET_KEYS);
+      const list = await listPlans(db);
+      return json({ secrets, plans: list.map((p) => ({ id: p.id, code: p.code, name: p.name, price_cents: p.price_cents, currency: p.currency, active: p.active, mp_preapproval_plan_id: p.mp_preapproval_plan_id ?? null })), webhook_url: `${optionalEnv("FUNCTIONS_PUBLIC_URL") ?? ""}/billing-webhook` });
+    }
+
+    case "set_billing_secrets": {
+      const input = (body.secrets ?? {}) as Record<string, unknown>;
+      const changed: string[] = [];
+      for (const key of PLATFORM_SECRET_KEYS) {
+        if (typeof input[key] !== "string") continue;
+        await setPlatformSecret(db, key, input[key] as string, user.id);
+        changed.push(key);
+      }
+      if (!changed.length) throw new RuntimeError("invalid_request", "Nada para gravar.");
+      await log("billing.secrets_updated", null, { keys: changed }, "platform_secrets", changed.join(","));
+      return json({ secrets: await platformSecretStatus(db, PLATFORM_SECRET_KEYS) });
+    }
+
+    case "test_billing": {
+      const token = await getPlatformSecret(db, "mercadopago_access_token");
+      if (!token) throw new RuntimeError("unprocessable", "Access Token do Mercado Pago não configurado.");
+      const me = await new MercadoPagoClient(token, { baseUrl: optionalEnv("MERCADOPAGO_BASE_URL") }).getMe();
+      return json({ ok: true, account: { id: me.id ?? null, nickname: me.nickname ?? null, email: me.email ?? null, site_id: me.site_id ?? null } });
+    }
+
+    case "sync_mp_plans": {
+      const token = await getPlatformSecret(db, "mercadopago_access_token");
+      if (!token) throw new RuntimeError("unprocessable", "Access Token do Mercado Pago não configurado.");
+      const mp = new MercadoPagoClient(token, { baseUrl: optionalEnv("MERCADOPAGO_BASE_URL") });
+      const site = (optionalEnv("PUBLIC_SITE_URL") ?? "https://callia.sistemalexis.com.br").replace(/\/$/, "");
+      const created: Array<{ code: string; mp_preapproval_plan_id: string }> = [];
+      for (const p of await listPlans(db)) {
+        if (!p.active || p.code === "trial" || p.price_cents === null || p.price_cents <= 0 || p.mp_preapproval_plan_id) continue;
+        const plan = await mp.createPreapprovalPlan({ reason: `Callia Chat — ${p.name}`, amount: p.price_cents / 100, currency: p.currency || "BRL", back_url: `${site}/settings?assinatura=ok` });
+        await db.from("plans").update({ mp_preapproval_plan_id: plan.id }).eq("id", p.id);
+        created.push({ code: p.code, mp_preapproval_plan_id: plan.id });
+      }
+      if (created.length) await log("billing.mp_plans_created", null, { created }, "plans", created.map((c) => c.code).join(","));
+      return json({ created, plans: (await listPlans(db)).map((p) => ({ code: p.code, mp_preapproval_plan_id: p.mp_preapproval_plan_id ?? null })) });
+    }
 
     case "update_settings": {
       const input = (body.settings ?? {}) as Record<string, unknown>;

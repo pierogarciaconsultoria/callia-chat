@@ -53,7 +53,7 @@ export function PlanUsageCard() {
                 );
               })}
             </ul>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Para mudar de plano ou ampliar limites, fale com o suporte.</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Assine ou troque de plano no cartão "Assinatura" abaixo; para o plano Premium, fale com a gente.</p>
           </>
         ) : null}
       </CardBody>

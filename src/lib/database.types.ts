@@ -49,6 +49,8 @@ export interface Plan extends PlanLimits {
   description: string | null;
   price_cents: number | null;
   currency: string;
+  /** Plano de assinatura correspondente no Mercado Pago (cobrança). */
+  mp_preapproval_plan_id?: string | null;
   active: boolean;
   position: number;
   created_at: string;
@@ -122,6 +124,8 @@ export interface PlatformOverview {
     monthly_messages: number;
     monthly_ai_runs: number;
     monthly_ai_tokens: number;
+    /** Custo estimado do chat de IA no mês (US$), somando todos os clientes. */
+    monthly_ai_cost_usd: number;
   };
   attention: { workspace_id: string; workspace_name: string; kind: AttentionKind; detail: string }[];
 }
@@ -132,7 +136,40 @@ export interface PlatformTenantDetail {
   members: MemberWithEmail[];
   instances: { id: string; name: string; status: InstanceStatus; phone_number: string | null; is_default: boolean }[];
   counts: { api_keys: number; webhooks: number; conversations: number };
+  /** Custo estimado do chat de IA no período de uso (US$), por modelo. */
+  ai_cost: { usd: number; by_model: Record<string, { runs: number; prompt_tokens: number; completion_tokens: number; usd: number }>; unknown_models: string[] };
   audit: AuditLog[];
+}
+
+export type SubscriptionStatus = "pending" | "authorized" | "paused" | "cancelled";
+
+export interface WorkspaceSubscription {
+  id: string;
+  provider_subscription_id: string;
+  plan_id: string | null;
+  status: SubscriptionStatus;
+  payer_email: string | null;
+  init_point: string | null;
+  next_payment_at: string | null;
+  last_payment_at: string | null;
+  last_event_at: string | null;
+  created_at: string;
+}
+
+/** Resposta de billing action=status. */
+export interface BillingStatus {
+  configured: boolean;
+  subscription: WorkspaceSubscription | null;
+  plans: { id: string; code: string; name: string; price_cents: number | null; currency: string; subscribable: boolean }[];
+}
+
+export interface PlatformSecretStatus { configured: boolean; source: "database" | "env" | null; hint: string | null; updated_at: string | null }
+
+/** Resposta de platform-admin action=get_billing. */
+export interface BillingAdmin {
+  secrets: Record<"mercadopago_access_token" | "mercadopago_webhook_secret", PlatformSecretStatus>;
+  plans: { id: string; code: string; name: string; price_cents: number | null; currency: string; active: boolean; mp_preapproval_plan_id: string | null }[];
+  webhook_url: string;
 }
 
 export interface PlatformUser {

@@ -56,6 +56,7 @@ export default function Overview() {
         <Tile label="Mensagens automáticas" value={formatNumber(totals.monthly_messages)} hint="neste mês (bot e API)" />
         <Tile label="Execuções da IA" value={formatNumber(totals.monthly_ai_runs)} hint="neste mês" />
         <Tile label="Tokens de IA" value={formatNumber(totals.monthly_ai_tokens)} hint="neste mês" />
+        <Tile label="Custo de IA" value={`US$ ${(totals.monthly_ai_cost_usd ?? 0).toFixed(2)}`} hint="neste mês, estimado (só chat)" />
       </div>
 
       <Card className="mt-6">

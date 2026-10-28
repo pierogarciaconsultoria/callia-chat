@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { unwrap } from "@/lib/functions";
 import { applyBranding, DEFAULT_PRIMARY, DEFAULT_SECONDARY } from "@/lib/branding";
 import { PlanUsageCard } from "@/components/PlanUsageCard";
+import { SubscriptionCard } from "@/components/SubscriptionCard";
 import type { WorkspaceBranding } from "@/lib/database.types";
 import { Button, Card, CardBody, CardHeader, Input, PageHeader, useToast } from "@/components/ui";
 
@@ -18,6 +19,7 @@ export default function Settings() {
       <PageHeader title="Configurações" description="Plano, identidade visual e conectores. Dados, políticas e preços do negócio ficam em Informações da empresa." />
       <div className="space-y-6">
         <PlanUsageCard />
+        <SubscriptionCard />
         <WorkspaceNameCard />
         <BrandingCard />
         <ConnectorsPointer />

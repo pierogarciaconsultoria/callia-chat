@@ -86,6 +86,8 @@ export interface PipelineOutcome {
   knowledge: KnowledgeHit[];
   toolCalls: ToolCallTrace[];
   usage: Record<string, number>;
+  /** Modelo que gerou a resposta (custo de IA por cliente no console). */
+  model: string | null;
   externalError: string | null;
   aiError: string | null;
 }
@@ -331,6 +333,7 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
     knowledge: [],
     toolCalls: [],
     usage: {},
+    model: null,
     externalError: null,
     aiError: null,
   };
@@ -505,6 +508,7 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
           : forceTool ? { toolChoice: "required" as const } : {}),
       });
       addUsage(outcome.usage, result.usage);
+      if (result.model) outcome.model = result.model;
       forcedFirst = null;
 
       if (!result.toolCalls.length) {

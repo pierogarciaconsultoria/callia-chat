@@ -1,6 +1,7 @@
 // Chamadas ao console central (function platform-admin). Contrato em docs/EDGE_CONTRACTS.md.
 import { invokeFunction } from "./functions";
 import type {
+  BillingAdmin,
   Entitlements,
   Plan,
   PlatformAuditEntry,
@@ -43,4 +44,8 @@ export const platformAdmin = {
   audit: (filters: { workspace_id?: string; action_prefix?: string; limit?: number }) => call<{ entries: PlatformAuditEntry[] }>("audit", filters),
   getSettings: () => call<{ settings: PlatformSettings }>("get_settings"),
   updateSettings: (settings: Partial<PlatformSettings>) => call<{ settings: PlatformSettings }>("update_settings", { settings }),
+  getBilling: () => call<BillingAdmin>("get_billing"),
+  setBillingSecrets: (secrets: Partial<Record<keyof BillingAdmin["secrets"], string>>) => call<{ secrets: BillingAdmin["secrets"] }>("set_billing_secrets", { secrets }),
+  testBilling: () => call<{ ok: boolean; account: { id: number | null; nickname: string | null; email: string | null; site_id: string | null } }>("test_billing"),
+  syncMpPlans: () => call<{ created: { code: string; mp_preapproval_plan_id: string }[]; plans: { code: string; mp_preapproval_plan_id: string | null }[] }>("sync_mp_plans"),
 };

@@ -130,7 +130,8 @@ function PlanCard({ plan, site, featured }: { plan: SiteInfo["plans"][number]; s
         ))}
       </ul>
       <div className="mt-6">
-        <Cta site={site} className="w-full" />
+        {/* Plano sob consulta (sem preço): contato, não cadastro. */}
+        <Cta site={!isTrial && plan.price_cents === null ? { ...site, self_service: false } : site} className="w-full" />
       </div>
     </div>
   );
@@ -246,7 +247,7 @@ export default function Landing() {
 
         <Section id="planos" eyebrow="Planos" title="Comece grátis e cresça quando fizer sentido." text="Os limites valem por empresa. Mensagens automáticas são as enviadas pelo agente e pela API; as da equipe não contam." className="bg-slate-50 dark:bg-slate-900/40">
           {plans.length ? (
-            <div className="grid gap-6 md:grid-cols-3">
+            <div className={cn("grid gap-6 md:grid-cols-2", plans.length >= 4 ? "xl:grid-cols-4" : "lg:grid-cols-3")}>
               {plans.map((p) => <PlanCard key={p.code} plan={p} site={site} featured={p.code === "trial"} />)}
             </div>
           ) : (

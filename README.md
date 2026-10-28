@@ -27,6 +27,15 @@ cada cliente (workspace) tem dados, chaves, base de conhecimento e logs isolados
 Para abrir o cadastro em produção: `DISABLE_SIGNUP=false` no `.env` do stack Supabase (recria o serviço `auth`) e
 `allow_self_service_workspaces = true` em `/admin` → Plataforma. O plano do trial é `self_service_plan_code` (`trial`, 14 dias).
 
+## Cobrança (Mercado Pago)
+
+| Peça | Como funciona |
+|---|---|
+| Planos | `plans.price_cents` + `plans.mp_preapproval_plan_id` (id do plano de assinatura criado no Mercado Pago). Sem preço = "sob consulta". |
+| Assinar | Configurações → Assinatura (só o dono): function `billing` cria a assinatura (`POST /preapproval`, pendente, `external_reference` = id do workspace) e redireciona ao `init_point`. A volta (`/settings?assinatura=ok`) chama `sync`. |
+| Webhook | `billing-webhook` (pública): valida a `x-signature`, relê a assinatura na API e chama `apply_subscription_status` (service_role). `authorized` → tenant ativo no plano; `cancelled`/`paused` → suspenso, só se estava ativo por essa assinatura. Idempotente. |
+| Segredos | `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_WEBHOOK_SECRET` (e opcional `MERCADOPAGO_BASE_URL` para sandbox) em `functions.env`; `billing-webhook` em `NO_VERIFY_JWT_FUNCTIONS`. |
+
 ## Assistente de configuração (`/agent/setup`)
 
 A persona e as instruções do agente são montadas a partir do que a empresa já publicou:
