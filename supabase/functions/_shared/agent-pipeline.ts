@@ -97,6 +97,11 @@ export function promisesAction(text: string): boolean {
   return ACTION_PROMISE.test(text);
 }
 
+/** A resposta traz um valor em reais (R$ 600,00 / 600 reais). */
+export function quotesPrice(text: string): boolean {
+  return /R\$\s?\d|\b\d{1,3}(\.\d{3})+,\d{2}\b|\b\d+\s*reais\b/i.test(text);
+}
+
 const MONTHS = "janeiro|fevereiro|mar[cç]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro";
 const DAY_MONTH = /\b\d{1,2}\/\d{1,2}(\/\d{2,4})?\b/g;
 const DAY_RANGE = new RegExp(`\\b\\d{1,2}(º|°)?\\s*(a|até|ao|-)\\s*\\d{1,2}(º|°)?\\s*de\\s*(${MONTHS})`, "i");
@@ -370,6 +375,18 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
       childrenAges: Array.isArray(args.idades_criancas) ? args.idades_criancas.map(Number) : [],
       unit: typeof args.acomodacao === "string" ? args.acomodacao : null,
     });
+  // Acomodação pedida que não comporta o grupo (ex.: 101 para 4 pessoas): cota as que comportam, e a pedida
+  // vai em nao_comportam. Sem isso a consulta caía no PMS sem a tabela e a IA dizia "sem vaga".
+  const fitArgs = (args: Record<string, unknown>): { args: Record<string, unknown>; note?: string } => {
+    if (!deps.priceTable || typeof args.acomodacao !== "string" || !args.acomodacao.trim()) return { args };
+    const asked = quoteFrom(args) as { opcoes?: unknown[]; nao_comportam?: string[]; hospedes?: number };
+    if (asked.opcoes?.length || !asked.nao_comportam?.length) return { args };
+    const { acomodacao: _unit, ...rest } = args;
+    return {
+      args: rest,
+      note: `${asked.nao_comportam.join(", ")}: não comporta(m) ${asked.hospedes ?? "esse número de"} pessoas. Não é falta de vaga: diga ao hóspede que essa acomodação é para menos pessoas e ofereça as opcoes abaixo, com o nome de cada uma exatamente como está em "acomodacao". Nunca diga que ela está indisponível ou sem vaga.`,
+    };
+  };
   // Trava: sem saber se vêm crianças (ex.: o hóspede respondeu só "3"), pergunta antes de cotar.
   const kidsKnown = (args: Record<string, unknown>) =>
     (Array.isArray(args.idades_criancas) && args.idades_criancas.length > 0) || childrenAddressed(input.history, input.pendingText);
@@ -393,6 +410,7 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
   // Trava: "vou consultar, um momento" sem chamar ferramenta → obriga a chamar antes de responder.
   let forceTool = false;
   let actionNudged = false;
+  let priceNudged = false;
   const actionTools = tools.map((t) => t.function.name).filter((n) => n === "consultar_disponibilidade" || n === "calcular_valor");
   // Trava: com datas de entrada e saída, a resposta sai da ferramenta — a IA erra a conta de noites e o mínimo de diárias.
   const customerText = input.history.filter((h) => h.direction === "inbound").map((h) => h.content ?? "").join("\n") + "\n" + input.pendingText;
@@ -448,6 +466,14 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
           messages.push({ role: "user", content: `(instrução interna) Você disse que ia consultar, mas não chamou a ferramenta. Chame agora ${actionTools.join(" ou ")} com os dados da conversa e responda com o resultado.` });
           continue;
         }
+        // Trava: valor em reais sem consulta nesta rodada → a IA copiou um valor antigo do histórico (outro grupo, outra acomodação).
+        if (text && !priceNudged && actionTools.length && quotesPrice(text) && !outcome.toolCalls.some((t) => (actionTools as string[]).includes(t.name))) {
+          priceNudged = true;
+          forceTool = true;
+          messages.push({ role: "assistant", content: text });
+          messages.push({ role: "user", content: `(instrução interna) Você informou valores sem consultar a ferramenta nesta resposta; valores ditos antes na conversa podem estar errados para este grupo ou acomodação. Chame agora ${actionTools.join(" ou ")} com as datas, o número de adultos, as idades das crianças e a acomodação pedida, e responda só com o resultado.` });
+          continue;
+        }
         if (text && !claimNudged && claimsUnconfirmed(text) && round < MAX_TOOL_ROUNDS - 1) {
           claimNudged = true;
           messages.push({ role: "assistant", content: text });
@@ -476,6 +502,8 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
         } catch {
           args = {};
         }
+        let tooSmall: string | undefined;
+        if (call.function.name === "calcular_valor" || call.function.name === "consultar_disponibilidade") ({ args, note: tooSmall } = fitArgs(args));
         let toolResult: unknown;
         if (call.function.name === "transferir_para_atendente") {
           outcome.toolCalls.push({ name: call.function.name, arguments: args, result: "ok" });
@@ -513,7 +541,8 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
           // Abaixo do mínimo: lê a vaga em volta para saber se é uma janela entre reservas.
           const aroundNights = table?.atende_estadia_minima === false && categoryIds.length ? Math.max(0, (table.estadia_minima ?? 0) - (table.noites ?? 0)) : 0;
           try {
-            if (table?.fechado || table?.sem_tarifa || table?.erro) {
+            // Nenhuma acomodação da tabela comporta o grupo: responde pela tabela (nao_comportam), sem o PMS cru.
+            if (table?.fechado || table?.sem_tarifa || table?.erro || (table && !table.opcoes?.length)) {
               toolResult = stripPmsIds(table);
             } else {
               const found = await deps.checkAvailability({
@@ -542,6 +571,7 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
         } else {
           toolResult = { erro: "ferramenta desconhecida" };
         }
+        if (tooSmall && toolResult && typeof toolResult === "object") toolResult = { acomodacao_pedida_nao_comporta: tooSmall, ...toolResult };
         outcome.toolCalls.push({ name: call.function.name, arguments: args, result: toolResult });
         messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(toolResult).slice(0, 6000) });
       }

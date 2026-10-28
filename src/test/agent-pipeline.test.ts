@@ -363,6 +363,55 @@ describe("pipeline do agente", () => {
     expect(out.reply).toBe("Temos o 205 disponível: R$ 5.000,00.");
   });
 
+  it("acomodação pedida não comporta o grupo: cota as que comportam e diz que não cabe (não que está sem vaga)", async () => {
+    // Noel: 3 adultos + criança de 3 anos pediu os 101 a 204 (até 3 pessoas). Antes ia ao Hospedin sem a tabela e a IA dizia "sem vaga".
+    const quote = vi.fn((q: { unit?: string | null }) => q.unit
+      ? { hospedes: 4, opcoes: [], nao_comportam: ["Apartamentos 101 a 104, 201 a 204 e 207 a 209"] }
+      : { hospedes: 4, opcoes: [{ acomodacao: "Apartamentos 205 e 206", lugares: 4, total: 12750, pms_category_ids: [275] }], nao_comportam: ["Apartamentos 101 a 104, 201 a 204 e 207 a 209", "Kitnet"] });
+    const checkAvailability = vi.fn(async () => ({ checkin: "", checkout: "", nights: 15, adults: 3, children: 1, children_ages: [3], currency: "BRL", sold_out: false, booking_link: null,
+      rooms: [{ name: "Casal + 2", category_id: 275, rate: null, total_price: 10650, price_per_night: 710, available_units: 2 }] }));
+    const ai = fakeAi([
+      { toolCalls: [{ id: "t1", type: "function", function: { name: "consultar_disponibilidade", arguments: '{"checkin":"15/01/2027","checkout":"30/01/2027","adultos":3,"idades_criancas":[3],"acomodacao":"101"}' } }] },
+      { content: "Os apartamentos 101 a 204 são para até 3 pessoas; para vocês, o 205/206 sai R$ 12.750,00." },
+    ]);
+    const out = await runAgentPipeline(input("Gostaria"), deps({ ai, priceTable: { quote }, checkAvailability } as never));
+    expect(checkAvailability).toHaveBeenCalledWith(expect.objectContaining({ categoryIds: [275] }));
+    const call = out.toolCalls[0] as { arguments: Record<string, unknown>; result: { opcoes: Array<{ acomodacao: string; total: number }>; nao_comportam: string[]; sem_vaga?: string[] } };
+    expect(call.arguments.acomodacao).toBeUndefined();
+    expect(call.result.opcoes).toEqual([expect.objectContaining({ acomodacao: "Apartamentos 205 e 206", total: 12750 })]);
+    expect(call.result.nao_comportam).toContain("Apartamentos 101 a 104, 201 a 204 e 207 a 209");
+    expect(call.result.sem_vaga).toBeUndefined();
+    expect((call.result as { acomodacao_pedida_nao_comporta?: string }).acomodacao_pedida_nao_comporta).toMatch(/não comporta\(m\) 4 pessoas/);
+  });
+
+  it("valor em reais sem consultar a ferramenta: obriga a consulta antes de responder", async () => {
+    // Noel: a IA repetia o R$ 12.750,00 do histórico (205/206) ao ser perguntada sobre os 101 a 204.
+    const quote = vi.fn(() => ({ hospedes: 4, opcoes: [{ acomodacao: "Apartamentos 101 a 104 e 201 a 204", lugares: 4, total: 9000 }] }));
+    const ai = fakeAi([
+      { content: "Os *Apartamentos 101 a 204* estão disponíveis: *R$ 12.750,00* (15 diárias a R$ 850,00)." },
+      { toolCalls: [{ id: "t1", type: "function", function: { name: "calcular_valor", arguments: '{"checkin":"15/01/2027","checkout":"30/01/2027","adultos":3,"idades_criancas":[3],"acomodacao":"101"}' } }] },
+      { content: "Os Apartamentos 101 a 104 e 201 a 204 saem R$ 9.000,00 para 3 adultos + 1 criança de 3 anos." },
+    ]);
+    const out = await runAgentPipeline(input("Gostaria"), deps({ ai, priceTable: { quote } } as never));
+    const second = ai.calls[1] as { toolChoice?: unknown; messages: Array<{ content: string }> };
+    expect(second.toolChoice).toBe("required");
+    expect(second.messages.some((m) => typeof m.content === "string" && m.content.includes("sem consultar a ferramenta"))).toBe(true);
+    expect(out.toolCalls.map((t: { name: string }) => t.name)).toEqual(["calcular_valor"]);
+    expect(out.reply).toContain("R$ 9.000,00");
+  });
+
+  it("grupo que nenhuma acomodação da tabela comporta: responde pela tabela, sem o Hospedin cru", async () => {
+    const quote = vi.fn(() => ({ hospedes: 9, opcoes: [], sem_opcao: "Nenhuma acomodação da tabela comporta 9 pessoa(s) com essas idades.", nao_comportam: ["Kitnet"] }));
+    const checkAvailability = vi.fn();
+    const ai = fakeAi([
+      { toolCalls: [{ id: "t1", type: "function", function: { name: "consultar_disponibilidade", arguments: '{"checkin":"15/01/2027","checkout":"20/01/2027","adultos":9}' } }] },
+      { content: "Nenhuma acomodação comporta 9 pessoas." },
+    ]);
+    const out = await runAgentPipeline(input("somos 9 adultos, 15/01/2027 a 20/01/2027"), deps({ ai, priceTable: { quote }, checkAvailability } as never));
+    expect(checkAvailability).not.toHaveBeenCalled();
+    expect((out.toolCalls[0].result as { sem_opcao?: string }).sem_opcao).toMatch(/9 pessoa/);
+  });
+
   it("período fechado na tabela: nem consulta o Hospedin", async () => {
     const quote = vi.fn(() => ({ fechado: true, periodos_fechados: "Inverno: 21/06/2027 a 22/09/2027", opcoes: [] }));
     const checkAvailability = vi.fn();
