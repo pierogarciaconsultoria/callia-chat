@@ -36,6 +36,15 @@ Para abrir o cadastro em produção: `DISABLE_SIGNUP=false` no `.env` do stack S
 | Webhook | `billing-webhook` (pública): valida a `x-signature`, relê a assinatura na API e chama `apply_subscription_status` (service_role). `authorized` → tenant ativo no plano; `cancelled`/`paused` → suspenso, só se estava ativo por essa assinatura. Idempotente. |
 | Segredos | `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_WEBHOOK_SECRET` (e opcional `MERCADOPAGO_BASE_URL` para sandbox) em `functions.env`; `billing-webhook` em `NO_VERIFY_JWT_FUNCTIONS`. |
 
+## Assistente do painel (botão flutuante, administradores)
+
+Chat para ajustar os fatos estruturados sem procurar a tela: *"a kitnet na alta passa a 450"*, *"fechado de 21/06 a
+22/09"*, *"a equipe atende das 8h às 22h"*, *"onde mudo a mensagem fora do horário?"*. A function `assistant` monta o
+prompt com a tabela de preços (ids de períodos e acomodações), políticas, horário e regras, e usa ferramentas
+`propor_*` que viram **propostas** (`assistant_proposals`) com linhas "de → para". Nada é gravado até o administrador
+clicar em Confirmar (`action=apply`), e a aplicação entra na auditoria (`assistant.applied.*`). As operações sobre a
+tabela (`_shared/assistant.ts`, `applyPriceOps`) são puras e validadas pelo schema antes de virar proposta.
+
 ## Assistente de configuração (`/agent/setup`)
 
 A persona e as instruções do agente são montadas a partir do que a empresa já publicou:

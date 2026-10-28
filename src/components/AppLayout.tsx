@@ -8,6 +8,7 @@ import { PageLoader } from "@/components/ui";
 import { NAV_ITEMS, PLATFORM_NAV_ITEMS } from "./nav";
 import { PlanBanner } from "./PlanBanner";
 import { JourneyBar } from "./onboarding/Journey";
+import { AssistantDrawer } from "./assistant/AssistantDrawer";
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   cn(
@@ -219,6 +220,7 @@ export function AppLayout() {
         </header>
         {workspace && !inConsole && <PlanBanner />}
         {workspace && !inConsole && !isInbox && <JourneyBar />}
+        {workspace && !inConsole && <AssistantDrawer />}
         <main className={cn("min-w-0 flex-1", isInbox ? "" : "mx-auto w-full max-w-6xl px-4 py-6 sm:px-6")}>
           <Suspense fallback={<PageLoader />}>
             <Outlet />
