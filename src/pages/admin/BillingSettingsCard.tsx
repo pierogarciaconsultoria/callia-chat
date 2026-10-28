@@ -76,7 +76,7 @@ export function BillingSettingsCard() {
                 save.mutate();
               }}
             >
-              <Input label="Novo Access Token (produção)" type="password" autoComplete="off" placeholder="APP_USR-…" value={token} onChange={(e) => setToken(e.target.value)} hint="Suas integrações → aplicação → Credenciais de produção." />
+              <Input label="Novo Access Token (produção)" type="password" autoComplete="off" placeholder="APP_USR-…" value={token} onChange={(e) => setToken(e.target.value)} hint="Suas integrações → aplicação → Credenciais de produção → Access Token (o longo; a Public Key, curta, não serve)." />
               <Input label="Nova assinatura secreta do webhook" type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} hint="Webhooks → Configurar notificações → Assinatura secreta." />
               <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
                 <Button type="submit" loading={save.isPending}>Gravar credenciais</Button>
@@ -92,7 +92,7 @@ export function BillingSettingsCard() {
 
             <div>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="flex items-center gap-2 font-medium"><CreditCard className="h-4 w-4 text-brand" /> Planos de assinatura no Mercado Pago</p>
+                <p className="flex items-center gap-2 font-medium"><CreditCard className="h-4 w-4 text-brand" /> Planos de assinatura no Mercado Pago <span className="text-xs font-normal text-slate-500">(opcional: referência no painel do MP; a cobrança usa o preço do plano do Callia)</span></p>
                 <Button size="sm" variant="secondary" onClick={() => sync.mutate()} loading={sync.isPending} disabled={!q.data.secrets.mercadopago_access_token.configured}>Criar planos que faltam</Button>
               </div>
               <ul className="mt-2 space-y-1 text-sm">

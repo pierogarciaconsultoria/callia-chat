@@ -48,9 +48,23 @@ export class MercadoPagoClient {
     return data as T;
   }
 
-  /** Cria a assinatura (pendente) a partir de um plano; o cliente conclui no init_point. */
-  createPreapproval(input: { preapproval_plan_id: string; reason: string; external_reference: string; payer_email: string; back_url: string }, idempotencyKey: string): Promise<MpPreapproval> {
-    return this.request<MpPreapproval>("/preapproval", { method: "POST", body: JSON.stringify({ ...input, status: "pending" }), idempotencyKey });
+  /**
+   * Cria a assinatura pendente "sem plano associado" (valor e recorrência no próprio pedido): o cliente conclui no
+   * init_point. A variante com preapproval_plan_id exige card_token_id (checkout transparente), por isso não é usada.
+   */
+  createPreapproval(input: { reason: string; amount: number; currency: string; external_reference: string; payer_email: string; back_url: string }, idempotencyKey: string): Promise<MpPreapproval> {
+    return this.request<MpPreapproval>("/preapproval", {
+      method: "POST",
+      idempotencyKey,
+      body: JSON.stringify({
+        reason: input.reason,
+        external_reference: input.external_reference,
+        payer_email: input.payer_email,
+        back_url: input.back_url,
+        auto_recurring: { frequency: 1, frequency_type: "months", transaction_amount: input.amount, currency_id: input.currency },
+        status: "pending",
+      }),
+    });
   }
   getPreapproval(id: string): Promise<MpPreapproval> {
     return this.request<MpPreapproval>(`/preapproval/${encodeURIComponent(id)}`);
@@ -110,11 +124,16 @@ export async function verifyWebhookSignature(args: { xSignature: string | null; 
   const age = Math.abs((args.nowMs ?? Date.now()) / 1000 - Number(ts));
   if (!Number.isFinite(age) || age > tolerance) return false;
   const id = /^[a-z0-9]+$/i.test(args.dataId) ? args.dataId.toLowerCase() : args.dataId;
-  const manifest = `id:${id};${args.xRequestId ? `request-id:${args.xRequestId};` : ""}ts:${ts};`;
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(args.secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(manifest)));
-  const hex = [...sig].map((b) => b.toString(16).padStart(2, "0")).join("");
-  return timingSafeEqual(hex, v1.toLowerCase());
+  const hmac = async (manifest: string) => {
+    const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(manifest)));
+    return [...sig].map((b) => b.toString(16).padStart(2, "0")).join("");
+  };
+  const expected = v1.toLowerCase();
+  // Com request-id (como o Mercado Pago envia) e, por segurança, sem ele (gateways podem gerar o próprio x-request-id).
+  const manifests = [`id:${id};${args.xRequestId ? `request-id:${args.xRequestId};` : ""}ts:${ts};`, `id:${id};ts:${ts};`];
+  for (const m of new Set(manifests)) if (timingSafeEqual(await hmac(m), expected)) return true;
+  return false;
 }
 
 function timingSafeEqual(a: string, b: string): boolean {

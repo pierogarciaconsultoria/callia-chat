@@ -414,7 +414,15 @@ Deno.serve(createHandler("platform-admin", async ({ req, correlationId }) => {
       const changed: string[] = [];
       for (const key of PLATFORM_SECRET_KEYS) {
         if (typeof input[key] !== "string") continue;
-        await setPlatformSecret(db, key, input[key] as string, user.id);
+        const value = (input[key] as string).trim();
+        // Public Key (APP_USR-<uuid>, 44 caracteres) é confundida com o Access Token (bem mais longo); só o token serve.
+        if (key === "mercadopago_access_token" && value && /^(APP_USR|TEST)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
+          throw new RuntimeError("invalid_request", "Isso é a Public Key. Cole o Access Token (mais longo, formato APP_USR-números-data-hash-número), em Credenciais de produção.");
+        }
+        if (key === "mercadopago_access_token" && value && !/^(APP_USR|TEST)-\d+-\d{6}-[0-9a-f]{32}-\d+$/i.test(value)) {
+          throw new RuntimeError("invalid_request", "Access Token com formato inesperado. Copie de novo em Suas integrações → aplicação → Credenciais de produção → Access Token.");
+        }
+        await setPlatformSecret(db, key, value, user.id);
         changed.push(key);
       }
       if (!changed.length) throw new RuntimeError("invalid_request", "Nada para gravar.");

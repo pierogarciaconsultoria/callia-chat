@@ -67,7 +67,7 @@ Deno.serve(createHandler("billing", async ({ req, correlationId }) => {
         subscription: await latestSubscription(db, workspaceId),
         plans: list.filter((p) => p.code !== "trial").map((p) => ({
           id: p.id, code: p.code, name: p.name, price_cents: p.price_cents, currency: p.currency,
-          subscribable: configured && Boolean(p.mp_preapproval_plan_id) && p.price_cents !== null,
+          subscribable: configured && p.price_cents !== null && p.price_cents > 0,
         })),
       });
     }
@@ -75,15 +75,15 @@ Deno.serve(createHandler("billing", async ({ req, correlationId }) => {
     case "checkout": {
       const code = String(body.plan_code ?? "");
       const plan = (await plans(db)).find((p) => p.code === code);
-      if (!plan || plan.price_cents === null) throw new RuntimeError("invalid_request", "Plano inválido para assinatura.");
-      if (!plan.mp_preapproval_plan_id) throw new RuntimeError("unprocessable", "Este plano ainda não tem assinatura configurada no Mercado Pago.");
+      if (!plan || plan.price_cents === null || plan.price_cents <= 0) throw new RuntimeError("invalid_request", "Plano inválido para assinatura.");
       if (!user.email) throw new RuntimeError("invalid_request", "Sua conta precisa de um e-mail para assinar.");
       const current = await latestSubscription(db, workspaceId);
       if (current?.status === "authorized") throw new RuntimeError("conflict", "Este workspace já tem uma assinatura ativa. Cancele-a antes de trocar de plano.");
       const mp = await client(db);
       const sub = await mp.createPreapproval({
-        preapproval_plan_id: plan.mp_preapproval_plan_id,
         reason: `Callia Chat — ${plan.name}`,
+        amount: plan.price_cents / 100,
+        currency: plan.currency || "BRL",
         external_reference: workspaceId,
         payer_email: user.email,
         back_url: `${PUBLIC_SITE_URL}/settings?assinatura=ok`,

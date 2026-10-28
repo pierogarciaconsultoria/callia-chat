@@ -108,3 +108,12 @@ bash scripts/backup-restore-test.sh     # restaura o último num Postgres descar
 - Cópia externa: crie `/etc/callia-backup/offsite.conf` com `RCLONE_REMOTE=destino:pasta` (rclone configurado).
 - Restaurar em produção: decifrar com `openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass file:/root/.callia-backup-key`,
   `pg_restore` de `callia-db.dump` no `callia-db`, extrair `storage.tgz` em `/opt/supabase-callia/volumes/`.
+
+## Gateway (Envoy) e webhook do Mercado Pago
+
+Em `/opt/supabase-callia/volumes/api/envoy/lds.template.yaml`, o `http_connection_manager` precisa de
+`preserve_external_request_id: true`. O Mercado Pago inclui o cabeçalho `x-request-id` no cálculo da `x-signature`;
+sem essa linha o Envoy troca o cabeçalho e `billing-webhook` rejeita toda notificação (401). Depois de mudar,
+`docker restart callia-envoy`. `billing-webhook` também precisa estar em `NO_VERIFY_JWT_FUNCTIONS`
+(`docker-compose.callia.yml`), e o serviço `functions` só deve ser recriado com `docker compose up -d functions`
+sem `-f` (o `COMPOSE_FILE` do `.env` inclui `docker-compose.localonly.yml`, que mapeia a porta 8300).

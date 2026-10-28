@@ -8,6 +8,9 @@ describe("Mercado Pago: notificações", () => {
     const xSignature = await signWebhook({ dataId: "2c938084726fca480172750000000000", xRequestId: "req-1", secret, ts });
     expect(await verifyWebhookSignature({ xSignature, xRequestId: "req-1", dataId: "2c938084726fca480172750000000000", secret })).toBe(true);
     expect(await verifyWebhookSignature({ xSignature, xRequestId: "req-2", dataId: "2c938084726fca480172750000000000", secret })).toBe(false);
+    // Assinado sem request-id (o gateway gerou um x-request-id próprio): ainda válido.
+    const noReq = await signWebhook({ dataId: "abc123", xRequestId: null, secret, ts });
+    expect(await verifyWebhookSignature({ xSignature: noReq, xRequestId: "gerado-pelo-envoy", dataId: "abc123", secret })).toBe(true);
     expect(await verifyWebhookSignature({ xSignature, xRequestId: "req-1", dataId: "outro", secret })).toBe(false);
     expect(await verifyWebhookSignature({ xSignature, xRequestId: "req-1", dataId: "2c938084726fca480172750000000000", secret: "errado" })).toBe(false);
     const old = await signWebhook({ dataId: "abc", xRequestId: null, secret, ts: ts - 3600 });
