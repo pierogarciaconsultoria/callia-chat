@@ -36,6 +36,19 @@ Para abrir o cadastro em produção: `DISABLE_SIGNUP=false` no `.env` do stack S
 | Webhook | `billing-webhook` (pública): valida a `x-signature`, relê a assinatura na API e chama `apply_subscription_status` (service_role). `authorized` → tenant ativo no plano; `cancelled`/`paused` → suspenso, só se estava ativo por essa assinatura. Idempotente. |
 | Segredos | `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_WEBHOOK_SECRET` (e opcional `MERCADOPAGO_BASE_URL` para sandbox) em `functions.env`; `billing-webhook` em `NO_VERIFY_JWT_FUNCTIONS`. |
 
+## Operadores e distribuição de conversas
+
+Configurável por empresa em Equipe → "Distribuição das conversas" (`workspace_routing`):
+
+| Opção | Valores |
+|---|---|
+| Quando a IA transfere | `shared` (fila: quem assumir primeiro), `portfolio` (carteira `contact_assignments`: número → operador), `round_robin` (quem tem menos conversas em atendimento) |
+| O que o atendente vê | `all` (tudo, com filtro "Minhas") ou `own` (só as suas e as sem dono). Admin e dono veem tudo; é regra no banco (`can_view_conversation`), não só na tela |
+| Vínculo ao assumir | em carteira, quem assume um número sem operador vira o operador dele |
+
+`route_conversation` roda no handoff (`process-message`); `claim_conversation` avisa quando outro operador já atende (assumir
+"mesmo assim" fica na auditoria); "Ficar com este cliente" (`claim_contact`) põe o número na carteira de quem clicou.
+
 ## Assistente do painel (botão flutuante, administradores)
 
 Chat para ajustar os fatos estruturados sem procurar a tela: *"a kitnet na alta passa a 450"*, *"fechado de 21/06 a

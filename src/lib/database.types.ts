@@ -205,6 +205,26 @@ export interface MemberWithEmail {
   created_at: string;
 }
 
+/** Distribuição de conversas entre operadores (workspace_routing). */
+export interface RoutingSettings {
+  workspace_id: string;
+  assignment_mode: "shared" | "portfolio" | "round_robin";
+  agent_visibility: "all" | "own";
+  sticky_claim: boolean;
+  updated_at: string;
+}
+
+/** Carteira: número do cliente → operador. */
+export interface ContactAssignment {
+  id: string;
+  workspace_id: string;
+  phone: string;
+  user_id: string;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
 export interface WorkspaceBranding {
   workspace_id: string;
   display_name: string | null;

@@ -9,6 +9,8 @@ import { createGate } from "@/lib/entitlements";
 import { invalidateEntitlements, useEntitlements } from "@/hooks/use-entitlements";
 import { formatDateTime } from "@/lib/format";
 import type { MemberWithEmail, WorkspaceRole } from "@/lib/database.types";
+import { ContactAssignmentsCard, RoutingSettingsCard } from "@/components/team/RoutingCards";
+import { useRouting } from "@/hooks/use-routing";
 import {
   Badge,
   Button,
@@ -54,6 +56,7 @@ export default function Team() {
   const gate = createGate(entitlements, "max_members");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<WorkspaceRole>("agent");
+  const routing = useRouting(isAdmin ? workspaceId : null);
 
   const add = useMutation({
     mutationFn: async (vars: { email: string; role: WorkspaceRole }) =>
@@ -104,6 +107,9 @@ export default function Team() {
             </CardBody>
           </Card>
         )}
+
+        {isAdmin && <RoutingSettingsCard workspaceId={workspaceId} />}
+        {isAdmin && routing.data?.assignment_mode === "portfolio" && <ContactAssignmentsCard workspaceId={workspaceId} />}
 
         <Card>
           <CardHeader title="Membros" />

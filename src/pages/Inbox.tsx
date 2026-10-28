@@ -33,7 +33,8 @@ import {
   type ConversationFilters,
 } from "@/hooks/use-inbox";
 import { useWhatsAppInstances } from "@/hooks/use-whatsapp-instances";
-import { Badge, Button, EmptyState, ErrorState, Spinner, useToast } from "@/components/ui";
+import { memberLabel, normalizePhone, useClaimConversation, useContactAssignmentActions, useContactAssignments, useMembers, useRouting } from "@/hooks/use-routing";
+import { Badge, Button, EmptyState, ErrorState, Notice, Spinner, useToast } from "@/components/ui";
 
 const MODE_LABEL: Record<ConversationMode, string> = { bot: "Bot", human: "Humano", closed: "Encerrada" };
 const MODE_TONE = { bot: "brand", human: "violet", closed: "neutral" } as const;
@@ -45,23 +46,28 @@ export default function Inbox() {
   const { conversationId } = useParams();
   const navigate = useNavigate();
   const [filters, setFilters] = useState<ConversationFilters>({ instanceId: "all", mode: "all" });
+  const [owner, setOwner] = useState<"all" | "mine" | "unassigned">("all");
   const [search, setSearch] = useState("");
+  const { user } = useAuth();
 
   useInboxRealtime(workspaceId);
   const conversations = useConversations(workspaceId);
   const instances = useWhatsAppInstances(workspaceId);
+  const members = useMembers(workspaceId);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (conversations.data ?? []).filter((c) => {
       if (filters.mode !== "all" && c.mode !== filters.mode) return false;
+      if (owner === "mine" && c.assigned_user_id !== user?.id) return false;
+      if (owner === "unassigned" && c.assigned_user_id) return false;
       if (filters.instanceId !== "all") {
         if (filters.instanceId === "external" ? !isExternal(c) : c.instance_id !== filters.instanceId) return false;
       }
       if (q && !`${c.contact_name ?? ""} ${c.contact_phone}`.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [conversations.data, filters, search]);
+  }, [conversations.data, filters, owner, search, user?.id]);
 
   const selected = conversations.data?.find((c) => c.id === conversationId) ?? null;
   const instanceName = (id: string | null) => instances.data?.find((i) => i.id === id)?.name;
@@ -112,6 +118,16 @@ export default function Inbox() {
               <option value="closed">Encerradas</option>
             </select>
           </div>
+          <select
+            aria-label="Filtrar por operador"
+            value={owner}
+            onChange={(e) => setOwner(e.target.value as typeof owner)}
+            className="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs dark:border-slate-700 dark:bg-slate-900"
+          >
+            <option value="all">Todas as conversas</option>
+            <option value="mine">Minhas</option>
+            <option value="unassigned">Sem operador</option>
+          </select>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -167,6 +183,9 @@ export default function Inbox() {
                         ) : (
                           instanceName(c.instance_id) && (instances.data?.length ?? 0) > 1 && <Badge>{instanceName(c.instance_id)}</Badge>
                         )}
+                        {c.assigned_user_id && c.mode === "human" && (
+                          <Badge tone={c.assigned_user_id === user?.id ? "brand" : "neutral"}>{c.assigned_user_id === user?.id ? "você" : memberLabel(members.data, c.assigned_user_id)}</Badge>
+                        )}
                         {c.unread_count > 0 && (
                           <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1.5 text-xs font-semibold text-brand-fg">
                             {c.unread_count > 99 ? "99+" : c.unread_count}
@@ -215,6 +234,30 @@ function Thread({
   const [text, setText] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const external = isExternal(conversation);
+  const members = useMembers(workspaceId);
+  const routing = useRouting(workspaceId);
+  const claim = useClaimConversation(workspaceId);
+  const portfolio = routing.data?.assignment_mode === "portfolio";
+  const assignments = useContactAssignments(workspaceId, portfolio);
+  const { claimContact } = useContactAssignmentActions(workspaceId);
+  const [conflictWith, setConflictWith] = useState<string | null>(null);
+  const attendedBy = conversation.mode === "human" ? memberLabel(members.data, conversation.assigned_user_id) : null;
+  const contactOwner = portfolio ? assignments.data?.find((a) => a.phone === normalizePhone(conversation.contact_phone)) ?? null : null;
+
+  // Assumir: se outro operador já atende, avisa e só assume com "mesmo assim" (fica na auditoria).
+  async function takeOver(force = false) {
+    try {
+      const r = await claim.mutateAsync({ conversationId: conversation.id, force });
+      if (r.conflict) {
+        setConflictWith(memberLabel(members.data, r.assigned_user_id));
+        return;
+      }
+      setConflictWith(null);
+      toast.success("Você assumiu a conversa.");
+    } catch (e) {
+      toast.error(e);
+    }
+  }
 
   // Abrir a conversa zera as não lidas.
   useEffect(() => {
@@ -226,18 +269,16 @@ function Thread({
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [messages.data?.length]);
 
-  const setMode = (mode: ConversationMode) =>
+  const setMode = (mode: ConversationMode) => {
+    if (mode === "human") return void takeOver();
     update.mutate(
       {
         id: conversation.id,
-        patch:
-          mode === "human"
-            ? { mode, assigned_user_id: user?.id ?? null, handoff_at: new Date().toISOString() }
-            : { mode },
+        patch: { mode },
       },
       {
         onSuccess: () => {
-          toast.success(mode === "human" ? "Você assumiu a conversa." : mode === "bot" ? "Conversa devolvida ao bot." : "Conversa encerrada.");
+          toast.success(mode === "bot" ? "Conversa devolvida ao bot." : "Conversa encerrada.");
           // Mensagens do cliente que ficaram sem resposta enquanto estava com a equipe: a IA responde agora.
           if (mode === "bot") {
             invokeFunction("process-message", { action: "resume", workspace_id: conversation.workspace_id, conversation_id: conversation.id })
@@ -247,6 +288,7 @@ function Thread({
         onError: (e) => toast.error(e),
       },
     );
+  };
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -282,6 +324,17 @@ function Thread({
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={MODE_TONE[conversation.mode]}>{MODE_LABEL[conversation.mode]}</Badge>
+          {attendedBy && <Badge tone={conversation.assigned_user_id === user?.id ? "brand" : "neutral"}>atendendo: {conversation.assigned_user_id === user?.id ? "você" : attendedBy}</Badge>}
+          {conversation.mode === "human" && conversation.assigned_user_id !== user?.id && (
+            <Button size="sm" variant="secondary" onClick={() => void takeOver()} disabled={claim.isPending}>
+              <UserRound className="h-4 w-4" /> Assumir
+            </Button>
+          )}
+          {portfolio && (!contactOwner || contactOwner.user_id !== user?.id) && (
+            <Button size="sm" variant="ghost" onClick={() => claimContact.mutate(conversation.id, { onSuccess: () => toast.success("Cliente vinculado a você."), onError: (e) => toast.error(e) })} disabled={claimContact.isPending} title={contactOwner ? `Hoje este cliente é de ${memberLabel(members.data, contactOwner.user_id)}` : "Este cliente ainda não tem operador"}>
+              Ficar com este cliente
+            </Button>
+          )}
           {conversation.mode !== "human" && (
             <Button size="sm" onClick={() => setMode("human")} disabled={update.isPending}>
               <UserRound className="h-4 w-4" /> Assumir
@@ -299,6 +352,15 @@ function Thread({
           )}
         </div>
       </header>
+      {conflictWith && (
+        <div className="px-3 pt-3 sm:px-4">
+          <Notice tone="warn">
+            <span className="mr-3">{conflictWith} já está atendendo esta conversa.</span>
+            <Button size="sm" variant="secondary" onClick={() => void takeOver(true)} loading={claim.isPending}>Assumir mesmo assim</Button>
+            <button type="button" className="ml-3 text-sm underline" onClick={() => setConflictWith(null)}>Deixar com {conflictWith}</button>
+          </Notice>
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4 sm:px-6">
         {messages.isLoading ? (

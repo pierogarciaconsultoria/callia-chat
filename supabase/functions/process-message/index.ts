@@ -96,6 +96,7 @@ async function processMessage(db: Db, messageId: string, correlationId: string, 
     // Cota mensal esgotada: a conversa passa para a equipe em vez de o cliente ficar sem resposta.
     if (monthlyMessagesLeft(entitlements) === 0) {
       await db.from("conversations").update({ mode: "human", handoff_at: new Date().toISOString() }).eq("id", conversation.id);
+      await db.rpc("route_conversation", { p_conversation_id: conversation.id });
       await emitEvent(db, {
         workspaceId: msg.workspace_id,
         event: "conversation.handoff",
@@ -170,6 +171,10 @@ async function processMessage(db: Db, messageId: string, correlationId: string, 
 
     if (outcome.action === "handoff") {
       await db.from("conversations").update({ mode: "human", handoff_at: new Date().toISOString() }).eq("id", conversation.id);
+      // Carteira ou rodízio: a conversa já cai para o operador certo (fila compartilhada: fica sem dono).
+      const routed = await db.rpc("route_conversation", { p_conversation_id: conversation.id });
+      if (routed.error) log.warn("route_conversation_failed", { error: routed.error.message });
+      else if (routed.data) log.info("conversation_routed", { assigned_user_id: routed.data });
       await emitEvent(db, {
         workspaceId: msg.workspace_id,
         event: "conversation.handoff",
