@@ -4,6 +4,7 @@ const [bind, postgrest, functions, gotrue, storage] = Deno.args;
 type Call = { at: string; path: string; headers: Record<string, string>; body: unknown };
 const calls: Record<string, Call[]> = { evolution: [], openai: [], hook: [] };
 let evoSeq = 0;
+let aiDelayMs = 0;
 
 const record = async (kind: string, req: Request, path: string) => {
   const text = await req.text();
@@ -37,6 +38,8 @@ Deno.serve({ hostname: bind, port: 54321, onListen: () => console.log("mock read
   const { pathname } = new URL(req.url);
   if (pathname === "/__calls") return json(calls);
   if (pathname === "/__reset") { for (const k of Object.keys(calls)) calls[k] = []; return json({ ok: true }); }
+  // Demora da IA falsa (ms): simula o cliente mandando outra mensagem enquanto a resposta é gerada.
+  if (pathname === "/__delay") { aiDelayMs = Number(new URL(req.url).searchParams.get("ms") ?? 0) || 0; return json({ aiDelayMs }); }
 
   if (pathname.startsWith("/evo/")) {
     const path = pathname.slice(4);
@@ -55,6 +58,7 @@ Deno.serve({ hostname: bind, port: 54321, onListen: () => console.log("mock read
 
   if (pathname.startsWith("/openai/")) {
     const body = await record("openai", req, pathname.slice(7));
+    if (aiDelayMs) await new Promise((r) => setTimeout(r, aiDelayMs));
     // Assistente de configuração: resposta estruturada (json_schema).
     if ((body?.response_format as { type?: string })?.type === "json_schema") {
       const draft = {

@@ -117,6 +117,22 @@ check("exatamente 1 resposta enviada", c.evolution.filter((x) => x.path.startsWi
 const lastUserMsg = c.openai[0]?.body?.messages?.at(-1)?.content;
 check("IA recebeu as duas mensagens juntas", lastUserMsg === "outra coisa\nvocês têm estacionamento?", lastUserMsg);
 
+// Mensagem que chega enquanto a IA ainda escreve: a resposta pronta é descartada e a execução nova responde ao conjunto.
+console.log("\n3b. Mensagem durante a geração → resposta em andamento descartada");
+await fetch(`${MOCK}/__reset`);
+await fetch(`${MOCK}/__delay?ms=2500`);
+await postWebhook(evolutionEvent("WAMID-3B1", "bom dia"));
+await sleep(1500); // passou o debounce (600 ms): a 1ª execução já está na IA falsa
+await postWebhook(evolutionEvent("WAMID-3B2", "vocês têm estacionamento?"));
+await waitFor(async () => (await rest("GET", `/agent_runs?workspace_id=eq.${ws.id}&status=neq.running&select=id`)).length >= 5);
+await fetch(`${MOCK}/__delay?ms=0`);
+const runs3b = await rest("GET", `/agent_runs?workspace_id=eq.${ws.id}&order=created_at&select=status,reason`);
+check("execução em andamento superada pela mensagem nova", runs3b.slice(-2).map((r: any) => `${r.status}:${r.reason ?? ""}`).join(",") === "superseded:newer_customer_message_during_run,replied:", runs3b.slice(-2));
+c = await calls();
+check("só a resposta ao conjunto foi enviada", c.evolution.filter((x) => x.path.startsWith("/message/sendText")).length === 1, c.evolution.map((x) => x.path));
+const users3b = c.openai.map((x) => x.body?.messages?.at(-1)?.content);
+check("IA da 2ª execução recebeu as duas mensagens", users3b.at(-1) === "bom dia\nvocês têm estacionamento?", c.openai.map((x) => ({ at: x.at, msgs: (x.body?.messages as Array<{ role: string; content: string }>).filter((m) => m.role !== "system") })));
+
 // ---------------------------------------------------------------- 4. handoff
 console.log("\n4. Handoff por palavra-chave e bot pausado");
 await fetch(`${MOCK}/__reset`);

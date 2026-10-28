@@ -424,6 +424,13 @@ describe("pipeline do agente", () => {
     expect(trimEarlyLink("Só texto, sem link.", [link])).toBe("Só texto, sem link.");
   });
 
+  it("\"não\" à pergunta sobre crianças vale também quando a mensagem pendente não está no histórico", () => {
+    const asked = [{ direction: "outbound" as const, content: "Tem criança entre vocês?" }];
+    expect(childrenAddressed(asked, "Não")).toBe(true);
+    expect(childrenAddressed(asked, "nenhuma")).toBe(true);
+    expect(childrenAddressed([{ direction: "outbound", content: "Quais as datas?" }], "Não")).toBe(false);
+  });
+
   it("grupo que nenhuma acomodação da tabela comporta: responde pela tabela, sem o Hospedin cru", async () => {
     const quote = vi.fn(() => ({ hospedes: 9, opcoes: [], sem_opcao: "Nenhuma acomodação da tabela comporta 9 pessoa(s) com essas idades.", nao_comportam: ["Kitnet"] }));
     const checkAvailability = vi.fn();

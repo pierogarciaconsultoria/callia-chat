@@ -172,7 +172,8 @@ export function childrenAddressed(history: Array<Pick<HistoryItem, "direction" |
     }
     if (CHILDREN_INFO.test(text) || (askedKids && NO_CHILDREN.test(text))) return true;
   }
-  return CHILDREN_INFO.test(pendingText);
+  // A mensagem pendente pode ou não estar no histórico (produção inclui; simulador e ensaios, não).
+  return CHILDREN_INFO.test(pendingText) || (askedKids && NO_CHILDREN.test(pendingText));
 }
 
 /** "Está disponível", "temos o 205 disponível", "há vaga", "disponibilidade confirmada". */

@@ -117,7 +117,8 @@ async function processMessage(db: Db, messageId: string, correlationId: string, 
       .from("messages")
       .select("id, direction, sender, type, content, media_mime, metadata, created_at")
       .eq("conversation_id", conversation.id)
-      .order("created_at", { ascending: false })
+      // Ordem de chegada (seq), não created_at: o carimbo do WhatsApp tem precisão de segundo e uma mensagem
+      // do cliente podia "ficar antes" da nossa resposta anterior e sair das pendentes.
       .order("seq", { ascending: false })
       .limit(20);
     const chronological = (recent ?? []).reverse();
@@ -157,6 +158,14 @@ async function processMessage(db: Db, messageId: string, correlationId: string, 
     if (conversation.mode !== "bot") {
       await finishRun({ status: "skipped", engine: outcome.engine, reason: "mode_changed_during_run", usage: outcome.usage });
       return { skipped: "mode_changed" };
+    }
+    // O cliente mandou outra mensagem enquanto a IA escrevia ("Bom dia" + a pergunta logo depois): a resposta
+    // pronta já está velha. Descarta; a execução da mensagem nova responde ao conjunto.
+    const { data: arrived } = await db.from("messages").select("id").eq("conversation_id", conversation.id)
+      .eq("direction", "inbound").eq("sender", "customer").gt("seq", msg.seq).limit(1);
+    if (arrived?.length) {
+      await finishRun({ status: "superseded", engine: outcome.engine, reason: "newer_customer_message_during_run", usage: outcome.usage });
+      return { skipped: "superseded" };
     }
 
     if (outcome.action === "handoff") {
