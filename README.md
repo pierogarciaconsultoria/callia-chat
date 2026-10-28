@@ -15,6 +15,18 @@ cada cliente (workspace) tem dados, chaves, base de conhecimento e logs isolados
 | Suporte | O admin da plataforma entra num cliente de forma explícita (`is_support`) e tudo fica em `audit_logs` (`platform.*`). |
 | Aplicação dos limites | No backend (`_shared/entitlements.ts` + `get_workspace_entitlements`), não só na tela. |
 
+## Site, cadastro e onboarding
+
+| Rota | O que é |
+|---|---|
+| `/` | Landing comercial pública. Planos e configurações vêm de `public_site_info()` (sem login). |
+| `/entrar` | Login. Logado sem workspace vai para `/bem-vindo`. |
+| `/cadastro` | Cadastro de nova empresa: nome, segmento, site, WhatsApp, e-mail e senha. Os dados da empresa ficam nos metadados do usuário até o e-mail ser confirmado. Só aparece com `allow_self_service_workspaces` ligado; desligado, mostra "por convite" com o e-mail de suporte. |
+| `/bem-vindo` | Onboarding: cria o workspace em trial com `create_workspace_from_signup()` (metadados ou nome digitado, no login social), mostra o prazo do teste e entrega na jornada guiada de 9 etapas (`src/lib/onboarding.ts`). |
+
+Para abrir o cadastro em produção: `DISABLE_SIGNUP=false` no `.env` do stack Supabase (recria o serviço `auth`) e
+`allow_self_service_workspaces = true` em `/admin` → Plataforma. O plano do trial é `self_service_plan_code` (`trial`, 14 dias).
+
 ## Assistente de configuração (`/agent/setup`)
 
 A persona e as instruções do agente são montadas a partir do que a empresa já publicou:

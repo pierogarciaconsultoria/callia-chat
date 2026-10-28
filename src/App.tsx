@@ -5,7 +5,10 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { PlatformAdminRoute } from "@/components/PlatformAdminRoute";
 import { PageLoader } from "@/components/ui";
 
+const Landing = lazy(() => import("@/pages/Landing"));
 const Login = lazy(() => import("@/pages/Login"));
+const Signup = lazy(() => import("@/pages/Signup"));
+const Welcome = lazy(() => import("@/pages/Welcome"));
 const SetPassword = lazy(() => import("@/pages/SetPassword"));
 const Inbox = lazy(() => import("@/pages/Inbox"));
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
@@ -35,7 +38,11 @@ export default function App() {
     <BrowserRouter>
       <Suspense fallback={<PageLoader />}>
         <Routes>
-          <Route path="/" element={<Login />} />
+          {/* Público: site, acesso e cadastro. */}
+          <Route path="/" element={<Landing />} />
+          <Route path="/entrar" element={<Login />} />
+          <Route path="/cadastro" element={<Signup />} />
+          <Route path="/bem-vindo" element={<Welcome />} />
           <Route path="/definir-senha" element={<SetPassword />} />
           <Route path="/acompanhamento" element={<Roadmap />} />
           <Route

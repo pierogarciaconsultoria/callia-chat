@@ -2,12 +2,20 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 
+/** Dados do cadastro guardados no usuário; viram o workspace em /bem-vindo (create_workspace_from_signup). */
+export interface SignupMetadata {
+  company_name: string;
+  segment?: string;
+  website?: string;
+  whatsapp?: string;
+}
+
 interface AuthState {
   session: Session | null;
   user: User | null;
   loading: boolean;
   signInWithPassword: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<{ needsConfirmation: boolean }>;
+  signUp: (email: string, password: string, metadata?: SignupMetadata) => Promise<{ needsConfirmation: boolean }>;
   signInWithGoogle: () => Promise<void>;
   requestPasswordReset: (email: string) => Promise<void>;
   updatePassword: (password: string) => Promise<void>;
@@ -47,11 +55,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
       },
-      async signUp(email, password) {
+      async signUp(email, password, metadata) {
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: `${window.location.origin}/` },
+          options: { emailRedirectTo: `${window.location.origin}/bem-vindo`, ...(metadata ? { data: metadata } : {}) },
         });
         if (error) throw error;
         return { needsConfirmation: !data.session };
@@ -59,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async signInWithGoogle() {
         const { error } = await supabase.auth.signInWithOAuth({
           provider: "google",
-          options: { redirectTo: `${window.location.origin}/` },
+          options: { redirectTo: `${window.location.origin}/entrar` },
         });
         if (error) throw error;
       },

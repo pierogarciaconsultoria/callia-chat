@@ -39,7 +39,7 @@ export default function Roadmap() {
               <p className="text-sm text-slate-500">MVP piloto operacional — {done} de {PHASES.length} fases concluídas</p>
             </div>
           </div>
-          <Link to="/" className="text-sm font-medium text-brand">Entrar no painel →</Link>
+          <Link to="/entrar" className="text-sm font-medium text-brand">Entrar no painel →</Link>
         </div>
         <div className="mb-8 h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
           <div className="h-full rounded-full bg-brand" style={{ width: `${(done / PHASES.length) * 100}%` }} />

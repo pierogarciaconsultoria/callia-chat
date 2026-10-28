@@ -23,7 +23,7 @@ export default function SetPassword() {
           <p className="mt-2 text-slate-500 dark:text-slate-400">
             Peça um novo link em "Esqueci minha senha" na tela de login.
           </p>
-          <Link to="/" className="mt-4 inline-block font-medium text-brand">Ir para o login</Link>
+          <Link to="/entrar" className="mt-4 inline-block font-medium text-brand">Ir para o login</Link>
         </Card>
       </Shell>
     );
