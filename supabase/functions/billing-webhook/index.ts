@@ -20,7 +20,15 @@ Deno.serve(createHandler("billing-webhook", async ({ req, url, correlationId, lo
   }
 
   const mp = new MercadoPagoClient(token, { baseUrl: optionalEnv("MERCADOPAGO_BASE_URL") });
-  const result = await processNotification({
+  const result = await processNotificationSafely(mp, db, { kind, id, correlationId, log });
+  return json({ ok: true, ...result });
+}));
+
+/** Recurso inexistente no Mercado Pago (ex.: "Simular notificação" com id fictício): 200 e ignora; erro real continua 5xx para reentrega. */
+async function processNotificationSafely(mp: MercadoPagoClient, db: ReturnType<typeof adminDb>, args: { kind: ReturnType<typeof notificationOf>["kind"]; id: string | null; correlationId: string; log: { info: (m: string, e?: Record<string, unknown>) => void; warn: (m: string, e?: Record<string, unknown>) => void } }) {
+  const { kind, id, correlationId, log } = args;
+  try {
+    return await processNotification({
     getPreapproval: (sid) => mp.getPreapproval(sid),
     getAuthorizedPayment: (pid) => mp.getAuthorizedPayment(pid),
     resolve: async ({ externalReference, providerSubscriptionId, preapprovalPlanId }) => {
@@ -53,5 +61,11 @@ Deno.serve(createHandler("billing-webhook", async ({ req, url, correlationId, lo
     },
     log: (msg, extra) => log.warn(msg, extra),
   }, kind, id);
-  return json({ ok: true, ...result });
-}));
+  } catch (err) {
+    if (err instanceof RuntimeError && err.code === "not_found") {
+      log.warn("billing_resource_not_found", { kind, id });
+      return { handled: false, reason: "recurso não encontrado no Mercado Pago" };
+    }
+    throw err;
+  }
+}
