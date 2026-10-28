@@ -142,7 +142,7 @@ export function BusinessInfoCard() {
               {suggestedSegment && (
                 <p className="text-xs text-slate-500 dark:text-slate-400">
                   Segmento sugerido pelo CNAE: <strong className="text-slate-700 dark:text-slate-300">{suggestedSegment.label}</strong>. Escolha ou confirme em{" "}
-                  <Link to="/agent" className="text-brand underline">Agente de IA</Link>.
+                  <Link to="/agent" className="text-brand underline">Atendimento</Link>.
                 </p>
               )}
             </fieldset>

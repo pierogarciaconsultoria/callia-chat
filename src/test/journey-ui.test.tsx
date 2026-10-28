@@ -39,7 +39,7 @@ describe("jornada: barra no topo", () => {
   });
 
   it("etapa já feita: confirma e aponta a seguinte", () => {
-    at("/settings", <JourneyBar />);
+    at("/knowledge-base", <JourneyBar />);
     expect(screen.getByText(/Dados da empresa: concluída\./)).toBeTruthy();
   });
 

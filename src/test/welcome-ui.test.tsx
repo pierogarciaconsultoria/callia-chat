@@ -63,7 +63,7 @@ describe("boas-vindas e onboarding", () => {
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Tudo pronto, Pousada Alfa!");
     expect(screen.getByText(/Seu teste grátis vai até 11 de novembro/)).toBeTruthy();
     expect(screen.getByText("Dados da empresa")).toBeTruthy();
-    expect(screen.getByRole("link", { name: /Começar: Dados da empresa/ }).getAttribute("href")).toBe("/settings#empresa");
+    expect(screen.getByRole("link", { name: /Começar: Dados da empresa/ }).getAttribute("href")).toBe("/knowledge-base?tab=empresa");
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 });

@@ -93,8 +93,8 @@ export default function Agent() {
   return (
     <>
       <PageHeader
-        title="Agente de IA"
-        description="Defina como o agente responde no WhatsApp, quando passa para a equipe humana e o que pode oferecer."
+        title="Atendimento"
+        description="Como o agente atende no WhatsApp: identidade, tom, regras de comportamento, horário e quando passa para a equipe. Preços, políticas e dados do negócio ficam em Informações da empresa."
         actions={
           <Link
             to="/agent/setup"
@@ -132,11 +132,11 @@ export default function Agent() {
                 required
               />
               <Textarea
-                label="Limites (guardrails)"
+                label="Regras de comportamento"
                 rows={3}
                 value={form.guardrails ?? ""}
                 onChange={(e) => set("guardrails", e.target.value)}
-                hint="O que o agente nunca deve fazer. Ex.: não prometer descontos, não falar de concorrentes."
+                hint="Como agir, não o que o negócio é. Ex.: não prometer descontos, transferir pedidos de cancelamento. Fatos (preços, capacidade, políticas) ficam em Informações da empresa."
               />
               <div id="segmento" className="scroll-mt-4" />
               <SegmentFields

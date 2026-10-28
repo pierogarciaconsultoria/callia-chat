@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useMedia } from "@/hooks/use-media";
 import { PriceTableCard } from "@/components/PriceTableCard";
 import { PoliciesCard } from "@/components/PoliciesCard";
+import { BusinessInfoCard } from "@/components/BusinessInfoCard";
 import { PhotosTab } from "@/components/media/PhotosTab";
 import { BookOpen, FileUp, Globe, Package, Pencil, Pin, PinOff, Plus, RefreshCw, Search, Sparkles, Trash2, Type } from "lucide-react";
 import { useRequiredWorkspace } from "@/lib/workspace";
@@ -51,20 +52,20 @@ import {
   useToast,
 } from "@/components/ui";
 
-type Tab = "faq" | "politicas" | "docs" | "catalog" | "fotos" | "search";
-const TAB_IDS: Tab[] = ["faq", "politicas", "docs", "catalog", "fotos", "search"];
+type Tab = "empresa" | "politicas" | "catalog" | "fotos" | "faq" | "docs" | "search";
+const TAB_IDS: Tab[] = ["empresa", "politicas", "catalog", "fotos", "faq", "docs", "search"];
 
 export default function KnowledgeBase() {
   // A aba fica na URL (?tab=fotos) para poder ser linkada.
   const [params, setParams] = useSearchParams();
   const fromUrl = params.get("tab") as Tab | null;
-  const tab: Tab = fromUrl && TAB_IDS.includes(fromUrl) ? fromUrl : "faq";
-  const setTab = (next: Tab) => setParams(next === "faq" ? {} : { tab: next }, { replace: true });
+  const tab: Tab = fromUrl && TAB_IDS.includes(fromUrl) ? fromUrl : "empresa";
+  const setTab = (next: Tab) => setParams(next === "empresa" ? {} : { tab: next }, { replace: true });
   return (
     <>
       <PageHeader
-        title="Base de conhecimento"
-        description="O que o agente sabe sobre o seu negócio. Também fica disponível para sistemas externos em GET /knowledge/search."
+        title="Informações da empresa"
+        description="O que o negócio é e oferece: dados, políticas, catálogo e preços, fotos, perguntas e documentos. É daqui que o agente responde; cada fato fica em um só lugar."
         actions={
           <Link
             to="/agent/setup"
@@ -79,14 +80,16 @@ export default function KnowledgeBase() {
         value={tab}
         onChange={setTab}
         tabs={[
-          { id: "faq", label: "Perguntas e respostas" },
+          { id: "empresa", label: "Empresa" },
           { id: "politicas", label: "Políticas" },
-          { id: "docs", label: "Documentos e textos" },
-          { id: "catalog", label: "Catálogo" },
+          { id: "catalog", label: "Catálogo e preços" },
           { id: "fotos", label: "Fotos" },
+          { id: "faq", label: "Perguntas e respostas" },
+          { id: "docs", label: "Documentos e site" },
           { id: "search", label: "Teste de busca" },
         ]}
       />
+      {tab === "empresa" && <div id="empresa"><BusinessInfoCard /></div>}
       {tab === "faq" && <FaqTab />}
       {tab === "politicas" && <PoliciesTab />}
       {tab === "docs" && <DocsTab />}

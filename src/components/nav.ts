@@ -27,8 +27,8 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { to: "/dashboard", label: "Painel", icon: LayoutDashboard, adminOnly: false },
   { to: "/inbox", label: "Inbox", icon: MessagesSquare, adminOnly: false },
-  { to: "/agent", label: "Agente de IA", icon: Bot, adminOnly: true },
-  { to: "/knowledge-base", label: "Base de conhecimento", icon: BookOpen, adminOnly: true },
+  { to: "/agent", label: "Atendimento", icon: Bot, adminOnly: true },
+  { to: "/knowledge-base", label: "Informações da empresa", icon: BookOpen, adminOnly: true },
   // WhatsApp e sistema de reservas ficam em Integrações; /whatsapp segue acessível pelo cartão do WhatsApp.
   { to: "/integrations", label: "Integrações", icon: Plug, adminOnly: true },
   { to: "/api-keys", label: "Chaves de API", icon: KeyRound, adminOnly: true },

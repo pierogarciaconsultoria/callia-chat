@@ -43,9 +43,10 @@ export function useJourney(): { journey: Journey | null; hidden: boolean; setHid
     staleTime: 15_000,
     queryFn: async (): Promise<Counts> => {
       const head = { count: "exact" as const, head: true };
-      const [info, own, members, conversations, runs] = await Promise.all([
+      const [info, own, policies, members, conversations, runs] = await Promise.all([
         supabase.from("workspace_business_info").select("legal_name, cnpj").eq("workspace_id", ws).maybeSingle(),
         supabase.from("knowledge_sources").select("id", head).eq("workspace_id", ws).in("kind", ["text", "document", "url"]),
+        supabase.from("workspace_policies").select("id", head).eq("workspace_id", ws).eq("active", true),
         supabase.from("workspace_members").select("user_id", head).eq("workspace_id", ws),
         supabase.from("conversations").select("id", head).eq("workspace_id", ws),
         supabase.from("agent_runs").select("id", head).eq("workspace_id", ws).eq("status", "replied"),
@@ -53,7 +54,8 @@ export function useJourney(): { journey: Journey | null; hidden: boolean; setHid
       const row = info.data as { legal_name: string | null; cnpj: string | null } | null;
       return {
         businessInfo: Boolean(row?.legal_name?.trim() || row?.cnpj?.trim()),
-        ownKnowledge: own.count ?? 0,
+        // Políticas contam como conteúdo próprio (substituem os textos de políticas na base).
+        ownKnowledge: (own.count ?? 0) + (policies.count ?? 0),
         members: members.count ?? 0,
         conversations: conversations.count ?? 0,
         runs: runs.count ?? 0,

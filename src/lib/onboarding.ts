@@ -49,7 +49,7 @@ interface StepDef extends Omit<JourneyStep, "state"> {
 
 const STEPS: StepDef[] = [
   {
-    id: "empresa", short: "Empresa", title: "Dados da empresa", to: "/settings#empresa", optional: false, minutes: 2,
+    id: "empresa", short: "Empresa", title: "Dados da empresa", to: "/knowledge-base?tab=empresa", optional: false, minutes: 2,
     tip: "Digite o CNPJ e clique em Buscar: razão social, endereço e CNAE vêm da Receita. Depois salve.",
     done: (s) => s.businessInfo,
   },
@@ -64,8 +64,8 @@ const STEPS: StepDef[] = [
     done: (s) => Boolean(s.segment),
   },
   {
-    id: "conhecimento", short: "Conhecimento", title: "Base de conhecimento", to: "/knowledge-base?tab=docs", optional: false, minutes: 10,
-    tip: "Envie o que o agente precisa saber de cor: tabela de preços, políticas, horários. Confira também as perguntas frequentes geradas.",
+    id: "conhecimento", short: "Políticas", title: "Políticas e documentos", to: "/knowledge-base?tab=politicas", optional: false, minutes: 10,
+    tip: "Cadastre as políticas (check-in, cancelamento, crianças…) e, em Documentos e site, envie tabela de preços e outros arquivos. Confira também as perguntas frequentes geradas.",
     done: (s) => s.ownKnowledge > 0,
   },
   {

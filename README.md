@@ -46,7 +46,7 @@ Cartões de autoatendimento para o cliente do SaaS, com o mínimo de campos:
 A ferramenta de disponibilidade do agente usa o provedor conectado (Hospedin → hbook) via `_shared/availability.ts`;
 novos PMS entram como mais um provedor sem mudar o agente. Backend: function `integrations`.
 
-## Fotos (Base de conhecimento → Fotos)
+## Fotos (Informações da empresa → Fotos)
 
 Álbuns por acomodação/área no bucket público `media`. Fontes: pasta do Google Drive compartilhada por link
 (subpastas = álbuns; fotos baixadas em até 1600 px, HEIC convertido), fotos das categorias do Hospedin e upload no painel.
