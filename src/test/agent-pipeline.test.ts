@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AiProvider, ChatResult } from "../../supabase/functions/_shared/ai.ts";
 import type { AgentConfig, KnowledgeHit } from "../../supabase/functions/_shared/agent-core.ts";
-import { childrenAddressed, claimsAvailability, mentionsGuests, PAYMENT_PROOF_REPLY, mentionsStayDates, type PipelineDeps, type PipelineInput, promisesAction, promisesPhotos, runAgentPipeline, stripAvailabilityClaims, stripPhotoPromise } from "../../supabase/functions/_shared/agent-pipeline.ts";
+import { childrenAddressed, claimsAvailability, mentionsGuests, PAYMENT_PROOF_REPLY, UNINTELLIGIBLE_AUDIO_REPLY, mentionsStayDates, type PipelineDeps, type PipelineInput, promisesAction, promisesPhotos, runAgentPipeline, stripAvailabilityClaims, stripPhotoPromise } from "../../supabase/functions/_shared/agent-pipeline.ts";
 import { callExternalAgent, ExternalAgentError, resolveExternalSecret } from "../../supabase/functions/_shared/external-agent.ts";
 
 const config: AgentConfig = {
@@ -598,6 +598,16 @@ describe("chamada HTTP ao agente externo", () => {
     expect(out.action).toBe("handoff");
     expect(out.handoffReason).toBe("payment_proof");
     expect(out.reply).toBe(PAYMENT_PROOF_REPLY);
+    expect(ai.calls).toHaveLength(0);
+  });
+
+  it("áudio que o reconhecimento de voz não entendeu: pede para repetir, sem chamar a IA", async () => {
+    // Piero: o áudio virou "O que é isso? É um..." e a IA mandou orçamento e link copiados do histórico.
+    const ai = fakeAi([]);
+    const base = input("O que é isso? É um... O que é isso? É um... É um...");
+    const out = await runAgentPipeline({ ...base, unintelligibleAudio: true }, deps({ ai }));
+    expect(out.action).toBe("reply");
+    expect(out.reply).toBe(UNINTELLIGIBLE_AUDIO_REPLY);
     expect(ai.calls).toHaveLength(0);
   });
 });

@@ -31,10 +31,13 @@ export interface PipelineInput {
   products: Product[];
   /** Entre as pendentes há foto ou PDF com cara de comprovante de pagamento. */
   paymentProof?: boolean;
+  /** Só áudio(s) sem fala aproveitável desde a última resposta: pede para repetir, sem chamar a IA. */
+  unintelligibleAudio?: boolean;
 }
 
 /** A IA não confere pagamento: agradece e passa para a equipe confirmar. */
-export const PAYMENT_PROOF_REPLY = "Recebi o seu comprovante, obrigado! Já passei para a equipe conferir o pagamento, e eles confirmam com você por aqui.";
+export const UNINTELLIGIBLE_AUDIO_REPLY = "Não consegui entender bem o seu áudio 😕 Pode mandar de novo ou escrever por aqui?";
+export const PAYMENT_PROOF_REPLY ="Recebi o seu comprovante, obrigado! Já passei para a equipe conferir o pagamento, e eles confirmam com você por aqui.";
 
 export interface PipelineDeps {
   config: AgentConfig;
@@ -311,6 +314,8 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
     const later = withinHours === false && config.out_of_hours_message?.trim() ? `\n\n${config.out_of_hours_message.trim()}` : "";
     return handoff("internal", "payment_proof", PAYMENT_PROOF_REPLY + later);
   }
+  // Áudio que o reconhecimento de voz não entendeu: a IA respondia qualquer coisa (orçamento, link) a partir do histórico.
+  if (input.unintelligibleAudio) return { ...outcome, reply: UNINTELLIGIBLE_AUDIO_REPLY };
 
   // 2. Agente externo (opcional). Qualquer falha cai no pipeline interno.
   if (config.external_agent_enabled && deps.callExternal) {

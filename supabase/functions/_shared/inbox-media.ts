@@ -100,3 +100,14 @@ export function mediaNote(msg: { type: string; content: string | null; metadata:
   }
   return null;
 }
+
+/**
+ * Transcrição sem fala aproveitável: vazia ou só uma frase curta repetida ("O que é isso? É um... O que é isso? É um..."),
+ * que é o que o reconhecimento de voz devolve para áudio com ruído ou cortado.
+ */
+export function unintelligibleTranscript(transcript: string | null | undefined): boolean {
+  const text = (transcript ?? "").replace(/\[áudio[^\]]*\]/gi, "").trim();
+  const words = text.toLowerCase().match(/[\p{L}\d]+/gu) ?? [];
+  if (!words.length) return true;
+  return words.length >= 6 && new Set(words).size / words.length <= 0.5;
+}

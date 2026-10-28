@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanMime, inboxMediaPath, looksLikePaymentProof, mediaNote } from "../../supabase/functions/_shared/inbox-media.ts";
+import { cleanMime, inboxMediaPath, looksLikePaymentProof, mediaNote, unintelligibleTranscript } from "../../supabase/functions/_shared/inbox-media.ts";
 
 
 const msg = { id: "m1", workspace_id: "ws", conversation_id: "c1" };
@@ -26,5 +26,15 @@ describe("arquivos recebidos no WhatsApp", () => {
     expect(mediaNote({ type: "document", content: null, metadata: { file_name: "c.pdf", document_text: "" } })).toBe('[documento "c.pdf" (sem texto legível)]');
     expect(mediaNote({ type: "document", content: "segue", metadata: { file_name: "f.docx" } })).toBe('segue\n[documento "f.docx"]');
     expect(mediaNote({ type: "text", content: "oi", metadata: {} })).toBeNull();
+  });
+
+  it("áudio sem fala aproveitável: vazio ou frase curta repetida (alucinação do reconhecimento de voz)", () => {
+    expect(unintelligibleTranscript("")).toBe(true);
+    expect(unintelligibleTranscript("[áudio sem fala reconhecível]")).toBe(true);
+    expect(unintelligibleTranscript("O que é isso? É um... O que é isso? É um... É um...")).toBe(true);
+    expect(unintelligibleTranscript("O que é isso? O que é isso? O que é isso? O que é isso?")).toBe(true);
+    expect(unintelligibleTranscript("quais os serviços inclusos no valor da diária?")).toBe(false);
+    expect(unintelligibleTranscript("oi")).toBe(false);
+    expect(unintelligibleTranscript("sim, pode ser")).toBe(false);
   });
 });
