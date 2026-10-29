@@ -37,7 +37,9 @@ conversa existente ou cria uma nova, que fica em modo humano com quem enviou. Co
 | fotos da galeria | `media_asset_ids[]` (até 5, `media_assets` do workspace), `text?` (legenda da primeira) | uma mensagem `image` por foto, na ordem pedida, pela URL pública do bucket `media`; `metadata.media_asset_id` e `album` em cada uma |
 
 Resposta: `{ message, messages, outbound, conversation_id, created }` (`messages` traz todas as geradas; `message` é a
-primeira). Grava `sender = agent` e `agent_user_id`. Conversas com
+primeira). Grava `sender = agent` e `agent_user_id`. Responder assume a conversa: sai do modo bot e, se ela não tinha operador
+(transferida pelo bot ou respondida pelo celular), quem respondeu vira o `assigned_user_id`; conversa de outro operador não
+muda de dono (isso é o "Assumir mesmo assim" da inbox, RPC `claim_conversation`). Conversas com
 `channel != 'whatsapp'` retornam `422 channel_not_supported`. Áudio não aceita legenda: o texto vai como segunda mensagem.
 
 ## process-message

@@ -33,8 +33,8 @@ interface Send {
   metadata: Record<string, unknown>;
 }
 
-type ConversationRow = { id: string; workspace_id: string; instance_id: string | null; channel: string; contact_phone: string; mode: string };
-const CONVERSATION_COLUMNS = "id, workspace_id, instance_id, channel, contact_phone, mode";
+type ConversationRow = { id: string; workspace_id: string; instance_id: string | null; channel: string; contact_phone: string; mode: string; assigned_user_id: string | null };
+const CONVERSATION_COLUMNS = "id, workspace_id, instance_id, channel, contact_phone, mode, assigned_user_id";
 const MEMBER_ROLES = ["owner", "admin", "agent"] as const;
 
 async function signedUrlFor(db: Db, path: string): Promise<string> {
@@ -117,9 +117,15 @@ Deno.serve(createHandler("send-message", async ({ req, correlationId }) => {
     first.metadata.caption_sent_separately = true;
   }
 
-  // 3. Quem responde pela inbox assume a conversa, para o bot não responder por cima.
-  if (conversation && conversation.mode !== "human") {
-    await db.from("conversations").update({ mode: "human", assigned_user_id: user.id, handoff_at: new Date().toISOString() }).eq("id", conversation.id);
+  // 3. Quem responde pela inbox assume a conversa: tira do bot (para ele não responder por cima) e vira o operador
+  //    dela quando ainda não tem dono (transferida pelo bot ou respondida pelo celular). Conversa de outro operador
+  //    continua com ele; trocar é pelo botão "Assumir mesmo assim".
+  if (conversation && (conversation.mode !== "human" || !conversation.assigned_user_id)) {
+    await db.from("conversations").update({
+      mode: "human",
+      assigned_user_id: conversation.assigned_user_id ?? user.id,
+      ...(conversation.mode !== "human" ? { handoff_at: new Date().toISOString() } : {}),
+    }).eq("id", conversation.id);
   }
 
   const result = await sendOutbound(db, {
