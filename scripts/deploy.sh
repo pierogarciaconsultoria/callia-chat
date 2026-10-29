@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Publica o Callia em produção (callia.sistemalexis.com.br): painel + edge functions.
+# Publica o Callia em produção: painel + edge functions. O domínio público vem de SUPABASE_PUBLIC_URL no .env do stack.
 # Migrations novas NÃO são aplicadas aqui; ver DEPLOY_RUNBOOK.md ("Produção").
 # Uso: bash scripts/deploy.sh [frontend|functions|all]
 set -euo pipefail
@@ -17,7 +17,9 @@ fi
 if [[ "$what" == "all" || "$what" == "frontend" ]]; then
   cd "$ROOT"
   ANON="$(grep '^ANON_KEY=' "$STACK/.env" | cut -d= -f2-)"
-  VITE_SUPABASE_URL=https://callia.sistemalexis.com.br VITE_SUPABASE_PUBLISHABLE_KEY="$ANON" npm run build
+  PUBLIC_URL="$(grep '^SUPABASE_PUBLIC_URL=' "$STACK/.env" | cut -d= -f2- | sed 's#/*$##')"
+  VITE_SUPABASE_URL="${PUBLIC_URL:-https://callia.sistemalexis.com.br}" VITE_SUPABASE_PUBLISHABLE_KEY="$ANON" npm run build
+  echo "painel compilado para $VITE_SUPABASE_URL"
   rel="$WEB/releases/$(date -u +%Y%m%d-%H%M%S)"
   mkdir -p "$rel" && cp -a dist/. "$rel/"
   # Abas abertas com a versão anterior ainda pedem os chunks antigos (nomes com hash): mantém os

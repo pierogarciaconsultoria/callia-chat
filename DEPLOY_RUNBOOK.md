@@ -92,6 +92,15 @@ Para o fluxo OAuth de ChatGPT/Claude, habilite o servidor OAuth 2.1 do Supabase 
 - Primeiro admin da plataforma (só uma vez):
   `docker exec callia-db psql -U postgres -c "insert into user_roles(user_id, role) select id, 'platform_admin' from auth.users where email = '<e-mail>'"`.
 
+### Trocar o domínio público
+
+`sudo bash scripts/switch-domain.sh www.novo.dominio novo.dominio` depois que o DNS dos dois apontar para o servidor.
+O script cria o site no nginx, emite o certificado, faz o painel do domínio antigo redirecionar para o novo (a API continua
+no antigo: webhooks da Evolution, Mercado Pago e chaves de API não mudam), troca `SITE_URL`, `ADDITIONAL_REDIRECT_URLS`,
+`SUPABASE_PUBLIC_URL`, `FUNCTIONS_PUBLIC_URL`, `PUBLIC_SITE_URL` e `PANEL_URL`, recria `auth`, `storage`, `functions`,
+`api-gw` e `studio`, e recompila o painel. `API_EXTERNAL_URL` fica no domínio antigo de propósito (issuer dos JWTs).
+Quem estava logado no domínio antigo entra de novo no novo. Backups em `.env.bak-<data>` e `<site>.bak-<data>`.
+
 ## Backup e restauração
 
 `scripts/backup.sh` gera, por execução, um único arquivo cifrado (AES-256) em `/var/backups/callia/` com:
