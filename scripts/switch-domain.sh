@@ -14,11 +14,15 @@ SITE_NEW="/etc/nginx/sites-available/$APEX"
 STAMP="$(date -u +%Y%m%d-%H%M%S)"
 MY_IP="$(curl -s -m 10 https://ifconfig.me || hostname -I | awk '{print $1}')"
 
-# 1. DNS precisa estar aqui, senão o certificado falha e o painel some.
+# 1. DNS precisa estar aqui (conferido no servidor autoritativo, que é o que a Let's Encrypt consulta), senão o
+#    certificado falha e o painel some. Caches locais podem estar velhos: as conferências usam --resolve.
+NS="$(dig +short NS "$APEX" | head -1)"
 for h in "$NEW_HOST" "$APEX"; do
-  got="$(dig +short A "$h" @8.8.8.8 | tail -1)"
+  got="$(dig +short A "$h" @"${NS:-8.8.8.8}" | tail -1)"
   [[ "$got" == "$MY_IP" ]] || { echo "DNS de $h aponta para '${got:-nada}', esperado $MY_IP. Aguarde a propagação."; exit 1; }
 done
+command -v resolvectl >/dev/null && resolvectl flush-caches || true
+R=(--resolve "$NEW_HOST:443:$MY_IP" --resolve "$APEX:443:$MY_IP" --resolve "$NEW_HOST:80:$MY_IP" --resolve "$APEX:80:$MY_IP")
 
 # 2. Site novo: mesma configuração do antigo, com server_name novo; apex só redireciona.
 if [[ ! -f "$SITE_NEW" ]]; then
@@ -86,9 +90,9 @@ bash "$ROOT/scripts/deploy.sh" frontend
 
 # 7. Conferência.
 echo "--- conferência"
-curl -s -o /dev/null -w "https://$NEW_HOST/            %{http_code}\n" "https://$NEW_HOST/"
-curl -s -o /dev/null -w "https://$APEX/                %{http_code} -> %{redirect_url}\n" "https://$APEX/"
-curl -s -o /dev/null -w "https://$NEW_HOST/auth/v1/health  %{http_code}\n" "https://$NEW_HOST/auth/v1/health"
+curl -s "${R[@]}" -o /dev/null -w "https://$NEW_HOST/            %{http_code}\n" "https://$NEW_HOST/"
+curl -s "${R[@]}" -o /dev/null -w "https://$APEX/                %{http_code} -> %{redirect_url}\n" "https://$APEX/"
+curl -s "${R[@]}" -o /dev/null -w "https://$NEW_HOST/auth/v1/health  %{http_code}\n" "https://$NEW_HOST/auth/v1/health"
 curl -s -o /dev/null -w "https://$OLD_HOST/ (painel)  %{http_code} -> %{redirect_url}\n" "https://$OLD_HOST/"
 curl -s -o /dev/null -w "https://$OLD_HOST/auth/v1/health  %{http_code}\n" "https://$OLD_HOST/auth/v1/health"
-curl -s "https://$NEW_HOST/auth/v1/settings" | head -c 120; echo
+curl -s "${R[@]}" "https://$NEW_HOST/auth/v1/settings" | head -c 120; echo
