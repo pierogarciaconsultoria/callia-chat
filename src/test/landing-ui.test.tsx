@@ -61,4 +61,10 @@ describe("landing comercial", () => {
     expect(screen.getByText("Preciso trocar de número ou de chip?")).toBeTruthy();
     expect(screen.getByText("Hotelaria e hospedagem")).toBeTruthy();
   });
+
+  it("mostra a razão social, o CNPJ e o e-mail no rodapé", () => {
+    show();
+    expect(screen.getByText(/TrIAd Solution · CNPJ 49\.732\.652\/0001-00/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "contato@triadsolution.com.br" }).getAttribute("href")).toBe("mailto:contato@triadsolution.com.br");
+  });
 });

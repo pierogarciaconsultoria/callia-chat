@@ -288,6 +288,9 @@ export default function Landing() {
             {site.support_email && <a href={`mailto:${site.support_email}`} className="hover:underline">{site.support_email}</a>}
           </nav>
         </div>
+        <p className="mx-auto mt-4 max-w-6xl text-xs text-slate-400 dark:text-slate-500">
+          TrIAd Solution · CNPJ 49.732.652/0001-00 · <a href="mailto:contato@triadsolution.com.br" className="hover:underline">contato@triadsolution.com.br</a>
+        </p>
       </footer>
     </div>
   );
