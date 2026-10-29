@@ -18,6 +18,7 @@ import {
   UserRound,
   Video,
   XCircle,
+  Zap,
 } from "lucide-react";
 import { invokeFunction } from "@/lib/functions";
 import { cn } from "@/lib/cn";
@@ -26,11 +27,14 @@ import { PaymentProofBadge, ReceivedMedia, receivedMediaPath } from "@/component
 import { ForwardDialog } from "@/components/inbox/ForwardDialog";
 import { NewConversationDialog } from "@/components/inbox/NewConversationDialog";
 import { PhotoPickerDialog } from "@/components/inbox/PhotoPickerDialog";
-import { canForward, uploadAttachment, validateUpload } from "@/lib/inbox-send";
+import { QuickReplyPicker } from "@/components/inbox/QuickReplyPicker";
+import { useQuickReplies } from "@/hooks/use-quick-replies";
+import { renderQuickReply, slashQuery } from "@/lib/quick-replies";
+import { canForward, mediaTypeFor, uploadAttachment, validateUpload, type UploadedAttachment } from "@/lib/inbox-send";
 import { useAuth } from "@/lib/auth";
 import { useRequiredWorkspace } from "@/lib/workspace";
 import { formatPhone, formatRelativeShort, initials } from "@/lib/format";
-import type { Conversation, ConversationMode, Message } from "@/lib/database.types";
+import type { Conversation, ConversationMode, Message, QuickReply } from "@/lib/database.types";
 import {
   useConversations,
   useInboxRealtime,
@@ -250,7 +254,13 @@ function Thread({
   const [uploading, setUploading] = useState(false);
   const [forwardOf, setForwardOf] = useState<Message | null>(null);
   const [photosOpen, setPhotosOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
+  /** Anexo que veio de uma resposta rápida (já guardado no bucket). */
+  const [quickMedia, setQuickMedia] = useState<UploadedAttachment | null>(null);
+  const quickReplies = useQuickReplies(workspaceId);
+  const slash = slashQuery(text);
   const fileRef = useRef<HTMLInputElement>(null);
+  const textRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const external = isExternal(conversation);
   const members = useMembers(workspaceId);
@@ -314,18 +324,35 @@ function Thread({
     const problem = validateUpload(file);
     if (problem) return toast.error(problem);
     setAttachment(file);
+    setQuickMedia(null);
+  }
+
+  // Resposta rápida escolhida: o texto entra no campo (ainda editável) e o anexo dela vira o anexo da mensagem.
+  function pickQuickReply(r: QuickReply) {
+    setText(renderQuickReply(r.content, { name: conversation.contact_name }));
+    if (r.media_path) {
+      setQuickMedia({ mediaPath: r.media_path, fileName: r.media_name ?? "anexo", mimetype: r.media_mime ?? "application/octet-stream", type: mediaTypeFor(r.media_mime ?? "") });
+      setAttachment(null);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+    setQuickOpen(false);
+    textRef.current?.focus();
   }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     const body = text.trim();
-    if (!body && !attachment) return;
+    if (!body && !attachment && !quickMedia) return;
     try {
-      if (attachment) {
-        setUploading(true);
-        const up = await uploadAttachment(workspaceId, attachment).finally(() => setUploading(false));
+      if (attachment || quickMedia) {
+        let up = quickMedia!;
+        if (attachment) {
+          setUploading(true);
+          up = await uploadAttachment(workspaceId, attachment).finally(() => setUploading(false));
+        }
         await send.mutateAsync({ conversationId: conversation.id, text: body || undefined, mediaPath: up.mediaPath, fileName: up.fileName, mimetype: up.mimetype, type: up.type });
         setAttachment(null);
+        setQuickMedia(null);
         if (fileRef.current) fileRef.current.value = "";
       } else {
         await send.mutateAsync({ conversationId: conversation.id, text: body });
@@ -428,11 +455,19 @@ function Thread({
           </p>
         ) : (
           <form onSubmit={submit} className="mx-auto max-w-3xl">
-            {attachment && (
+            {(quickOpen || slash !== null) && (
+              <QuickReplyPicker
+                replies={quickReplies.data ?? []}
+                query={slash ?? ""}
+                onPick={pickQuickReply}
+                onClose={() => { setQuickOpen(false); if (slash !== null) setText(""); }}
+              />
+            )}
+            {(attachment || quickMedia) && (
               <div className="mb-2 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800">
                 <Paperclip className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                <span className="min-w-0 flex-1 truncate">{attachment.name}</span>
-                <button type="button" className="underline" onClick={() => pickFile(null)}>Remover</button>
+                <span className="min-w-0 flex-1 truncate">{attachment?.name ?? quickMedia?.fileName}</span>
+                <button type="button" className="underline" onClick={() => { pickFile(null); setQuickMedia(null); }}>Remover</button>
               </div>
             )}
             <div className="flex items-end gap-2">
@@ -443,7 +478,11 @@ function Thread({
             <Button type="button" variant="ghost" onClick={() => setPhotosOpen(true)} aria-label="Fotos" title="Enviar fotos da galeria">
               <ImageIcon className="h-4 w-4" />
             </Button>
+            <Button type="button" variant="ghost" onClick={() => setQuickOpen((v) => !v)} aria-label="Respostas rápidas" title="Respostas rápidas (ou digite /)">
+              <Zap className="h-4 w-4" />
+            </Button>
             <textarea
+              ref={textRef}
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {
@@ -453,10 +492,10 @@ function Thread({
                 }
               }}
               rows={1}
-              placeholder={attachment ? "Legenda (opcional)…" : conversation.mode === "bot" ? "Responder (assume a conversa do bot)…" : "Escreva uma mensagem…"}
+              placeholder={attachment || quickMedia ? "Legenda (opcional)…" : conversation.mode === "bot" ? "Responder (assume a conversa do bot)…" : "Escreva uma mensagem… (/ para respostas rápidas)"}
               className="max-h-40 min-h-[2.5rem] min-w-0 flex-1 resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30 dark:border-slate-700 dark:bg-slate-900"
             />
-            <Button type="submit" loading={send.isPending || uploading} disabled={!text.trim() && !attachment} aria-label="Enviar">
+            <Button type="submit" loading={send.isPending || uploading} disabled={!text.trim() && !attachment && !quickMedia} aria-label="Enviar">
               <Send className="h-4 w-4" />
               <span className="hidden sm:inline">Enviar</span>
             </Button>

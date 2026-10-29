@@ -215,6 +215,21 @@ export interface RoutingSettings {
 }
 
 /** Carteira: número do cliente → operador. */
+export interface QuickReply {
+  id: string;
+  workspace_id: string;
+  /** Sem a barra: "pix" é digitado como /pix. */
+  shortcut: string;
+  title: string;
+  content: string;
+  media_path: string | null;
+  media_name: string | null;
+  media_mime: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ContactAssignment {
   id: string;
   workspace_id: string;

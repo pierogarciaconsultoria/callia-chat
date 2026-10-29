@@ -8,19 +8,22 @@ import { unwrap } from "@/lib/functions";
 import { applyBranding, DEFAULT_PRIMARY, DEFAULT_SECONDARY } from "@/lib/branding";
 import { PlanUsageCard } from "@/components/PlanUsageCard";
 import { SubscriptionCard } from "@/components/SubscriptionCard";
+import { QuickRepliesCard } from "@/components/settings/QuickRepliesCard";
 import type { WorkspaceBranding } from "@/lib/database.types";
 import { Button, Card, CardBody, CardHeader, Input, PageHeader, useToast } from "@/components/ui";
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
 export default function Settings() {
+  const { workspaceId } = useRequiredWorkspace();
   return (
     <>
-      <PageHeader title="Configurações" description="Plano, identidade visual e conectores. Dados, políticas e preços do negócio ficam em Informações da empresa." />
+      <PageHeader title="Configurações" description="Plano, identidade visual, respostas rápidas e conectores. Dados, políticas e preços do negócio ficam em Informações da empresa." />
       <div className="space-y-6">
         <PlanUsageCard />
         <SubscriptionCard />
         <WorkspaceNameCard />
+        <QuickRepliesCard workspaceId={workspaceId} />
         <BrandingCard />
         <ConnectorsPointer />
       </div>
