@@ -59,6 +59,16 @@ Grava `sender = agent` e `agent_user_id`. Conversas com `channel != 'whatsapp'` 
 
 Eventos válidos: `message.received`, `message.sent`, `conversation.handoff`, `public_api.event.received`.
 
+## team (admin)
+
+| action | body extra | resposta |
+|---|---|---|
+| `invite` | `workspace_id`, `email`, `role` (`agent`/`admin`/`owner`, este só por proprietário) | `{ user_id, invited }` |
+
+Se o e-mail já tem usuário, só vincula (`invited: false`). Se não tem, confere plano e status, manda o convite do GoTrue
+(link para `/definir-senha`) e vincula em seguida (`invited: true`, auditoria `member.invited`). O vínculo passa pela
+RPC `add_workspace_member` como o usuário que pediu, então valem as mesmas regras de papel e limite.
+
 ## knowledge-index (admin, exceto `search_preview` = membro)
 
 | action | body extra | resposta |

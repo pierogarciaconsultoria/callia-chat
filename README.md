@@ -38,6 +38,9 @@ Para abrir o cadastro em produção: `DISABLE_SIGNUP=false` no `.env` do stack S
 
 ## Operadores e distribuição de conversas
 
+Em Equipe → "Adicionar membro", o administrador informa o e-mail e o papel: quem já tem usuário entra na hora; quem não
+tem recebe um convite por e-mail e define a senha pelo link (function `team`).
+
 Configurável por empresa em Equipe → "Distribuição das conversas" (`workspace_routing`):
 
 | Opção | Valores |

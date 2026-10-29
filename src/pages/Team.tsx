@@ -4,7 +4,7 @@ import { UserPlus, Users } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useRequiredWorkspace } from "@/lib/workspace";
 import { supabase } from "@/lib/supabase";
-import { errorMessage, unwrap } from "@/lib/functions";
+import { errorMessage, invokeFunction, unwrap } from "@/lib/functions";
 import { createGate } from "@/lib/entitlements";
 import { invalidateEntitlements, useEntitlements } from "@/hooks/use-entitlements";
 import { formatDateTime } from "@/lib/format";
@@ -33,8 +33,7 @@ const ROLE_TONE = { owner: "violet", admin: "brand", agent: "neutral" } as const
 
 function friendly(err: unknown): string {
   const message = (err as Error)?.message ?? String(err);
-  if (message.includes("user_not_found"))
-    return "Nenhum usuário com este e-mail. O cadastro aberto fica desativado: peça ao administrador da plataforma para convidar a pessoa e tente de novo.";
+  if (message.includes("user_not_found")) return "Nenhum usuário com este e-mail. Tente de novo: o convite por e-mail é enviado automaticamente.";
   if (message.includes("only_owner_can_grant_owner")) return "Só um proprietário pode adicionar outro proprietário.";
   if (message.includes("last_owner")) return "O workspace precisa de pelo menos um proprietário.";
   if (message.includes("forbidden")) return "Você não tem permissão para gerenciar a equipe.";
@@ -59,8 +58,8 @@ export default function Team() {
   const routing = useRouting(isAdmin ? workspaceId : null);
 
   const add = useMutation({
-    mutationFn: async (vars: { email: string; role: WorkspaceRole }) =>
-      unwrap(await supabase.rpc("add_workspace_member", { p_workspace_id: workspaceId, p_email: vars.email, p_role: vars.role })),
+    mutationFn: (vars: { email: string; role: WorkspaceRole }) =>
+      invokeFunction<{ user_id: string; invited: boolean }>("team", { action: "invite", workspace_id: workspaceId, email: vars.email, role: vars.role }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: key });
       invalidateEntitlements(qc, workspaceId);
@@ -78,8 +77,8 @@ export default function Team() {
   async function submit(e: FormEvent) {
     e.preventDefault();
     try {
-      await add.mutateAsync({ email: email.trim(), role });
-      toast.success("Membro adicionado.");
+      const result = await add.mutateAsync({ email: email.trim(), role });
+      toast.success(result.invited ? `Convite enviado para ${email.trim()}. A pessoa define a senha pelo link do e-mail e já entra na equipe.` : "Membro adicionado.");
       setEmail("");
     } catch (err) {
       toast.error(friendly(err));
@@ -92,7 +91,7 @@ export default function Team() {
       <div className="space-y-6">
         {isAdmin && (
           <Card>
-            <CardHeader title="Adicionar membro" description="A pessoa precisa já ter um usuário na plataforma." />
+            <CardHeader title="Adicionar membro" description="Quem já tem usuário entra na hora; quem não tem recebe um convite por e-mail para definir a senha." />
             <CardBody className="space-y-3">
               {gate.reason && <Notice tone="warn">{gate.reason}</Notice>}
               <form onSubmit={submit} className="grid gap-3 sm:grid-cols-[1fr_180px_auto] sm:items-end">
