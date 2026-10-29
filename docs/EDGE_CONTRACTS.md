@@ -34,8 +34,10 @@ conversa existente ou cria uma nova, que fica em modo humano com quem enviou. Co
 | texto | `text` | mensagem de texto |
 | anexo | `media_path` (`<workspace>/outbound/<arquivo>` no bucket `inbox-media`, gravado pelo painel), `file_name?`, `mimetype?`, `type?`, `text?` (legenda) | imagem, vídeo, áudio ou documento; o provedor baixa por URL assinada (15 min) e `metadata.media_path` fica na mensagem |
 | encaminhar | `forward_message_id`, `text?` | reenvia texto ou arquivo guardado de outra mensagem do workspace (`metadata.forwarded_from`) |
+| fotos da galeria | `media_asset_ids[]` (até 5, `media_assets` do workspace), `text?` (legenda da primeira) | uma mensagem `image` por foto, na ordem pedida, pela URL pública do bucket `media`; `metadata.media_asset_id` e `album` em cada uma |
 
-Resposta: `{ message, outbound, conversation_id, created }`. Grava `sender = agent` e `agent_user_id`. Conversas com
+Resposta: `{ message, messages, outbound, conversation_id, created }` (`messages` traz todas as geradas; `message` é a
+primeira). Grava `sender = agent` e `agent_user_id`. Conversas com
 `channel != 'whatsapp'` retornam `422 channel_not_supported`. Áudio não aceita legenda: o texto vai como segunda mensagem.
 
 ## process-message

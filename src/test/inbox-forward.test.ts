@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertOutboundPath, outboundTypeFor, planForward, publicSignedUrl } from "../../supabase/functions/_shared/forward.ts";
+import { assertOutboundPath, outboundTypeFor, planForward, planPhotos, publicSignedUrl } from "../../supabase/functions/_shared/forward.ts";
 
 const base = { id: "m1", workspace_id: "ws", media_url: null, media_mime: null, metadata: null };
 
@@ -42,5 +42,22 @@ describe("encaminhar pela inbox (servidor)", () => {
       .toBe("https://callia.example.com/storage/v1/object/sign/x?token=t");
     expect(publicSignedUrl("/storage/v1/object/sign/x", "http://api-gw:8000", "https://callia.example.com")).toBe("https://callia.example.com/storage/v1/object/sign/x");
     expect(publicSignedUrl("http://api-gw:8000/x", "http://api-gw:8000", undefined)).toBe("http://api-gw:8000/x");
+  });
+
+  it("fotos da galeria: ordem escolhida, legenda digitada na primeira, legenda cadastrada nas outras, limite de 5", () => {
+    const assets = [
+      { id: "a", album: "Suíte", public_url: "https://cdn/a.jpg", caption: "Vista", mime_type: "image/jpeg" },
+      { id: "b", album: "Suíte", public_url: "https://cdn/b.jpg", caption: null, mime_type: "image/jpeg" },
+      { id: "c", album: "Suíte", public_url: "https://cdn/c.jpg", caption: "Banheiro", mime_type: "image/webp" },
+    ];
+    expect(planPhotos(["b", "c"], assets, "Seguem as fotos 👇")).toEqual([
+      { type: "image", text: "Seguem as fotos 👇", mediaUrl: "https://cdn/b.jpg", mimetype: "image/jpeg", metadata: { media_asset_id: "b", album: "Suíte" } },
+      { type: "image", text: "Banheiro", mediaUrl: "https://cdn/c.jpg", mimetype: "image/webp", metadata: { media_asset_id: "c", album: "Suíte" } },
+    ]);
+    expect(planPhotos(["a"], assets, null)[0].text).toBe("Vista");
+    expect(() => planPhotos([], assets, null)).toThrow(/ao menos uma/);
+    expect(() => planPhotos(["a", "a"], assets, null)).toThrow(/inválida/);
+    expect(() => planPhotos(["a", "b", "c", "d", "e", "f"], assets, null)).toThrow(/máximo 5/);
+    expect(() => planPhotos(["zz"], assets, null)).toThrow(/não encontrada/);
   });
 });

@@ -104,8 +104,9 @@ WhatsApp ─► Evolution API ─► whatsapp-webhook ─► record_message (con
 ```
 
 A equipe assume pela inbox (ou respondendo pelo celular, o que também pausa o bot) e devolve ao bot quando quiser.
-Pela inbox também dá para anexar arquivos (até 20 MB, bucket privado `inbox-media`), encaminhar qualquer mensagem para
-outra conversa ou número, e iniciar conversa com um número que ainda não escreveu (function `send-message`).
+Pela inbox também dá para anexar arquivos (até 20 MB, bucket privado `inbox-media`), enviar fotos da galeria (até 5 por
+vez, botão ao lado do clipe), encaminhar qualquer mensagem para outra conversa ou número, e iniciar conversa com um número
+que ainda não escreveu (function `send-message`).
 
 ## Estrutura
 

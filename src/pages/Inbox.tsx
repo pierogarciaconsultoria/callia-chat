@@ -25,6 +25,7 @@ import { JourneyCard } from "@/components/onboarding/Journey";
 import { PaymentProofBadge, ReceivedMedia, receivedMediaPath } from "@/components/inbox/ReceivedMedia";
 import { ForwardDialog } from "@/components/inbox/ForwardDialog";
 import { NewConversationDialog } from "@/components/inbox/NewConversationDialog";
+import { PhotoPickerDialog } from "@/components/inbox/PhotoPickerDialog";
 import { canForward, uploadAttachment, validateUpload } from "@/lib/inbox-send";
 import { useAuth } from "@/lib/auth";
 import { useRequiredWorkspace } from "@/lib/workspace";
@@ -248,6 +249,7 @@ function Thread({
   const [attachment, setAttachment] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [forwardOf, setForwardOf] = useState<Message | null>(null);
+  const [photosOpen, setPhotosOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const external = isExternal(conversation);
@@ -409,6 +411,13 @@ function Thread({
         )}
       </div>
       <ForwardDialog workspaceId={workspaceId} message={forwardOf} onClose={() => setForwardOf(null)} />
+      <PhotoPickerDialog
+        workspaceId={workspaceId}
+        conversationId={conversation.id}
+        open={photosOpen}
+        onClose={() => setPhotosOpen(false)}
+        onSent={() => { if (conversation.mode === "bot") setMode("human"); }}
+      />
 
       <footer className="border-t border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
         {external ? (
@@ -430,6 +439,9 @@ function Thread({
             <input ref={fileRef} type="file" className="hidden" aria-label="Anexar arquivo" onChange={(e) => pickFile(e.target.files?.[0] ?? null)} accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip" />
             <Button type="button" variant="ghost" onClick={() => fileRef.current?.click()} aria-label="Anexar" title="Anexar arquivo (até 20 MB)">
               <Paperclip className="h-4 w-4" />
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => setPhotosOpen(true)} aria-label="Fotos" title="Enviar fotos da galeria">
+              <ImageIcon className="h-4 w-4" />
             </Button>
             <textarea
               value={text}

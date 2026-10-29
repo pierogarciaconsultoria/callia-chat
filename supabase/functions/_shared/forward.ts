@@ -77,3 +77,45 @@ export function planForward(source: SourceMessage): ForwardPlan {
   }
   throw new RuntimeError("unprocessable", "Este tipo de mensagem não pode ser encaminhado.");
 }
+
+/** Máximo de fotos da galeria por envio pela inbox (mesmo limite do bot). */
+export const MAX_GALLERY_PHOTOS = 5;
+
+export interface GalleryAsset {
+  id: string;
+  album: string;
+  public_url: string;
+  caption: string | null;
+  mime_type: string;
+}
+
+export interface PhotoSend {
+  type: "image";
+  text: string | null;
+  mediaUrl: string;
+  mimetype: string;
+  metadata: { media_asset_id: string; album: string };
+}
+
+/**
+ * Fotos da galeria escolhidas no painel, na ordem pedida. A legenda digitada vai na primeira foto;
+ * as demais levam a legenda cadastrada na galeria (quando houver).
+ */
+export function planPhotos(ids: unknown, assets: GalleryAsset[], text: string | null): PhotoSend[] {
+  if (!Array.isArray(ids) || ids.length === 0) throw new RuntimeError("invalid_request", "Escolha ao menos uma foto.");
+  const unique = [...new Set(ids.filter((id): id is string => typeof id === "string"))];
+  if (unique.length !== ids.length) throw new RuntimeError("invalid_request", "Lista de fotos inválida.");
+  if (unique.length > MAX_GALLERY_PHOTOS) throw new RuntimeError("invalid_request", `Envie no máximo ${MAX_GALLERY_PHOTOS} fotos por vez.`);
+  const byId = new Map(assets.map((a) => [a.id, a]));
+  return unique.map((id, i) => {
+    const asset = byId.get(id);
+    if (!asset) throw new RuntimeError("not_found", "Foto não encontrada na galeria.");
+    return {
+      type: "image",
+      text: (i === 0 ? text : null) ?? asset.caption?.trim() ?? null,
+      mediaUrl: asset.public_url,
+      mimetype: asset.mime_type,
+      metadata: { media_asset_id: asset.id, album: asset.album },
+    };
+  });
+}

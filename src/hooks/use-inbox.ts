@@ -137,10 +137,14 @@ export interface SendMessageVars {
   type?: "text" | "image" | "video" | "audio" | "document";
   /** Reenvia o conteúdo de outra mensagem. */
   forwardMessageId?: string;
+  /** Fotos da galeria do workspace (até 5); a legenda (text) vai na primeira. */
+  mediaAssetIds?: string[];
 }
 
 export interface SendMessageResult {
   message: Message;
+  /** Todas as mensagens geradas (várias quando são fotos da galeria). */
+  messages?: Message[];
   conversation_id: string;
   created: boolean;
 }
@@ -154,15 +158,16 @@ export function useSendMessage() {
         workspace_id: vars.workspaceId,
         to_phone: vars.toPhone,
         contact_name: vars.contactName,
-        type: vars.type ?? (vars.mediaPath || vars.forwardMessageId ? undefined : "text"),
+        type: vars.type ?? (vars.mediaPath || vars.forwardMessageId || vars.mediaAssetIds ? undefined : "text"),
         text: vars.text,
         media_path: vars.mediaPath,
         file_name: vars.fileName,
         mimetype: vars.mimetype,
         forward_message_id: vars.forwardMessageId,
+        media_asset_ids: vars.mediaAssetIds,
       }),
     onSuccess: (res, vars) => {
-      if (res?.message) upsertMessageInCache(qc, res.message);
+      for (const m of res?.messages?.length ? res.messages : res?.message ? [res.message] : []) upsertMessageInCache(qc, m);
       // Conversa nova ou de outro número: a lista precisa recarregar.
       if (res?.created || vars.toPhone || (vars.conversationId && res?.conversation_id !== vars.conversationId)) {
         void qc.invalidateQueries({ queryKey: ["conversations"] });
