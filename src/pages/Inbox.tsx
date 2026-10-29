@@ -5,11 +5,14 @@ import {
   Bot,
   CheckCheck,
   FileText,
+  Forward,
   Image as ImageIcon,
   Inbox as InboxIcon,
   Lock,
   MapPin,
+  MessageSquarePlus,
   Mic,
+  Paperclip,
   Search,
   Send,
   UserRound,
@@ -20,6 +23,9 @@ import { invokeFunction } from "@/lib/functions";
 import { cn } from "@/lib/cn";
 import { JourneyCard } from "@/components/onboarding/Journey";
 import { PaymentProofBadge, ReceivedMedia, receivedMediaPath } from "@/components/inbox/ReceivedMedia";
+import { ForwardDialog } from "@/components/inbox/ForwardDialog";
+import { NewConversationDialog } from "@/components/inbox/NewConversationDialog";
+import { canForward, uploadAttachment, validateUpload } from "@/lib/inbox-send";
 import { useAuth } from "@/lib/auth";
 import { useRequiredWorkspace } from "@/lib/workspace";
 import { formatPhone, formatRelativeShort, initials } from "@/lib/format";
@@ -48,6 +54,7 @@ export default function Inbox() {
   const [filters, setFilters] = useState<ConversationFilters>({ instanceId: "all", mode: "all" });
   const [owner, setOwner] = useState<"all" | "mine" | "unassigned">("all");
   const [search, setSearch] = useState("");
+  const [newOpen, setNewOpen] = useState(false);
   const { user } = useAuth();
 
   useInboxRealtime(workspaceId);
@@ -82,15 +89,21 @@ export default function Inbox() {
         )}
       >
         <div className="space-y-2 border-b border-slate-200 p-3 dark:border-slate-800">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar nome ou telefone"
-              className="h-9 w-full rounded-lg border border-slate-300 bg-white pl-8 pr-3 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30 dark:border-slate-700 dark:bg-slate-900"
-            />
+          <div className="flex gap-2">
+            <div className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar nome ou telefone"
+                className="h-9 w-full rounded-lg border border-slate-300 bg-white pl-8 pr-3 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30 dark:border-slate-700 dark:bg-slate-900"
+              />
+            </div>
+            <Button size="sm" variant="secondary" onClick={() => setNewOpen(true)} aria-label="Nova conversa" title="Iniciar conversa com um número">
+              <MessageSquarePlus className="h-4 w-4" />
+            </Button>
           </div>
+          <NewConversationDialog workspaceId={workspaceId} open={newOpen} onClose={() => setNewOpen(false)} />
           <div className="flex gap-2">
             <select
               aria-label="Filtrar por instância"
@@ -232,6 +245,10 @@ function Thread({
   const update = useUpdateConversation(workspaceId);
   const send = useSendMessage();
   const [text, setText] = useState("");
+  const [attachment, setAttachment] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [forwardOf, setForwardOf] = useState<Message | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const external = isExternal(conversation);
   const members = useMembers(workspaceId);
@@ -290,12 +307,27 @@ function Thread({
     );
   };
 
+  function pickFile(file: File | null) {
+    if (!file) return setAttachment(null);
+    const problem = validateUpload(file);
+    if (problem) return toast.error(problem);
+    setAttachment(file);
+  }
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     const body = text.trim();
-    if (!body) return;
+    if (!body && !attachment) return;
     try {
-      await send.mutateAsync({ conversationId: conversation.id, text: body });
+      if (attachment) {
+        setUploading(true);
+        const up = await uploadAttachment(workspaceId, attachment).finally(() => setUploading(false));
+        await send.mutateAsync({ conversationId: conversation.id, text: body || undefined, mediaPath: up.mediaPath, fileName: up.fileName, mimetype: up.mimetype, type: up.type });
+        setAttachment(null);
+        if (fileRef.current) fileRef.current.value = "";
+      } else {
+        await send.mutateAsync({ conversationId: conversation.id, text: body });
+      }
       setText("");
       // Responder manualmente com o bot ativo assume a conversa, para o bot não responder por cima.
       if (conversation.mode === "bot") setMode("human");
@@ -371,11 +403,12 @@ function Thread({
           <ErrorState error={messages.error} onRetry={() => void messages.refetch()} />
         ) : (
           <div className="mx-auto flex max-w-3xl flex-col gap-2">
-            {messages.data?.map((m) => <Bubble key={m.id} message={m} />)}
+            {messages.data?.map((m) => <Bubble key={m.id} message={m} onForward={canForward(m) ? () => setForwardOf(m) : undefined} />)}
             <div ref={bottomRef} />
           </div>
         )}
       </div>
+      <ForwardDialog workspaceId={workspaceId} message={forwardOf} onClose={() => setForwardOf(null)} />
 
       <footer className="border-t border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
         {external ? (
@@ -385,7 +418,19 @@ function Thread({
             adaptador de envio para esse canal — responda pelo sistema de origem.
           </p>
         ) : (
-          <form onSubmit={submit} className="mx-auto flex max-w-3xl items-end gap-2">
+          <form onSubmit={submit} className="mx-auto max-w-3xl">
+            {attachment && (
+              <div className="mb-2 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800">
+                <Paperclip className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                <span className="min-w-0 flex-1 truncate">{attachment.name}</span>
+                <button type="button" className="underline" onClick={() => pickFile(null)}>Remover</button>
+              </div>
+            )}
+            <div className="flex items-end gap-2">
+            <input ref={fileRef} type="file" className="hidden" aria-label="Anexar arquivo" onChange={(e) => pickFile(e.target.files?.[0] ?? null)} accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip" />
+            <Button type="button" variant="ghost" onClick={() => fileRef.current?.click()} aria-label="Anexar" title="Anexar arquivo (até 20 MB)">
+              <Paperclip className="h-4 w-4" />
+            </Button>
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
@@ -396,13 +441,14 @@ function Thread({
                 }
               }}
               rows={1}
-              placeholder={conversation.mode === "bot" ? "Responder (assume a conversa do bot)…" : "Escreva uma mensagem…"}
+              placeholder={attachment ? "Legenda (opcional)…" : conversation.mode === "bot" ? "Responder (assume a conversa do bot)…" : "Escreva uma mensagem…"}
               className="max-h-40 min-h-[2.5rem] min-w-0 flex-1 resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30 dark:border-slate-700 dark:bg-slate-900"
             />
-            <Button type="submit" loading={send.isPending} disabled={!text.trim()} aria-label="Enviar">
+            <Button type="submit" loading={send.isPending || uploading} disabled={!text.trim() && !attachment} aria-label="Enviar">
               <Send className="h-4 w-4" />
               <span className="hidden sm:inline">Enviar</span>
             </Button>
+            </div>
           </form>
         )}
       </footer>
@@ -424,7 +470,7 @@ const MEDIA_LABEL: Record<string, string> = {
 };
 const SENDER_LABEL = { customer: "Cliente", bot: "Bot", agent: "Atendente", system: "Sistema" } as const;
 
-function Bubble({ message: m }: { message: Message }) {
+function Bubble({ message: m, onForward }: { message: Message; onForward?: () => void }) {
   const outbound = m.direction === "outbound";
   if (m.sender === "system") {
     return (
@@ -489,6 +535,12 @@ function Bubble({ message: m }: { message: Message }) {
         {outbound && m.status === "failed" && <span className="font-medium text-red-500">· falhou</span>}
         {outbound && m.status === "pending" && <span>· enviando</span>}
         {outbound && (m.status === "sent" || m.status === "delivered" || m.status === "read") && <CheckCheck className="h-3 w-3" />}
+        {m.metadata?.forwarded_from ? <span>· encaminhada</span> : null}
+        {onForward && (
+          <button type="button" onClick={onForward} className="ml-1 inline-flex items-center gap-0.5 rounded px-1 hover:bg-slate-200 hover:text-slate-600 dark:hover:bg-slate-800" aria-label="Encaminhar mensagem" title="Encaminhar">
+            <Forward className="h-3 w-3" /> encaminhar
+          </button>
+        )}
       </div>
     </div>
   );

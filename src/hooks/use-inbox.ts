@@ -122,17 +122,51 @@ export function useUpdateConversation(workspaceId: string) {
   });
 }
 
+export interface SendMessageVars {
+  /** Conversa existente… */
+  conversationId?: string;
+  /** …ou número novo (com workspaceId): a conversa é criada ou reaproveitada pelo telefone. */
+  workspaceId?: string;
+  toPhone?: string;
+  contactName?: string;
+  text?: string;
+  /** Anexo já gravado no bucket inbox-media (ver uploadAttachment). */
+  mediaPath?: string;
+  fileName?: string;
+  mimetype?: string;
+  type?: "text" | "image" | "video" | "audio" | "document";
+  /** Reenvia o conteúdo de outra mensagem. */
+  forwardMessageId?: string;
+}
+
+export interface SendMessageResult {
+  message: Message;
+  conversation_id: string;
+  created: boolean;
+}
+
 export function useSendMessage() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { conversationId: string; text: string }) =>
-      invokeFunction<{ message: Message }>("send-message", {
+    mutationFn: (vars: SendMessageVars) =>
+      invokeFunction<SendMessageResult>("send-message", {
         conversation_id: vars.conversationId,
-        type: "text",
+        workspace_id: vars.workspaceId,
+        to_phone: vars.toPhone,
+        contact_name: vars.contactName,
+        type: vars.type ?? (vars.mediaPath || vars.forwardMessageId ? undefined : "text"),
         text: vars.text,
+        media_path: vars.mediaPath,
+        file_name: vars.fileName,
+        mimetype: vars.mimetype,
+        forward_message_id: vars.forwardMessageId,
       }),
-    onSuccess: (res) => {
+    onSuccess: (res, vars) => {
       if (res?.message) upsertMessageInCache(qc, res.message);
+      // Conversa nova ou de outro número: a lista precisa recarregar.
+      if (res?.created || vars.toPhone || (vars.conversationId && res?.conversation_id !== vars.conversationId)) {
+        void qc.invalidateQueries({ queryKey: ["conversations"] });
+      }
     },
   });
 }
