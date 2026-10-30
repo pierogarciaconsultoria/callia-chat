@@ -103,20 +103,25 @@ Quem estava logado no domínio antigo entra de novo no novo. Backups em `.env.ba
 
 ## Backup e restauração
 
-`scripts/backup.sh` gera, por execução, um único arquivo cifrado (AES-256) em `/var/backups/callia/` com:
-banco do Callia (inclui usuários e storage), banco e sessões da Evolution (evita ler o QR de novo),
-arquivos do storage (fotos e documentos) e configuração/segredos do stack. Retenção: 14 dias + semanais por 8 semanas.
+`scripts/backup.sh` gera, por execução, um único pacote cifrado (gpg AES-256) em `/var/backups/callia/` com: banco do
+Callia (inclui usuários e metadados do storage), banco e sessões da Evolution (evita ler o QR de novo), arquivos do
+storage (fotos e documentos) e configuração/segredos do stack. Roda todo dia às 03:30 por `/etc/cron.d/callia-backup`
+(log em `/var/log/callia-backup.log`). Retenção: 14 dias local, 60 dias no destino externo.
 
 ```bash
-bash scripts/backup.sh --install        # instala /usr/local/sbin/callia-backup, cria a chave e o cron das 03:30
-/usr/local/sbin/callia-backup           # backup manual
-bash scripts/backup-restore-test.sh     # restaura o último num Postgres descartável e compara com o manifesto
+bash scripts/backup.sh                  # backup manual
+bash scripts/restore-test.sh            # restaura o último pacote num Postgres descartável e compara com a produção
+bash scripts/backup-remote-setup.sh     # configura o destino externo (rclone) e envia o que falta
 ```
 
-- A chave fica em `/root/.callia-backup-key`. **Guarde uma cópia fora do servidor**: sem ela o backup não abre.
-- Cópia externa: crie `/etc/callia-backup/offsite.conf` com `RCLONE_REMOTE=destino:pasta` (rclone configurado).
-- Restaurar em produção: decifrar com `openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass file:/root/.callia-backup-key`,
-  `pg_restore` de `callia-db.dump` no `callia-db`, extrair `storage.tgz` em `/opt/supabase-callia/volumes/`.
+- A chave fica em `/root/.callia-backup.key`. **Guarde uma cópia fora do servidor**: sem ela nenhum pacote abre.
+- Cópia externa: crie `/root/.callia-backup-remote.env` (modelo no cabeçalho de `backup-remote-setup.sh`: Backblaze B2
+  ou qualquer S3 compatível, bucket `callia-backups`) e rode o setup uma vez. Daí em diante o backup diário envia sozinho
+  e escreve `remoto: ok (N pacotes)` no log; `remoto: rclone sem o remoto` significa que só há cópia local.
+- Restaurar em produção: `gpg --batch --passphrase-file /root/.callia-backup.key -d pacote.tar.gz.gpg | tar xz -C /tmp/r`,
+  depois `pg_restore -U postgres -d postgres --clean --if-exists /tmp/r/callia-db.dump` dentro do `callia-db`, o mesmo
+  para `evolution-db.dump` no `callia-evolution-db`, e extrair `storage.tar.gz` em `/opt/supabase-callia/volumes/` e
+  `evolution-instances.tar.gz` no volume `callia-evolution_instances`.
 
 ## Gateway (Envoy) e webhook do Mercado Pago
 
