@@ -781,3 +781,44 @@ export interface MediaImport {
   created_at: string;
   finished_at: string | null;
 }
+
+// Aprendizados do atendimento (sugestões geradas das conversas; só admin lê, a function grava).
+export type LearningKind = "faq" | "policy" | "guardrail";
+export type LearningStatus = "pending" | "applied" | "dismissed";
+export interface LearningExcerpt { who: "cliente" | "ia" | "equipe"; text: string }
+export interface LearningEvidence { conversation_id: string; contact: string; excerpts: LearningExcerpt[] }
+export type LearningPayload =
+  | { question: string; answer: string | null }
+  | { topic: string; title: string; content: string; id: string | null }
+  | { text: string };
+export interface LearningSuggestion {
+  id: string;
+  workspace_id: string;
+  run_id: string | null;
+  kind: LearningKind;
+  fingerprint: string;
+  title: string;
+  rationale: string;
+  payload: LearningPayload;
+  evidence: LearningEvidence[];
+  occurrences: number;
+  status: LearningStatus;
+  decided_by: string | null;
+  decided_at: string | null;
+  applied_payload: LearningPayload | null;
+  created_at: string;
+  updated_at: string;
+}
+export interface LearningRun {
+  id: string;
+  workspace_id: string;
+  trigger: "schedule" | "manual";
+  period_start: string;
+  period_end: string;
+  status: "running" | "done" | "failed";
+  conversations_analyzed: number;
+  suggestions_created: number;
+  error: string | null;
+  created_at: string;
+  finished_at: string | null;
+}

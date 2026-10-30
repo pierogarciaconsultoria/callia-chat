@@ -122,6 +122,15 @@ conversa para outro operador ou para um setor, com nota opcional que vira mensag
 distribui só entre quem é do setor). Com visibilidade "só as suas", a fila sem dono de um setor aparece apenas para
 quem é do setor.
 
+Aprendizados (tabelas `learning_runs`, `learning_suggestions`, function `learnings`, tela Aprendizados, só admin): todo dia
+(pg_cron, [supabase/sql/cron_learnings.sql](supabase/sql/cron_learnings.sql)) ou a pedido ("Analisar agora"), a IA relê as
+conversas do período priorizando as transferidas para a equipe e as respondidas por operadores, e sugere o que cadastrar:
+pergunta e resposta (resposta só se a equipe a deu; senão o admin completa), política nova ou corrigida, regra de
+comportamento. Cada sugestão traz os trechos das conversas que a originaram; a mesma sugestão em dias seguidos soma
+evidência em vez de repetir, e as descartadas não voltam por 60 dias. Nada entra no agente sem aprovação: aprovar grava em
+`faqs`, `workspace_policies` ou `agent_configs.guardrails` (auditoria `learning.applied.*`). Preços e disponibilidade nunca
+são sugeridos (vêm da tabela e do PMS). Modelo: `AI_LEARNING_MODEL` (padrão: o do agente).
+
 ## Estrutura
 
 | Caminho | Conteúdo |

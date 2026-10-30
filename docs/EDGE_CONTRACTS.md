@@ -108,6 +108,22 @@ Tipos aceitos: PDF, DOCX, TXT, MD.
 A configuração (`workspace_connectors`) é gravada direto pelo painel via RLS:
 `{ kind: "hbook", enabled, config: { base_url, company_id, booking_link, currency, default_adults } }`.
 
+## learnings — Aprendizados do atendimento (admin; tenant ativo e IA no plano)
+
+Sem sessão e com `x-callia-internal` (pg_cron, diário): analisa toda empresa com agente ligado e mensagem de cliente desde a
+última análise concluída (RPC `learning_due_workspaces`), até 110 s por rodada (o resto fica para a próxima). Com sessão:
+
+| action | body extra | resposta |
+|---|---|---|
+| `run` | `workspace_id` | `{ run_id, conversations_analyzed, suggestions_created }` — analisa desde a última análise (primeira vez: 7 dias; teto 30); `429 rate_limited` se houve análise há menos de 30 min |
+| `apply` | `workspace_id`, `suggestion_id`, `payload?` (edições do admin: faq `{ question, answer }`, policy `{ topic, title, content }`, guardrail `{ text }`) | `{ status: "applied", kind, applied }` — grava em `faqs`, `workspace_policies` (nova ou a `id` da sugestão) ou acrescenta item em `agent_configs.guardrails`; faq sem resposta → `422` |
+| `dismiss` | `workspace_id`, `suggestion_id` | `{ status: "dismissed" }` — não volta por 60 dias |
+
+`learning_suggestions` (leitura por admin via RLS): `kind` faq/policy/guardrail, `title`, `rationale`, `payload`,
+`evidence[] = { conversation_id, contact, excerpts[] = { who: cliente|ia|equipe, text } }`, `occurrences`, `status`
+pending/applied/dismissed, `applied_payload`. `learning_runs`: período, `status`, `conversations_analyzed`,
+`suggestions_created`, `error`. Limites da análise: 40 conversas, 30 mensagens cada, ~90 mil caracteres.
+
 ## Tabelas lidas direto pelo painel (RLS)
 
 `workspaces`, `workspace_branding`, `workspace_connectors`, `agent_configs`, `whatsapp_instances`, `conversations`, `messages`,

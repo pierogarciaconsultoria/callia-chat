@@ -15,6 +15,7 @@ const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const Agent = lazy(() => import("@/pages/Agent"));
 const AgentSetup = lazy(() => import("@/pages/AgentSetup"));
 const KnowledgeBase = lazy(() => import("@/pages/KnowledgeBase"));
+const Learnings = lazy(() => import("@/pages/Learnings"));
 const WhatsApp = lazy(() => import("@/pages/WhatsApp"));
 const Integrations = lazy(() => import("@/pages/Integrations"));
 const ApiKeys = lazy(() => import("@/pages/ApiKeys"));
@@ -62,6 +63,7 @@ export default function App() {
             <Route path="/agent" element={admin(<Agent />)} />
             <Route path="/agent/setup" element={admin(<AgentSetup />)} />
             <Route path="/knowledge-base" element={admin(<KnowledgeBase />)} />
+            <Route path="/learnings" element={admin(<Learnings />)} />
             <Route path="/integrations" element={admin(<Integrations />)} />
             <Route path="/whatsapp" element={admin(<WhatsApp />)} />
             <Route path="/api-keys" element={admin(<ApiKeys />)} />
