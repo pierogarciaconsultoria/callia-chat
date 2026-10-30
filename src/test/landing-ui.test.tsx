@@ -93,3 +93,14 @@ describe("landing moderna", () => {
     expect(screen.queryByTestId("sticky-cta")).toBeNull();
   });
 });
+
+describe("marca nas páginas públicas", () => {
+  it("a landing fixa as cores do Callia mesmo com identidade de cliente aplicada em :root", () => {
+    document.documentElement.style.setProperty("--brand", "37 99 235"); // azul de um cliente logado
+    show();
+    const root = screen.getByTestId("landing-root");
+    expect(root.style.getPropertyValue("--brand")).toBe("15 118 110");
+    expect(root.style.getPropertyValue("--brand-accent")).toBe("245 158 11");
+    document.documentElement.style.removeProperty("--brand");
+  });
+});

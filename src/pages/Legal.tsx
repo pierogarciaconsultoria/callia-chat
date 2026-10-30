@@ -1,5 +1,6 @@
 // Páginas públicas /termos e /privacidade. O conteúdo fica em src/lib/legal.ts.
 import { Link } from "react-router-dom";
+import { CALLIA_BRAND_STYLE } from "@/lib/branding";
 import { MessageCircle } from "lucide-react";
 import { LEGAL_COMPANY, LEGAL_DOCUMENTS, LEGAL_VERSION, type LegalDocument } from "@/lib/legal";
 
@@ -8,7 +9,7 @@ export default function Legal({ document: slug }: { document: LegalDocument["slu
   const other = slug === "termos" ? LEGAL_DOCUMENTS.privacidade : LEGAL_DOCUMENTS.termos;
   const updated = new Date(`${LEGAL_VERSION}T12:00:00`).toLocaleDateString("pt-BR");
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-10 dark:bg-slate-950">
+    <div className="min-h-screen bg-slate-50 px-4 py-10 dark:bg-slate-950" style={CALLIA_BRAND_STYLE}>
       <article className="mx-auto max-w-3xl">
         <Link to="/" className="mb-6 flex items-center gap-2 text-sm font-medium text-slate-600 hover:underline dark:text-slate-300">
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-brand-fg"><MessageCircle className="h-4 w-4" /></span>

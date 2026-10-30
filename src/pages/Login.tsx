@@ -1,4 +1,5 @@
 import { useState, type FormEvent, type ReactNode } from "react";
+import { CALLIA_BRAND_STYLE } from "@/lib/branding";
 import { Link, Navigate, useLocation } from "react-router-dom";
 import { MessageCircle } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -26,7 +27,7 @@ const googleEnabled = import.meta.env.VITE_GOOGLE_AUTH_ENABLED === "true";
 /** Moldura das telas públicas de acesso (login, cadastro, senha, boas-vindas). */
 export function Shell({ children, title = "Callia Chat", subtitle = "Atendimento no WhatsApp com IA e equipe humana", wide = false }: { children: ReactNode; title?: string; subtitle?: string; wide?: boolean }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10 dark:bg-slate-950">
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10 dark:bg-slate-950" style={CALLIA_BRAND_STYLE}>
       <div className={wide ? "w-full max-w-xl" : "w-full max-w-sm"}>
         <div className="mb-6 flex flex-col items-center text-center">
           <Link to="/" className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-brand text-brand-fg" aria-label="Ir para o site">

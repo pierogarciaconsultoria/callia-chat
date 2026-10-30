@@ -26,3 +26,13 @@ export function applyBranding(primary?: string | null, secondary?: string | null
   root.style.setProperty("--brand-fg", readableForeground(primary ?? DEFAULT_PRIMARY));
   root.style.setProperty("--brand-accent", hexToRgbTriplet(secondary) ?? hexToRgbTriplet(DEFAULT_SECONDARY)!);
 }
+
+/**
+ * Páginas públicas (landing, login, cadastro, termos) ficam sempre na marca Callia: estas variáveis, aplicadas no
+ * elemento raiz da página, sobrepõem a identidade do cliente que applyBranding grava em :root quando há sessão.
+ */
+export const CALLIA_BRAND_STYLE = {
+  "--brand": hexToRgbTriplet(DEFAULT_PRIMARY)!,
+  "--brand-fg": readableForeground(DEFAULT_PRIMARY),
+  "--brand-accent": hexToRgbTriplet(DEFAULT_SECONDARY)!,
+} as Record<string, string>;

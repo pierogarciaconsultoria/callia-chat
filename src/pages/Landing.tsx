@@ -11,6 +11,7 @@ import { useAuth } from "@/lib/auth";
 import { formatPlanPrice, planHighlights, SITE_FALLBACK, useSiteInfo, type SiteInfo } from "@/lib/site";
 import { SEGMENT_LIST } from "@/lib/segments";
 import { cn } from "@/lib/cn";
+import { CALLIA_BRAND_STYLE } from "@/lib/branding";
 import { Reveal } from "@/components/landing/Reveal";
 import { ChatDemo } from "@/components/landing/ChatDemo";
 
@@ -152,7 +153,7 @@ export default function Landing() {
   const plans = site.plans;
 
   return (
-    <div className="min-h-screen bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <div className="min-h-screen bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100" style={CALLIA_BRAND_STYLE} data-testid="landing-root">
       <header className="sticky top-0 z-20 border-b border-slate-200/70 bg-white/80 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/80">
         <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-4 sm:px-6">
           <Link to="/" className="flex items-center gap-2 font-semibold">

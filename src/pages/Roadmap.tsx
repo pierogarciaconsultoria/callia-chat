@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { CALLIA_BRAND_STYLE } from "@/lib/branding";
 import { CheckCircle2, CircleDashed, MessageCircle } from "lucide-react";
 import { Badge } from "@/components/ui";
 
@@ -27,7 +28,7 @@ const PHASES: Phase[] = [
 export default function Roadmap() {
   const done = PHASES.filter((p) => p.status === "completed").length;
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-10 dark:bg-slate-950">
+    <div className="min-h-screen bg-slate-50 px-4 py-10 dark:bg-slate-950" style={CALLIA_BRAND_STYLE}>
       <div className="mx-auto max-w-5xl">
         <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
