@@ -285,6 +285,8 @@ export default function Landing() {
             <Link to="/entrar" className="hover:underline">Entrar</Link>
             {site.self_service && <Link to="/cadastro" className="hover:underline">Criar conta</Link>}
             <Link to="/acompanhamento" className="hover:underline">Novidades</Link>
+            <Link to="/termos" className="hover:underline">Termos de Uso</Link>
+            <Link to="/privacidade" className="hover:underline">Privacidade</Link>
             {site.support_email && <a href={`mailto:${site.support_email}`} className="hover:underline">{site.support_email}</a>}
           </nav>
         </div>

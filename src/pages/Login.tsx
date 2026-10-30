@@ -36,8 +36,10 @@ export function Shell({ children, title = "Callia Chat", subtitle = "Atendimento
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>
         </div>
         {children}
-        <p className="mt-6 text-center text-xs text-slate-400">
+        <p className="mt-6 flex flex-wrap justify-center gap-3 text-center text-xs text-slate-400">
           <Link to="/" className="hover:underline">← Voltar ao site</Link>
+          <Link to="/termos" className="hover:underline">Termos de Uso</Link>
+          <Link to="/privacidade" className="hover:underline">Privacidade</Link>
         </p>
       </div>
     </div>

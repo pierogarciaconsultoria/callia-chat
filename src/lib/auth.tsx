@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
+import { LEGAL_VERSION } from "./legal";
 
 /** Dados do cadastro guardados no usuário; viram o workspace em /bem-vindo (create_workspace_from_signup). */
 export interface SignupMetadata {
@@ -8,6 +9,9 @@ export interface SignupMetadata {
   segment?: string;
   website?: string;
   whatsapp?: string;
+  /** Aceite dos Termos de Uso e da Política de Privacidade (versão em src/lib/legal.ts). */
+  terms_accepted_at?: string;
+  terms_version?: string;
 }
 
 interface AuthState {
@@ -19,6 +23,8 @@ interface AuthState {
   signInWithGoogle: () => Promise<void>;
   requestPasswordReset: (email: string) => Promise<void>;
   updatePassword: (password: string) => Promise<void>;
+  /** Registra o aceite dos Termos e da Política nos metadados do usuário (convidados, no definir senha). */
+  acceptTerms: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -79,6 +85,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       async updatePassword(password) {
         const { error } = await supabase.auth.updateUser({ password });
+        if (error) throw error;
+      },
+      async acceptTerms() {
+        const { error } = await supabase.auth.updateUser({ data: { terms_accepted_at: new Date().toISOString(), terms_version: LEGAL_VERSION } });
         if (error) throw error;
       },
       async signOut() {

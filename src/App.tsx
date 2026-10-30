@@ -23,6 +23,7 @@ const Logs = lazy(() => import("@/pages/Logs"));
 const Settings = lazy(() => import("@/pages/Settings"));
 const Team = lazy(() => import("@/pages/Team"));
 const Roadmap = lazy(() => import("@/pages/Roadmap"));
+const Legal = lazy(() => import("@/pages/Legal"));
 const AdminOverview = lazy(() => import("@/pages/admin/Overview"));
 const AdminTenants = lazy(() => import("@/pages/admin/Tenants"));
 const AdminTenantDetail = lazy(() => import("@/pages/admin/TenantDetail"));
@@ -45,6 +46,8 @@ export default function App() {
           <Route path="/bem-vindo" element={<Welcome />} />
           <Route path="/definir-senha" element={<SetPassword />} />
           <Route path="/acompanhamento" element={<Roadmap />} />
+          <Route path="/termos" element={<Legal document="termos" />} />
+          <Route path="/privacidade" element={<Legal document="privacidade" />} />
           <Route
             element={
               <ProtectedRoute>

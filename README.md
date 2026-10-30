@@ -111,6 +111,10 @@ Respostas rápidas (tabela `quick_replies`, cadastro em Configurações, só adm
 `/endereco`) ou usa o botão de raio; o texto entra no campo, ainda editável, com `{nome}` e `{primeiro_nome}` do contato,
 e o anexo da resposta (foto, PDF) vai junto.
 
+Termos de Uso e Política de Privacidade ficam em `/termos` e `/privacidade` (texto em `src/lib/legal.ts`, com
+`LEGAL_VERSION`). O cadastro e o primeiro acesso de convidados exigem o aceite, gravado nos metadados do usuário
+(`terms_accepted_at`, `terms_version`). Ao mudar o texto, atualize a versão.
+
 ## Estrutura
 
 | Caminho | Conteúdo |

@@ -3,14 +3,16 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import { errorMessage } from "@/lib/functions";
 import { Button, Card, Input, PageLoader } from "@/components/ui";
+import { TermsCheckbox } from "@/components/TermsCheckbox";
 import { Shell } from "./Login";
 
 // Destino dos links de convite e de recuperação de senha enviados por e-mail.
 export default function SetPassword() {
-  const { user, loading, updatePassword } = useAuth();
+  const { user, loading, updatePassword, acceptTerms } = useAuth();
   const navigate = useNavigate();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [accepted, setAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,6 +31,9 @@ export default function SetPassword() {
     );
   }
 
+  // Convidado pela equipe ainda não aceitou os Termos; quem só está trocando a senha já aceitou no cadastro.
+  const needsTerms = !user.user_metadata?.terms_accepted_at;
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -36,9 +41,14 @@ export default function SetPassword() {
       setError("As senhas não conferem.");
       return;
     }
+    if (needsTerms && !accepted) {
+      setError("Para continuar, aceite os Termos de Uso e a Política de Privacidade.");
+      return;
+    }
     setBusy(true);
     try {
       await updatePassword(password);
+      if (needsTerms) await acceptTerms();
       navigate("/", { replace: true });
     } catch (err) {
       setError(errorMessage(err));
@@ -55,6 +65,7 @@ export default function SetPassword() {
         <form onSubmit={submit} className="mt-4 space-y-4">
           <Input label="Nova senha" type="password" autoComplete="new-password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} required />
           <Input label="Confirme a senha" type="password" autoComplete="new-password" minLength={8} value={confirm} onChange={(e) => setConfirm(e.target.value)} required />
+          {needsTerms && <TermsCheckbox checked={accepted} onChange={setAccepted} />}
           {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
           <Button type="submit" className="w-full" loading={busy}>Salvar senha</Button>
         </form>

@@ -66,5 +66,7 @@ describe("landing comercial", () => {
     show();
     expect(screen.getByText(/TrIAd Solution · CNPJ 49\.732\.652\/0001-00/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "contato@triadsolution.com.br" }).getAttribute("href")).toBe("mailto:contato@triadsolution.com.br");
+    expect(screen.getByRole("link", { name: "Termos de Uso" }).getAttribute("href")).toBe("/termos");
+    expect(screen.getByRole("link", { name: "Privacidade" }).getAttribute("href")).toBe("/privacidade");
   });
 });

@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { MailCheck, ShieldCheck } from "lucide-react";
 import { useAuth, type SignupMetadata } from "@/lib/auth";
+import { LEGAL_VERSION } from "@/lib/legal";
 import { useSiteInfo } from "@/lib/site";
 import { SEGMENT_LIST } from "@/lib/segments";
 import { Button, Card, Input, Notice, PageLoader, Select } from "@/components/ui";
@@ -66,7 +67,7 @@ export default function Signup() {
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!accepted) {
-      setError("Para criar a conta, aceite o uso dos dados para operar o serviço.");
+      setError("Para criar a conta, aceite os Termos de Uso e a Política de Privacidade.");
       return;
     }
     setBusy(true);
@@ -76,6 +77,8 @@ export default function Signup() {
       ...(segment ? { segment } : {}),
       ...(website.trim() ? { website: website.trim() } : {}),
       ...(whatsapp.trim() ? { whatsapp: whatsapp.trim() } : {}),
+      terms_accepted_at: new Date().toISOString(),
+      terms_version: LEGAL_VERSION,
     };
     try {
       const { needsConfirmation } = await signUp(email.trim(), password, metadata);
@@ -109,7 +112,11 @@ export default function Signup() {
           </div>
           <label className="flex items-start gap-2 text-sm text-slate-600 dark:text-slate-400">
             <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand" />
-            <span>Concordo que os dados informados e as conversas do WhatsApp sejam usados para operar o atendimento da minha empresa (LGPD).</span>
+            <span>
+              Li e aceito os <Link to="/termos" target="_blank" rel="noreferrer" className="font-medium text-brand hover:underline">Termos de Uso</Link> e a{" "}
+              <Link to="/privacidade" target="_blank" rel="noreferrer" className="font-medium text-brand hover:underline">Política de Privacidade</Link>, inclusive o uso dos dados
+              informados e das conversas do WhatsApp para operar o atendimento da minha empresa (LGPD).
+            </span>
           </label>
           {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
           <Button type="submit" className="w-full" loading={busy}>Criar conta grátis</Button>

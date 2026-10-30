@@ -10,6 +10,7 @@ vi.mock("@/lib/auth", () => ({ useAuth: () => ({ user: null, loading: false, sig
 vi.mock("@/lib/workspace", () => ({ useWorkspace: () => ({ workspaceId: null, loading: false }) }));
 
 import Signup from "@/pages/Signup";
+import { LEGAL_VERSION } from "@/lib/legal";
 
 const show = () => render(
   <MemoryRouter initialEntries={["/cadastro"]}>
@@ -37,18 +38,22 @@ describe("cadastro de nova empresa", () => {
     fireEvent.change(screen.getByLabelText("Senha"), { target: { value: "segredo123" } });
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(screen.getByRole("button", { name: "Criar conta grátis" }));
-    await waitFor(() => expect(signUp).toHaveBeenCalledWith("ana@pousadaalfa.com.br", "segredo123", { company_name: "Pousada Alfa", segment: "hotelaria", website: "https://pousadaalfa.com.br" }));
+    await waitFor(() => expect(signUp).toHaveBeenCalledWith("ana@pousadaalfa.com.br", "segredo123", expect.objectContaining({ company_name: "Pousada Alfa", segment: "hotelaria", website: "https://pousadaalfa.com.br", terms_version: LEGAL_VERSION })));
+    expect((signUp.mock.calls[0] as unknown[])[2]).toHaveProperty("terms_accepted_at", expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/));
     expect(await screen.findByText(/Enviamos um link de confirmação para ana@pousadaalfa\.com\.br/)).toBeTruthy();
     expect(screen.getByText("Pousada Alfa")).toBeTruthy();
   });
 
-  it("sem aceitar o uso dos dados, não cria; conta já confirmada vai direto para as boas-vindas", async () => {
+  it("sem aceitar os Termos e a Política, não cria; conta já confirmada vai direto para as boas-vindas", async () => {
     show();
     fireEvent.change(screen.getByLabelText("Nome da empresa"), { target: { value: "Loja Beta" } });
     fireEvent.change(screen.getByLabelText("Seu e-mail"), { target: { value: "b@loja.com" } });
     fireEvent.change(screen.getByLabelText("Senha"), { target: { value: "segredo123" } });
     fireEvent.click(screen.getByRole("button", { name: "Criar conta grátis" }));
-    expect(await screen.findByText(/aceite o uso dos dados/)).toBeTruthy();
+    expect(await screen.findByText(/aceite os Termos de Uso e a Política de Privacidade/)).toBeTruthy();
+    // O link do aceite e o do rodapé da tela apontam para as mesmas páginas.
+    expect(screen.getAllByRole("link", { name: "Termos de Uso" }).map((a) => a.getAttribute("href"))).toEqual(["/termos", "/termos"]);
+    expect(screen.getByRole("link", { name: "Política de Privacidade" }).getAttribute("href")).toBe("/privacidade");
     expect(signUp).not.toHaveBeenCalled();
 
     signUp.mockResolvedValue({ needsConfirmation: false });
