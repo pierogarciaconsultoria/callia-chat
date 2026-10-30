@@ -70,3 +70,26 @@ describe("landing comercial", () => {
     expect(screen.getByRole("link", { name: "Privacidade" }).getAttribute("href")).toBe("/privacidade");
   });
 });
+
+describe("landing moderna", () => {
+  it("chamada principal em cor de destaque, barra fixa no celular só para visitantes, conversa de exemplo completa", () => {
+    show();
+    const hero = screen.getAllByRole("link", { name: /Começar teste grátis/ })[0];
+    expect(hero.className).toMatch(/bg-brand-accent/);
+    expect(screen.getByTestId("sticky-cta")).toBeTruthy();
+    // Sem matchMedia (como em testes) a conversa aparece inteira, parada.
+    expect(screen.getByText(/comprovante_pix\.pdf/)).toBeTruthy();
+    expect(screen.getByText(/Transferida para a equipe/)).toBeTruthy();
+    expect(screen.getByText("Hoje, sem o Callia")).toBeTruthy();
+    expect(screen.getByText("Com o Callia")).toBeTruthy();
+    cleanup();
+    auth.user = { id: "u1" };
+    show();
+    expect(screen.queryByTestId("sticky-cta")).toBeNull();
+    cleanup();
+    auth.user = null;
+    site.data = { ...site.data, self_service: false };
+    show();
+    expect(screen.queryByTestId("sticky-cta")).toBeNull();
+  });
+});
