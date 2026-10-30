@@ -115,6 +115,13 @@ Termos de Uso e Política de Privacidade ficam em `/termos` e `/privacidade` (te
 `LEGAL_VERSION`). O cadastro e o primeiro acesso de convidados exigem o aceite, gravado nos metadados do usuário
 (`terms_accepted_at`, `terms_version`). Ao mudar o texto, atualize a versão.
 
+Setores e transferência (tabelas `departments`, `department_members`, coluna `conversations.department_id`, RPC
+`transfer_conversation`): admin cadastra setores em Equipe e marca quem atende em cada um; na inbox, "Transferir" manda a
+conversa para outro operador ou para um setor, com nota opcional que vira mensagem de sistema na conversa (e auditoria
+`conversation.transferred`). Transferir para um setor deixa a conversa sem dono na fila do setor (o rodízio, se ligado,
+distribui só entre quem é do setor). Com visibilidade "só as suas", a fila sem dono de um setor aparece apenas para
+quem é do setor.
+
 ## Estrutura
 
 | Caminho | Conteúdo |

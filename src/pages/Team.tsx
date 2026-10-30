@@ -10,6 +10,7 @@ import { invalidateEntitlements, useEntitlements } from "@/hooks/use-entitlement
 import { formatDateTime } from "@/lib/format";
 import type { MemberWithEmail, WorkspaceRole } from "@/lib/database.types";
 import { ContactAssignmentsCard, RoutingSettingsCard } from "@/components/team/RoutingCards";
+import { DepartmentsCard } from "@/components/team/DepartmentsCard";
 import { useRouting } from "@/hooks/use-routing";
 import {
   Badge,
@@ -109,6 +110,7 @@ export default function Team() {
 
         {isAdmin && <RoutingSettingsCard workspaceId={workspaceId} />}
         {isAdmin && routing.data?.assignment_mode === "portfolio" && <ContactAssignmentsCard workspaceId={workspaceId} />}
+        {isAdmin && <DepartmentsCard workspaceId={workspaceId} />}
 
         <Card>
           <CardHeader title="Membros" />

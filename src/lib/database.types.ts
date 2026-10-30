@@ -317,10 +317,28 @@ export interface Conversation {
   last_message_at: string | null;
   last_message_preview: string | null;
   assigned_user_id: string | null;
+  /** Setor atual (departments); null = sem setor. */
+  department_id: string | null;
   handoff_at: string | null;
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+}
+
+export interface Department {
+  id: string;
+  workspace_id: string;
+  name: string;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DepartmentMember {
+  department_id: string;
+  workspace_id: string;
+  user_id: string;
+  created_at: string;
 }
 
 export interface Message {

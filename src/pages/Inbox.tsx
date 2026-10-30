@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
+  ArrowRightLeft,
   Bot,
   CheckCheck,
   FileText,
@@ -28,6 +29,8 @@ import { ForwardDialog } from "@/components/inbox/ForwardDialog";
 import { NewConversationDialog } from "@/components/inbox/NewConversationDialog";
 import { PhotoPickerDialog } from "@/components/inbox/PhotoPickerDialog";
 import { QuickReplyPicker } from "@/components/inbox/QuickReplyPicker";
+import { TransferDialog } from "@/components/inbox/TransferDialog";
+import { departmentName, useDepartments } from "@/hooks/use-departments";
 import { useQuickReplies } from "@/hooks/use-quick-replies";
 import { renderQuickReply, slashQuery } from "@/lib/quick-replies";
 import { canForward, mediaTypeFor, uploadAttachment, validateUpload, type UploadedAttachment } from "@/lib/inbox-send";
@@ -58,6 +61,7 @@ export default function Inbox() {
   const navigate = useNavigate();
   const [filters, setFilters] = useState<ConversationFilters>({ instanceId: "all", mode: "all" });
   const [owner, setOwner] = useState<"all" | "mine" | "unassigned">("all");
+  const [department, setDepartment] = useState<"all" | "none" | string>("all");
   const [search, setSearch] = useState("");
   const [newOpen, setNewOpen] = useState(false);
   const { user } = useAuth();
@@ -66,6 +70,7 @@ export default function Inbox() {
   const conversations = useConversations(workspaceId);
   const instances = useWhatsAppInstances(workspaceId);
   const members = useMembers(workspaceId);
+  const departments = useDepartments(workspaceId);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -73,13 +78,14 @@ export default function Inbox() {
       if (filters.mode !== "all" && c.mode !== filters.mode) return false;
       if (owner === "mine" && c.assigned_user_id !== user?.id) return false;
       if (owner === "unassigned" && c.assigned_user_id) return false;
+      if (department === "none" ? c.department_id : department !== "all" && c.department_id !== department) return false;
       if (filters.instanceId !== "all") {
         if (filters.instanceId === "external" ? !isExternal(c) : c.instance_id !== filters.instanceId) return false;
       }
       if (q && !`${c.contact_name ?? ""} ${c.contact_phone}`.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [conversations.data, filters, owner, search, user?.id]);
+  }, [conversations.data, filters, owner, department, search, user?.id]);
 
   const selected = conversations.data?.find((c) => c.id === conversationId) ?? null;
   const instanceName = (id: string | null) => instances.data?.find((i) => i.id === id)?.name;
@@ -146,6 +152,18 @@ export default function Inbox() {
             <option value="mine">Minhas</option>
             <option value="unassigned">Sem operador</option>
           </select>
+          {(departments.data?.departments.length ?? 0) > 0 && (
+            <select
+              aria-label="Filtrar por setor"
+              value={department}
+              onChange={(e) => setDepartment(e.target.value)}
+              className="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs dark:border-slate-700 dark:bg-slate-900"
+            >
+              <option value="all">Todos os setores</option>
+              <option value="none">Sem setor</option>
+              {departments.data!.departments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          )}
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -204,6 +222,7 @@ export default function Inbox() {
                         {c.assigned_user_id && c.mode === "human" && (
                           <Badge tone={c.assigned_user_id === user?.id ? "brand" : "neutral"}>{c.assigned_user_id === user?.id ? "você" : memberLabel(members.data, c.assigned_user_id)}</Badge>
                         )}
+                        {c.department_id && <Badge tone="blue">{departmentName(departments.data, c.department_id)}</Badge>}
                         {c.unread_count > 0 && (
                           <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1.5 text-xs font-semibold text-brand-fg">
                             {c.unread_count > 99 ? "99+" : c.unread_count}
@@ -255,6 +274,8 @@ function Thread({
   const [forwardOf, setForwardOf] = useState<Message | null>(null);
   const [photosOpen, setPhotosOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const departments = useDepartments(workspaceId);
   /** Anexo que veio de uma resposta rápida (já guardado no bucket). */
   const [quickMedia, setQuickMedia] = useState<UploadedAttachment | null>(null);
   const quickReplies = useQuickReplies(workspaceId);
@@ -386,6 +407,7 @@ function Thread({
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={MODE_TONE[conversation.mode]}>{MODE_LABEL[conversation.mode]}</Badge>
           {attendedBy && <Badge tone={conversation.assigned_user_id === user?.id ? "brand" : "neutral"}>atendendo: {conversation.assigned_user_id === user?.id ? "você" : attendedBy}</Badge>}
+          {conversation.department_id && <Badge tone="blue">{departmentName(departments.data, conversation.department_id)}</Badge>}
           {conversation.mode === "human" && conversation.assigned_user_id !== user?.id && (
             <Button size="sm" variant="secondary" onClick={() => void takeOver()} disabled={claim.isPending}>
               <UserRound className="h-4 w-4" /> Assumir
@@ -406,6 +428,11 @@ function Thread({
               <Bot className="h-4 w-4" /> Devolver ao bot
             </Button>
           )}
+          {!external && (
+            <Button size="sm" variant="secondary" onClick={() => setTransferOpen(true)} title="Transferir para outro operador ou setor">
+              <ArrowRightLeft className="h-4 w-4" /> Transferir
+            </Button>
+          )}
           {conversation.mode !== "closed" && (
             <Button size="sm" variant="ghost" onClick={() => setMode("closed")} disabled={update.isPending}>
               <XCircle className="h-4 w-4" /> Encerrar
@@ -413,6 +440,7 @@ function Thread({
           )}
         </div>
       </header>
+      <TransferDialog workspaceId={workspaceId} conversation={conversation} open={transferOpen} onClose={() => setTransferOpen(false)} />
       {conflictWith && (
         <div className="px-3 pt-3 sm:px-4">
           <Notice tone="warn">
