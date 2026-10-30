@@ -48,11 +48,16 @@ export function useMembers(workspaceId: string | null) {
   });
 }
 
-/** "ana" para ana@pousada.com; null quando desconhecido. */
+/** Nome de exibição do membro; sem nome, o trecho do e-mail antes do @ ("ana" para ana@pousada.com). */
+export function memberName(m: Pick<MemberWithEmail, "email" | "display_name">): string {
+  return m.display_name?.trim() || m.email.split("@")[0];
+}
+
+/** Rótulo pelo id; null sem id, "outro operador" quando não está na lista. */
 export function memberLabel(members: MemberWithEmail[] | undefined, userId: string | null | undefined): string | null {
   if (!userId) return null;
   const m = members?.find((x) => x.user_id === userId);
-  return m ? m.email.split("@")[0] : "outro operador";
+  return m ? memberName(m) : "outro operador";
 }
 
 export function useContactAssignments(workspaceId: string | null, enabled = true) {

@@ -17,6 +17,7 @@ export default function Signup() {
   const [segment, setSegment] = useState("");
   const [website, setWebsite] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [accepted, setAccepted] = useState(false);
@@ -74,6 +75,7 @@ export default function Signup() {
     setError(null);
     const metadata: SignupMetadata = {
       company_name: company.trim(),
+      full_name: fullName.trim(),
       ...(segment ? { segment } : {}),
       ...(website.trim() ? { website: website.trim() } : {}),
       ...(whatsapp.trim() ? { whatsapp: whatsapp.trim() } : {}),
@@ -107,6 +109,7 @@ export default function Signup() {
             <Input label="WhatsApp da empresa (opcional)" type="tel" placeholder="(48) 99999-0000" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} autoComplete="tel" />
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
+            <Input label="Seu nome" autoComplete="name" value={fullName} onChange={(e) => setFullName(e.target.value)} required minLength={2} maxLength={80} hint="Como você aparece para a equipe." />
             <Input label="Seu e-mail" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
             <Input label="Senha" type="password" autoComplete="new-password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} required hint="Pelo menos 8 caracteres." />
           </div>

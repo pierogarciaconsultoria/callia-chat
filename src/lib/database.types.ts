@@ -200,6 +200,8 @@ export interface WorkspaceMember {
 export interface MemberWithEmail {
   user_id: string;
   email: string;
+  /** Nome de exibição (auth.users.raw_user_meta_data.full_name); null quando a pessoa ainda não informou. */
+  display_name: string | null;
   role: WorkspaceRole;
   is_support: boolean;
   created_at: string;

@@ -115,6 +115,11 @@ Termos de Uso e Política de Privacidade ficam em `/termos` e `/privacidade` (te
 `LEGAL_VERSION`). O cadastro e o primeiro acesso de convidados exigem o aceite, gravado nos metadados do usuário
 (`terms_accepted_at`, `terms_version`). Ao mudar o texto, atualize a versão.
 
+Operadores têm nome de exibição (metadados `full_name` do usuário, RPC `list_workspace_members.display_name`,
+`user_label` em SQL): pedido no cadastro e ao aceitar convite, editável em Equipe (o próprio ou, por admin, qualquer
+membro via function `team` ação `rename`). Inbox, transferências e mensagens de sistema mostram o nome; sem nome, o
+trecho do e-mail antes do `@`.
+
 Setores e transferência (tabelas `departments`, `department_members`, coluna `conversations.department_id`, RPC
 `transfer_conversation`): admin cadastra setores em Equipe e marca quem atende em cada um; na inbox, "Transferir" manda a
 conversa para outro operador ou para um setor, com nota opcional que vira mensagem de sistema na conversa (e auditoria

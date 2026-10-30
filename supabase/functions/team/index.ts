@@ -12,6 +12,14 @@ interface Body {
   workspace_id?: string;
   email?: string;
   role?: string;
+  full_name?: string;
+  user_id?: string;
+}
+
+function parseName(raw: unknown): string {
+  const name = typeof raw === "string" ? raw.replace(/\s+/g, " ").trim().slice(0, 80) : "";
+  if (name.length < 2) throw new RuntimeError("invalid_request", "Informe um nome com pelo menos 2 letras.");
+  return name;
 }
 
 const ROLES = ["owner", "admin", "agent"] as const;
@@ -53,12 +61,28 @@ Deno.serve(createHandler("team", async ({ req, correlationId }) => {
   if (req.method !== "POST") throw new RuntimeError("invalid_request", "Use POST.");
   const user = await requireUser(req);
   const body = await readJson<Body>(req);
-  if (body.action !== "invite") throw new RuntimeError("invalid_request", "Ação desconhecida.");
+  if (body.action !== "invite" && body.action !== "rename") throw new RuntimeError("invalid_request", "Ação desconhecida.");
   const callerRole = await requireWorkspaceRole(user.id, body.workspace_id);
   const workspaceId = body.workspace_id as string;
+
+  // Admin define o nome de exibição de um membro da equipe (o nome é do usuário, vale em todos os workspaces dele).
+  if (body.action === "rename") {
+    const targetId = String(body.user_id ?? "");
+    const name = parseName(body.full_name);
+    const admin = adminDb();
+    const { data: member } = await admin.from("workspace_members").select("user_id").eq("workspace_id", workspaceId).eq("user_id", targetId).maybeSingle();
+    if (!member) throw new RuntimeError("not_found", "Esta pessoa não está na equipe.");
+    const { data: target, error: loadError } = await admin.auth.admin.getUserById(targetId);
+    if (loadError || !target.user) throw new RuntimeError("not_found", "Usuário não encontrado.");
+    const { error } = await admin.auth.admin.updateUserById(targetId, { user_metadata: { ...(target.user.user_metadata ?? {}), full_name: name } });
+    if (error) throw new RuntimeError("internal_error", "Não foi possível salvar o nome.", { reason: error.message });
+    await audit(admin, { workspace_id: workspaceId, actor_user_id: user.id, action: "member.renamed", entity: "user", entity_id: targetId, details: { full_name: name }, correlation_id: correlationId });
+    return json({ ok: true, full_name: name });
+  }
   const address = normalizeEmail(body.email);
   const role = parseRole(body.role);
   if (role === "owner" && callerRole !== "owner") throw new RuntimeError("forbidden", "Só um proprietário pode adicionar outro proprietário.");
+  const inviteName = body.full_name !== undefined && body.full_name !== "" ? parseName(body.full_name) : null;
 
   const db = adminDb();
   const { data: existingId, error: lookupError } = await db.rpc("platform_user_id_by_email", { p_email: address });
@@ -72,7 +96,7 @@ Deno.serve(createHandler("team", async ({ req, correlationId }) => {
     assertCanAdd(ent, "members");
     const { data, error } = await db.auth.admin.inviteUserByEmail(address, {
       redirectTo: `${panelUrl()}/definir-senha`,
-      data: { invited_to_workspace: workspaceId },
+      data: { invited_to_workspace: workspaceId, ...(inviteName ? { full_name: inviteName } : {}) },
     });
     if (error || !data.user) throw new RuntimeError("upstream_unavailable", "Não foi possível enviar o convite por e-mail.", { reason: error?.message });
     invited = true;

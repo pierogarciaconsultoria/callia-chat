@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { UserPlus, Users } from "lucide-react";
+import { Pencil, UserPlus, Users } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { useRequiredWorkspace } from "@/lib/workspace";
 import { supabase } from "@/lib/supabase";
@@ -11,7 +11,7 @@ import { formatDateTime } from "@/lib/format";
 import type { MemberWithEmail, WorkspaceRole } from "@/lib/database.types";
 import { ContactAssignmentsCard, RoutingSettingsCard } from "@/components/team/RoutingCards";
 import { DepartmentsCard } from "@/components/team/DepartmentsCard";
-import { useRouting } from "@/hooks/use-routing";
+import { memberName, useRouting } from "@/hooks/use-routing";
 import {
   Badge,
   Button,
@@ -22,6 +22,7 @@ import {
   EmptyState,
   ErrorState,
   Input,
+  Modal,
   Notice,
   PageHeader,
   Select,
@@ -44,7 +45,7 @@ function friendly(err: unknown): string {
 
 export default function Team() {
   const { workspaceId, isAdmin, isOwner } = useRequiredWorkspace();
-  const { user } = useAuth();
+  const { user, updateProfile } = useAuth();
   const qc = useQueryClient();
   const toast = useToast();
   const key = ["members", workspaceId];
@@ -55,16 +56,25 @@ export default function Team() {
   const { data: entitlements } = useEntitlements();
   const gate = createGate(entitlements, "max_members");
   const [email, setEmail] = useState("");
+  const [inviteName, setInviteName] = useState("");
   const [role, setRole] = useState<WorkspaceRole>("agent");
+  const [renaming, setRenaming] = useState<{ user_id: string; name: string } | null>(null);
   const routing = useRouting(isAdmin ? workspaceId : null);
 
   const add = useMutation({
-    mutationFn: (vars: { email: string; role: WorkspaceRole }) =>
-      invokeFunction<{ user_id: string; invited: boolean }>("team", { action: "invite", workspace_id: workspaceId, email: vars.email, role: vars.role }),
+    mutationFn: (vars: { email: string; role: WorkspaceRole; full_name?: string }) =>
+      invokeFunction<{ user_id: string; invited: boolean }>("team", { action: "invite", workspace_id: workspaceId, email: vars.email, role: vars.role, ...(vars.full_name ? { full_name: vars.full_name } : {}) }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: key });
       invalidateEntitlements(qc, workspaceId);
     },
+  });
+  const rename = useMutation({
+    mutationFn: async (vars: { user_id: string; name: string }) => {
+      if (vars.user_id === user?.id) await updateProfile(vars.name);
+      else await invokeFunction("team", { action: "rename", workspace_id: workspaceId, user_id: vars.user_id, full_name: vars.name });
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: key }),
   });
   const remove = useMutation({
     mutationFn: async (userId: string) =>
@@ -78,9 +88,10 @@ export default function Team() {
   async function submit(e: FormEvent) {
     e.preventDefault();
     try {
-      const result = await add.mutateAsync({ email: email.trim(), role });
+      const result = await add.mutateAsync({ email: email.trim(), role, ...(inviteName.trim() ? { full_name: inviteName.trim() } : {}) });
       toast.success(result.invited ? `Convite enviado para ${email.trim()}. A pessoa define a senha pelo link do e-mail e já entra na equipe.` : "Membro adicionado.");
       setEmail("");
+      setInviteName("");
     } catch (err) {
       toast.error(friendly(err));
     }
@@ -95,8 +106,9 @@ export default function Team() {
             <CardHeader title="Adicionar membro" description="Quem já tem usuário entra na hora; quem não tem recebe um convite por e-mail para definir a senha." />
             <CardBody className="space-y-3">
               {gate.reason && <Notice tone="warn">{gate.reason}</Notice>}
-              <form onSubmit={submit} className="grid gap-3 sm:grid-cols-[1fr_180px_auto] sm:items-end">
+              <form onSubmit={submit} className="grid gap-3 sm:grid-cols-[1fr_1fr_180px_auto] sm:items-end">
                 <Input label="E-mail" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+                <Input label="Nome (opcional)" value={inviteName} onChange={(e) => setInviteName(e.target.value)} maxLength={80} autoComplete="off" />
                 <Select label="Papel" value={role} onChange={(e) => setRole(e.target.value as WorkspaceRole)}>
                   <option value="agent">Atendente</option>
                   <option value="admin">Administrador</option>
@@ -125,11 +137,16 @@ export default function Team() {
               {members.data?.map((m) => (
                 <li key={m.user_id} className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-5">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">
-                      {m.email} {m.user_id === user?.id && <span className="text-xs font-normal text-slate-400">(você)</span>}
+                    <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+                      {memberName(m)} {m.user_id === user?.id && <span className="text-xs font-normal text-slate-400">(você)</span>}
+                      {(m.user_id === user?.id || isAdmin) && (
+                        <button type="button" onClick={() => setRenaming({ user_id: m.user_id, name: m.display_name ?? "" })} className="rounded p-0.5 text-slate-400 hover:text-brand" aria-label={`Editar nome de ${m.email}`}>
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </p>
-                    <p className="text-xs text-slate-500">
-                      {m.is_support ? "Acesso de suporte da plataforma desde " : "Desde "}
+                    <p className="truncate text-xs text-slate-500">
+                      {m.email} · {m.is_support ? "acesso de suporte da plataforma desde " : "desde "}
                       {formatDateTime(m.created_at)}
                     </p>
                   </div>
@@ -158,6 +175,27 @@ export default function Team() {
           )}
         </Card>
       </div>
+      <Modal
+        open={Boolean(renaming)}
+        onClose={() => setRenaming(null)}
+        title="Nome de exibição"
+        description="É como a pessoa aparece na inbox, nas transferências e para o resto da equipe."
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setRenaming(null)}>Cancelar</Button>
+            <Button
+              loading={rename.isPending}
+              disabled={!renaming || renaming.name.trim().length < 2}
+              onClick={() => renaming && rename.mutateAsync(renaming).then(() => { toast.success("Nome salvo."); setRenaming(null); }, (e) => toast.error(friendly(e)))}
+            >
+              Salvar
+            </Button>
+          </>
+        }
+      >
+        <Input label="Nome" value={renaming?.name ?? ""} onChange={(e) => setRenaming((r) => (r ? { ...r, name: e.target.value } : r))} maxLength={80} autoFocus />
+      </Modal>
     </>
   );
 }

@@ -3,7 +3,7 @@ import { useState, type FormEvent } from "react";
 import { Trash2, UserCheck } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { formatPhone } from "@/lib/format";
-import { ROUTING_DEFAULTS, useContactAssignmentActions, useContactAssignments, useMembers, useRouting, useUpdateRouting } from "@/hooks/use-routing";
+import { memberName, ROUTING_DEFAULTS, useContactAssignmentActions, useContactAssignments, useMembers, useRouting, useUpdateRouting } from "@/hooks/use-routing";
 import type { MemberWithEmail, RoutingSettings } from "@/lib/database.types";
 import { Button, Card, CardBody, CardHeader, ConfirmButton, EmptyState, Input, Select, Spinner, Switch, useToast } from "@/components/ui";
 
@@ -61,7 +61,7 @@ export function ContactAssignmentsCard({ workspaceId }: { workspaceId: string })
   const [userId, setUserId] = useState("");
   const [note, setNote] = useState("");
   const people = (members.data ?? []).filter((m) => !m.is_support);
-  const emailOf = (id: string) => people.find((m) => m.user_id === id)?.email ?? "(removido)";
+  const emailOf = (id: string) => { const m = people.find((x) => x.user_id === id); return m ? `${memberName(m)} (${m.email})` : "(removido)"; };
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -82,7 +82,7 @@ export function ContactAssignmentsCard({ workspaceId }: { workspaceId: string })
         <form onSubmit={submit} className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-end">
           <Input label="Telefone do cliente" placeholder="(48) 99999-0000" value={phone} onChange={(e) => setPhone(e.target.value)} required />
           <Select label="Operador" value={userId || user?.id || ""} onChange={(e) => setUserId(e.target.value)}>
-            {people.map((m: MemberWithEmail) => <option key={m.user_id} value={m.user_id}>{m.email}</option>)}
+            {people.map((m: MemberWithEmail) => <option key={m.user_id} value={m.user_id}>{memberName(m)} ({m.email})</option>)}
           </Select>
           <Input label="Observação" placeholder="opcional" value={note} onChange={(e) => setNote(e.target.value)} maxLength={120} />
           <Button type="submit" loading={add.isPending}><UserCheck className="h-4 w-4" /> Vincular</Button>

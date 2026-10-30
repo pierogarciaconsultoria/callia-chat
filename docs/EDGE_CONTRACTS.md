@@ -76,7 +76,13 @@ Eventos válidos: `message.received`, `message.sent`, `conversation.handoff`, `p
 
 | action | body extra | resposta |
 |---|---|---|
-| `invite` | `workspace_id`, `email`, `role` (`agent`/`admin`/`owner`, este só por proprietário) | `{ user_id, invited }` |
+| `invite` | `workspace_id`, `email`, `role` (`agent`/`admin`/`owner`, este só por proprietário), `full_name?` | `{ user_id, invited }` |
+| `rename` | `workspace_id`, `user_id` (membro da equipe), `full_name` (2 a 80 caracteres) | `{ ok, full_name }` — grava `raw_user_meta_data.full_name` (auditoria `member.renamed`) |
+
+Nome de exibição: `list_workspace_members` devolve `display_name` (metadados `full_name`/`name`, ou null); o painel mostra
+o nome e cai no trecho do e-mail antes do `@` quando não há nome (`memberName`). O próprio usuário muda o seu em Equipe
+(`auth.updateUser`); o cadastro pede o nome e o convidado informa ao definir a senha. `user_label(uuid)` é o mesmo
+rótulo em SQL, usado na mensagem de sistema da transferência.
 
 Se o e-mail já tem usuário, só vincula (`invited: false`). Se não tem, confere plano e status, manda o convite do GoTrue
 (link para `/definir-senha`) e vincula em seguida (`invited: true`, auditoria `member.invited`). O vínculo passa pela

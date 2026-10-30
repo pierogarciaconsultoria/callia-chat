@@ -19,7 +19,7 @@ vi.mock("@/hooks/use-routing", async (importOriginal) => ({
   useMembers: () => ({ data: [
     { user_id: "u-me", email: "eu@pousada.com", role: "owner", is_support: false, created_at: "" },
     { user_id: "u-ana", email: "ana@pousada.com", role: "agent", is_support: false, created_at: "" },
-    { user_id: "u-bia", email: "bia@pousada.com", role: "agent", is_support: false, created_at: "" },
+    { user_id: "u-bia", email: "bia@pousada.com", display_name: "Bia Lima", role: "agent", is_support: false, created_at: "" },
     { user_id: "u-sup", email: "suporte@callia.com", role: "admin", is_support: true, created_at: "" },
   ] }),
 }));
@@ -46,11 +46,11 @@ describe("transferência e setores", () => {
     expect(screen.queryByText("suporte")).toBeNull();
     const button = screen.getByRole("button", { name: /Transferir$/ });
     expect(button.hasAttribute("disabled")).toBe(true);
-    fireEvent.click(screen.getByText("bia"));
+    fireEvent.click(screen.getByText("Bia Lima"));
     fireEvent.change(screen.getByLabelText("Nota para quem recebe (opcional)"), { target: { value: "2ª via do boleto" } });
     fireEvent.click(button);
     await waitFor(() => expect(mocks.transfer).toHaveBeenCalledWith({ conversationId: "c1", userId: "u-bia", departmentId: null, note: "2ª via do boleto" }));
-    expect(mocks.toast.success).toHaveBeenCalledWith("Conversa transferida para bia.");
+    expect(mocks.toast.success).toHaveBeenCalledWith("Conversa transferida para Bia Lima.");
   });
 
   it("transfere para um setor; o setor atual fica desabilitado", async () => {

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { ArrowRightLeft } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useAuth } from "@/lib/auth";
-import { useMembers } from "@/hooks/use-routing";
+import { memberLabel, memberName, useMembers } from "@/hooks/use-routing";
 import { useDepartments, useTransferConversation } from "@/hooks/use-departments";
 import type { Conversation } from "@/lib/database.types";
 import { Button, Modal, Tabs, Textarea, useToast } from "@/components/ui";
@@ -37,8 +37,8 @@ export function TransferDialog({ workspaceId, conversation, open, onClose }: { w
     try {
       const r = await transfer.mutateAsync({ conversationId: conversation.id, userId: tab === "user" ? userId : null, departmentId: tab === "user" ? null : departmentId, note });
       const who = tab === "user"
-        ? people.find((p) => p.user_id === userId)?.email.split("@")[0]
-        : `o setor ${deptList.find((d) => d.id === departmentId)?.name}${r.assigned_user_id ? ` (${members.data?.find((m) => m.user_id === r.assigned_user_id)?.email.split("@")[0] ?? "operador"})` : ""}`;
+        ? memberLabel(members.data, userId)
+        : `o setor ${deptList.find((d) => d.id === departmentId)?.name}${r.assigned_user_id ? ` (${memberLabel(members.data, r.assigned_user_id) ?? "operador"})` : ""}`;
       toast.success(`Conversa transferida para ${who}.`);
       close();
     } catch (e) {
@@ -70,8 +70,8 @@ export function TransferDialog({ workspaceId, conversation, open, onClose }: { w
                 <li key={p.user_id}>
                   <button type="button" onClick={() => setUserId(userId === p.user_id ? null : p.user_id)} aria-pressed={userId === p.user_id}
                     className={cn("flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50 dark:hover:bg-slate-800/50", userId === p.user_id && "bg-brand/10")}>
-                    <span className="font-medium">{p.email.split("@")[0]}</span>
-                    <span className="truncate text-xs text-slate-500">{depts.length ? depts.join(", ") : p.email}</span>
+                    <span className="font-medium">{memberName(p)}</span>
+                    <span className="truncate text-xs text-slate-500">{depts.length ? `${p.email} · ${depts.join(", ")}` : p.email}</span>
                   </button>
                 </li>
               );

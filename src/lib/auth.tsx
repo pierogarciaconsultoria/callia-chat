@@ -9,6 +9,8 @@ export interface SignupMetadata {
   segment?: string;
   website?: string;
   whatsapp?: string;
+  /** Nome de quem está criando a conta (vira o nome de exibição na equipe). */
+  full_name?: string;
   /** Aceite dos Termos de Uso e da Política de Privacidade (versão em src/lib/legal.ts). */
   terms_accepted_at?: string;
   terms_version?: string;
@@ -25,6 +27,8 @@ interface AuthState {
   updatePassword: (password: string) => Promise<void>;
   /** Registra o aceite dos Termos e da Política nos metadados do usuário (convidados, no definir senha). */
   acceptTerms: () => Promise<void>;
+  /** Nome de exibição do próprio usuário (mostrado à equipe e nas mensagens de sistema). */
+  updateProfile: (fullName: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -89,6 +93,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       async acceptTerms() {
         const { error } = await supabase.auth.updateUser({ data: { terms_accepted_at: new Date().toISOString(), terms_version: LEGAL_VERSION } });
+        if (error) throw error;
+      },
+      async updateProfile(fullName) {
+        const { error } = await supabase.auth.updateUser({ data: { full_name: fullName.trim().slice(0, 80) } });
         if (error) throw error;
       },
       async signOut() {

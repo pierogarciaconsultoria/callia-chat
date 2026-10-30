@@ -1,7 +1,7 @@
 // Equipe → setores: cadastro e quem atende em cada um. Conversas podem ser transferidas para um setor pela inbox.
 import { useState, type FormEvent } from "react";
 import { Building2, Pencil, Plus } from "lucide-react";
-import { useMembers } from "@/hooks/use-routing";
+import { memberName, useMembers } from "@/hooks/use-routing";
 import { useDepartmentActions, useDepartments } from "@/hooks/use-departments";
 import { Button, Card, CardBody, CardHeader, ConfirmButton, Input, Spinner, useToast } from "@/components/ui";
 
@@ -84,7 +84,7 @@ export function DepartmentsCard({ workspaceId }: { workspaceId: string }) {
                         onChange={(e) => setMember.mutate({ department_id: d.id, user_id: m.user_id, member: e.target.checked }, { onError: (err) => toast.error(err) })}
                         className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand"
                       />
-                      {m.email.split("@")[0]}
+                      {memberName(m)}
                     </label>
                   ))}
                 </div>

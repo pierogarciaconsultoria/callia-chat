@@ -21,7 +21,8 @@ afterEach(() => {
 describe("distribuição de conversas", () => {
   it("normaliza telefone e rotula o operador pelo e-mail", () => {
     expect(normalizePhone("+55 (48) 99999-0000")).toBe("5548999990000");
-    expect(memberLabel([{ user_id: "u1", email: "ana@pousada.com", role: "agent", is_support: false, created_at: "" }], "u1")).toBe("ana");
+    expect(memberLabel([{ user_id: "u1", email: "ana@pousada.com", display_name: null, role: "agent", is_support: false, created_at: "" }], "u1")).toBe("ana");
+    expect(memberLabel([{ user_id: "u1", email: "ana@pousada.com", display_name: "Ana Souza", role: "agent", is_support: false, created_at: "" }], "u1")).toBe("Ana Souza");
     expect(memberLabel([], "u9")).toBe("outro operador");
     expect(memberLabel([], null)).toBeNull();
   });
