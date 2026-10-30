@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import type { Conversation } from "@/lib/database.types";
 
 const mocks = vi.hoisted(() => ({
-  transfer: vi.fn(async () => ({ assigned_user_id: null, department_id: "d2" })),
+  transfer: vi.fn(async (): Promise<{ assigned_user_id: string | null; department_id: string | null }> => ({ assigned_user_id: null, department_id: "d2" })),
   save: vi.fn(async (v: { name: string }) => v),
   remove: vi.fn(async () => null),
   setMember: vi.fn(),
