@@ -1,7 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { CALLIA_BRAND_STYLE } from "@/lib/branding";
 import { Link, Navigate, useLocation } from "react-router-dom";
-import { MessageCircle } from "lucide-react";
+import { CalliaLogo } from "@/components/Logo";
 import { useAuth } from "@/lib/auth";
 import { useWorkspace } from "@/lib/workspace";
 import { useSiteInfo } from "@/lib/site";
@@ -30,10 +30,10 @@ export function Shell({ children, title = "Callia Chat", subtitle = "Atendimento
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10 dark:bg-slate-950" style={CALLIA_BRAND_STYLE}>
       <div className={wide ? "w-full max-w-xl" : "w-full max-w-sm"}>
         <div className="mb-6 flex flex-col items-center text-center">
-          <Link to="/" className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-brand text-brand-fg" aria-label="Ir para o site">
-            <MessageCircle className="h-6 w-6" />
+          <Link to="/" className="mb-4 flex items-center justify-center" aria-label="Ir para o site">
+            <CalliaLogo className="h-12" />
           </Link>
-          <h1 className="text-xl font-semibold">{title}</h1>
+          <h1 className={title === "Callia Chat" ? "sr-only" : "text-xl font-semibold"}>{title}</h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>
         </div>
         {children}

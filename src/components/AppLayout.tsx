@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { ArrowLeft, LogOut, Menu, MessageCircle, PanelLeftClose, PanelLeftOpen, ShieldCheck, X } from "lucide-react";
+import { ArrowLeft, LogOut, Menu, PanelLeftClose, PanelLeftOpen, ShieldCheck, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { useAuth } from "@/lib/auth";
 import { useWorkspace } from "@/lib/workspace";
@@ -10,6 +10,7 @@ import { PlanBanner } from "./PlanBanner";
 import { JourneyBar } from "./onboarding/Journey";
 import { AssistantDrawer } from "./assistant/AssistantDrawer";
 import { PendingLearningsBadge } from "./LearningsBadge";
+import { CalliaIcon } from "./Logo";
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   cn(
@@ -79,9 +80,7 @@ export function AppLayout() {
         {branding?.logo_url ? (
           <img src={branding.logo_url} alt="" className="h-9 w-9 shrink-0 rounded-lg object-cover" />
         ) : (
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand text-brand-fg">
-            <MessageCircle className="h-5 w-5" />
-          </div>
+          <CalliaIcon className="h-9 w-9 shrink-0" alt="" />
         )}
         {!rail && (
           <div className="min-w-0 flex-1">

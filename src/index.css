@@ -4,7 +4,7 @@
 
 :root {
   /* Sobrescritas em tempo de execução por src/lib/branding.ts */
-  --brand: 15 118 110;
+  --brand: 24 110 113;
   --brand-fg: 255 255 255;
   --brand-accent: 245 158 11;
 }

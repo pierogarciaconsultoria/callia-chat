@@ -17,7 +17,7 @@ export function readableForeground(hex: string | null | undefined): string {
   return lum > 0.45 ? "15 23 42" : "255 255 255";
 }
 
-export const DEFAULT_PRIMARY = "#0f766e";
+export const DEFAULT_PRIMARY = "#186e71";
 export const DEFAULT_SECONDARY = "#f59e0b";
 
 export function applyBranding(primary?: string | null, secondary?: string | null) {

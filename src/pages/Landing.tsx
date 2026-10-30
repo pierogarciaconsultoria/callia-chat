@@ -14,6 +14,7 @@ import { cn } from "@/lib/cn";
 import { CALLIA_BRAND_STYLE } from "@/lib/branding";
 import { Reveal } from "@/components/landing/Reveal";
 import { ChatDemo } from "@/components/landing/ChatDemo";
+import { CalliaLogo } from "@/components/Logo";
 
 const NAV = [
   { href: "#recursos", label: "Recursos" },
@@ -156,9 +157,8 @@ export default function Landing() {
     <div className="min-h-screen bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100" style={CALLIA_BRAND_STYLE} data-testid="landing-root">
       <header className="sticky top-0 z-20 border-b border-slate-200/70 bg-white/80 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/80">
         <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-4 sm:px-6">
-          <Link to="/" className="flex items-center gap-2 font-semibold">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-brand-fg"><MessageCircle className="h-4 w-4" aria-hidden /></span>
-            {site.platform_name}
+          <Link to="/" className="flex items-center" aria-label={site.platform_name}>
+            <CalliaLogo className="h-9" alt={site.platform_name} />
           </Link>
           <nav className="hidden items-center gap-5 text-sm text-slate-600 md:flex dark:text-slate-400" aria-label="Seções">
             {NAV.map((n) => <a key={n.href} href={n.href} className="transition-colors hover:text-brand">{n.label}</a>)}
@@ -356,7 +356,10 @@ export default function Landing() {
 
       <footer className="border-t border-slate-200 px-4 py-8 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400 sm:px-6">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4">
-          <p>© {new Date().getFullYear()} {site.platform_name}. Atendimento no WhatsApp com IA e equipe humana.</p>
+          <div className="flex items-center gap-3">
+            <CalliaLogo className="h-7" alt={site.platform_name} />
+            <p>© {new Date().getFullYear()} {site.platform_name}. Atendimento no WhatsApp com IA e equipe humana.</p>
+          </div>
           <nav className="flex flex-wrap gap-4" aria-label="Links">
             <Link to="/entrar" className="hover:underline">Entrar</Link>
             {site.self_service && <Link to="/cadastro" className="hover:underline">Criar conta</Link>}
