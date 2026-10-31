@@ -23,19 +23,24 @@ export function Modal({
   side?: "right";
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
+  // onClose costuma ser uma função nova a cada render do pai (cada tecla num formulário). Guardar a versão mais
+  // recente numa ref evita refazer o efeito abaixo, que dava foco ao painel e tirava o cursor do campo em edição.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCloseRef.current();
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    panelRef.current?.focus();
+    // Foco inicial no painel só ao abrir, e só se nada dentro dele já estiver focado.
+    if (!panelRef.current?.contains(document.activeElement)) panelRef.current?.focus();
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
   const widths = { sm: "sm:max-w-sm", md: "sm:max-w-lg", lg: "sm:max-w-3xl" };
