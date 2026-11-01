@@ -115,6 +115,13 @@ Tipos aceitos: PDF, DOCX, TXT, MD.
 A configuração (`workspace_connectors`) é gravada direto pelo painel via RLS:
 `{ kind: "hbook", enabled, config: { base_url, company_id, booking_link, currency, default_adults } }`.
 
+## auto-return — Devolução automática ao bot (interna, pg_cron a cada minuto)
+
+Sem sessão, com `x-callia-internal`. Chama a RPC `auto_return_idle_conversations(50)`, que devolve ao bot as conversas
+humanas paradas além de `agent_configs.auto_return_minutes` em que a equipe respondeu, grava a mensagem de sistema e a
+auditoria, e informa `pending_message_id` quando a última mensagem é do cliente; para essas, a function chama
+`process-message` (interno) para a IA responder. Resposta: `{ ok, returned, answered }`.
+
 ## learnings — Aprendizados do atendimento (admin; tenant ativo e IA no plano)
 
 Sem sessão e com `x-callia-internal` (pg_cron, diário): analisa toda empresa com agente ligado e mensagem de cliente desde a

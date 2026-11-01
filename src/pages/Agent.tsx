@@ -227,6 +227,17 @@ export default function Agent() {
                 onChange={(e) => set("handoff_message", e.target.value)}
                 required
               />
+              <Select
+                label="Devolver ao bot por inatividade"
+                value={form.auto_return_minutes === null || form.auto_return_minutes === undefined ? "" : String(form.auto_return_minutes)}
+                onChange={(e) => set("auto_return_minutes", e.target.value === "" ? null : Number(e.target.value))}
+                hint="Conversa com a equipe sem mensagens de nenhum dos lados por esse tempo volta ao bot, para a próxima mensagem do cliente ser respondida na hora. Só vale quando a equipe chegou a responder; nada é enviado ao cliente."
+              >
+                <option value="">Desligado</option>
+                {[5, 10, 15, 30, 60, 120, 240, 480, 1440].map((m) => (
+                  <option key={m} value={m}>{m < 60 ? `${m} minutos` : m === 60 ? "1 hora" : m < 1440 ? `${m / 60} horas` : "24 horas"}</option>
+                ))}
+              </Select>
             </CardBody>
           </Card>
 

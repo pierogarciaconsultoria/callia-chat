@@ -53,6 +53,13 @@ Configurável por empresa em Equipe → "Distribuição das conversas" (`workspa
 "mesmo assim" fica na auditoria); "Ficar com este cliente" (`claim_contact`) põe o número na carteira de quem clicou;
 `assign_conversation_operator` (service_role, usada por `send-message`) é o "assumir ao responder".
 
+Devolução automática ao bot (`agent_configs.auto_return_minutes`, padrão 30 min, null = desligado; em Atendimento →
+Transferência para humano): a cada minuto (`cron_auto_return.sql` → function `auto-return` → RPC
+`auto_return_idle_conversations`) conversas em modo humano sem mensagem de nenhum dos lados há N minutos voltam ao bot,
+com mensagem de sistema (`event: auto_return`) e auditoria `conversation.auto_returned`. Só quando a equipe chegou a
+responder neste atendimento (evita o pingue-pongue quando a IA transferiu por não saber), nunca encerradas. Nada é
+enviado ao cliente; se a última mensagem é dele sem resposta, a IA responde na hora (process-message).
+
 ## Assistente do painel (botão flutuante, administradores)
 
 Chat para ajustar os fatos estruturados sem procurar a tela: *"a kitnet na alta passa a 450"*, *"fechado de 21/06 a

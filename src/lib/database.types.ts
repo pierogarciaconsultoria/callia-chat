@@ -416,6 +416,8 @@ export interface AgentConfig {
   payment_links: PaymentLink[];
   follow_up_rules: FollowUpRule[];
   reply_debounce_ms: number;
+  /** Devolver ao bot após N minutos sem mensagens de nenhum dos lados; null = desligado. */
+  auto_return_minutes: number | null;
   external_agent_enabled: boolean;
   external_agent_url: string | null;
   external_agent_secret_ref: string | null;

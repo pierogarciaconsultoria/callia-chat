@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.learnings]
 verify_jwt = false
+
+[functions.auto-return]
+verify_jwt = false
