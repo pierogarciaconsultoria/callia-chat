@@ -5,6 +5,7 @@ import { PriceTableCard } from "@/components/PriceTableCard";
 import { PoliciesCard } from "@/components/PoliciesCard";
 import { BusinessInfoCard } from "@/components/BusinessInfoCard";
 import { PhotosTab } from "@/components/media/PhotosTab";
+import { QuickRepliesCard } from "@/components/QuickRepliesCard";
 import { BookOpen, FileUp, Globe, Package, Pencil, Pin, PinOff, Plus, RefreshCw, Search, Sparkles, Trash2, Type } from "lucide-react";
 import { useRequiredWorkspace } from "@/lib/workspace";
 import { useEntitlements } from "@/hooks/use-entitlements";
@@ -52,8 +53,8 @@ import {
   useToast,
 } from "@/components/ui";
 
-type Tab = "empresa" | "politicas" | "catalog" | "fotos" | "faq" | "docs" | "search";
-const TAB_IDS: Tab[] = ["empresa", "politicas", "catalog", "fotos", "faq", "docs", "search"];
+type Tab = "empresa" | "politicas" | "catalog" | "fotos" | "faq" | "rapidas" | "docs" | "search";
+const TAB_IDS: Tab[] = ["empresa", "politicas", "catalog", "fotos", "faq", "rapidas", "docs", "search"];
 
 export default function KnowledgeBase() {
   // A aba fica na URL (?tab=fotos) para poder ser linkada.
@@ -85,12 +86,14 @@ export default function KnowledgeBase() {
           { id: "catalog", label: "Catálogo e preços" },
           { id: "fotos", label: "Fotos" },
           { id: "faq", label: "Perguntas e respostas" },
+          { id: "rapidas", label: "Respostas rápidas" },
           { id: "docs", label: "Documentos e site" },
           { id: "search", label: "Teste de busca" },
         ]}
       />
       {tab === "empresa" && <div id="empresa"><BusinessInfoCard /></div>}
       {tab === "faq" && <FaqTab />}
+      {tab === "rapidas" && <QuickRepliesTab />}
       {tab === "politicas" && <PoliciesTab />}
       {tab === "docs" && <DocsTab />}
       {tab === "catalog" && <CatalogTab />}
@@ -98,6 +101,12 @@ export default function KnowledgeBase() {
       {tab === "search" && <SearchTab />}
     </>
   );
+}
+
+// ---------------------------------------------------------------- Respostas rápidas (equipe)
+function QuickRepliesTab() {
+  const { workspaceId } = useRequiredWorkspace();
+  return <QuickRepliesCard workspaceId={workspaceId} />;
 }
 
 // ---------------------------------------------------------------- FAQ

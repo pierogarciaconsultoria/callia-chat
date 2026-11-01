@@ -273,6 +273,7 @@ export const SCREENS: Array<{ id: string; label: string; to: string; what: strin
   { id: "precos", label: "Informações da empresa → Catálogo e preços", to: "/knowledge-base?tab=catalog", what: "acomodações/produtos, tabela de preços, temporadas, fechamentos, capacidade" },
   { id: "fotos", label: "Informações da empresa → Fotos", to: "/knowledge-base?tab=fotos", what: "álbuns de fotos que o agente envia" },
   { id: "faq", label: "Informações da empresa → Perguntas e respostas", to: "/knowledge-base?tab=faq", what: "perguntas frequentes" },
+  { id: "rapidas", label: "Informações da empresa → Respostas rápidas", to: "/knowledge-base?tab=rapidas", what: "textos prontos da equipe para a inbox (atalho /pix, /endereco), com anexo" },
   { id: "documentos", label: "Informações da empresa → Documentos e site", to: "/knowledge-base?tab=docs", what: "PDFs, textos, páginas do site, Instagram" },
   { id: "integracoes", label: "Integrações", to: "/integrations", what: "WhatsApp (QR code), Hospedin, hbook, link de reserva" },
   { id: "equipe", label: "Equipe", to: "/team", what: "convidar pessoas, papéis" },

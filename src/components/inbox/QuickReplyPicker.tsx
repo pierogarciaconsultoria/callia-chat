@@ -31,7 +31,7 @@ export function QuickReplyPicker({ replies, query, onPick, onClose, manageHint }
   return (
     <div role="listbox" aria-label="Respostas rápidas" className="mb-2 max-h-64 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900">
       {replies.length === 0 ? (
-        <p className="px-3 py-3 text-sm text-slate-500">{manageHint ?? "Nenhuma resposta rápida cadastrada. Peça a um administrador para criar em Configurações."}</p>
+        <p className="px-3 py-3 text-sm text-slate-500">{manageHint ?? "Nenhuma resposta rápida cadastrada. Peça a um administrador para criar em Informações da empresa → Respostas rápidas."}</p>
       ) : items.length === 0 ? (
         <p className="px-3 py-3 text-sm text-slate-500">Nada encontrado para “/{query}”.</p>
       ) : (

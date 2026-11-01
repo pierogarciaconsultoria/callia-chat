@@ -14,7 +14,7 @@ vi.mock("@/hooks/use-quick-replies", () => ({
 vi.mock("@/components/ui", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/components/ui")>()), useToast: () => mocks.toast }));
 
 import { QuickReplyPicker } from "@/components/inbox/QuickReplyPicker";
-import { QuickRepliesCard } from "@/components/settings/QuickRepliesCard";
+import { QuickRepliesCard } from "@/components/QuickRepliesCard";
 
 afterEach(() => { cleanup(); mocks.save.mockClear(); });
 
