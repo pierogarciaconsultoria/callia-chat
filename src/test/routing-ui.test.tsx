@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { memberLabel, normalizePhone } from "@/hooks/use-routing";
 
 const mocks = vi.hoisted(() => ({
-  routing: { data: { workspace_id: "ws", assignment_mode: "shared", agent_visibility: "all", sticky_claim: false, updated_at: "" }, isLoading: false },
+  routing: { data: { workspace_id: "ws", assignment_mode: "shared", agent_visibility: "all", sticky_claim: true, updated_at: "" }, isLoading: false },
   update: { mutate: vi.fn((_patch: Record<string, unknown>, opts?: { onSuccess?: () => void }) => { opts?.onSuccess?.(); }), isPending: false },
   toast: { success: vi.fn(), error: vi.fn() },
 }));
@@ -27,9 +27,9 @@ describe("distribuição de conversas", () => {
     expect(memberLabel([], null)).toBeNull();
   });
 
-  it("muda o modo e a visibilidade; o vínculo ao assumir só aparece em carteira", async () => {
+  it("muda o modo e a visibilidade; o vínculo ao assumir aparece em qualquer modo", async () => {
     render(<RoutingSettingsCard workspaceId="ws" />);
-    expect(screen.queryByText(/Quem assume um cliente novo/)).toBeNull();
+    expect(screen.getByText(/Quem assume a conversa fica com o cliente/)).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Quando a IA transfere para a equipe"), { target: { value: "portfolio" } });
     await waitFor(() => expect(mocks.update.mutate).toHaveBeenCalledWith({ assignment_mode: "portfolio" }, expect.anything()));
     fireEvent.change(screen.getByLabelText("O que o atendente vê na inbox"), { target: { value: "own" } });

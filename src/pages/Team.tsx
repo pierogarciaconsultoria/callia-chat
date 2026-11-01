@@ -11,7 +11,7 @@ import { formatDateTime } from "@/lib/format";
 import type { MemberWithEmail, WorkspaceRole } from "@/lib/database.types";
 import { ContactAssignmentsCard, RoutingSettingsCard } from "@/components/team/RoutingCards";
 import { DepartmentsCard } from "@/components/team/DepartmentsCard";
-import { memberName, useRouting } from "@/hooks/use-routing";
+import { memberName } from "@/hooks/use-routing";
 import {
   Badge,
   Button,
@@ -59,7 +59,6 @@ export default function Team() {
   const [inviteName, setInviteName] = useState("");
   const [role, setRole] = useState<WorkspaceRole>("agent");
   const [renaming, setRenaming] = useState<{ user_id: string; name: string } | null>(null);
-  const routing = useRouting(isAdmin ? workspaceId : null);
 
   const add = useMutation({
     mutationFn: (vars: { email: string; role: WorkspaceRole; full_name?: string }) =>
@@ -121,7 +120,7 @@ export default function Team() {
         )}
 
         {isAdmin && <RoutingSettingsCard workspaceId={workspaceId} />}
-        {isAdmin && routing.data?.assignment_mode === "portfolio" && <ContactAssignmentsCard workspaceId={workspaceId} />}
+        {isAdmin && <ContactAssignmentsCard workspaceId={workspaceId} />}
         {isAdmin && <DepartmentsCard workspaceId={workspaceId} />}
 
         <Card>

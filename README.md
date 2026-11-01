@@ -47,10 +47,11 @@ Configurável por empresa em Equipe → "Distribuição das conversas" (`workspa
 |---|---|
 | Quando a IA transfere | `shared` (fila: quem assumir primeiro), `portfolio` (carteira `contact_assignments`: número → operador), `round_robin` (quem tem menos conversas em atendimento) |
 | O que o atendente vê | `all` (tudo, com filtro "Minhas") ou `own` (só as suas e as sem dono). Admin e dono veem tudo; é regra no banco (`can_view_conversation`), não só na tela |
-| Vínculo ao assumir | em carteira, quem assume um número sem operador vira o operador dele |
+| Vínculo ao assumir | ligado por padrão, em qualquer modo: assumir, responder primeiro ou receber uma transferência vincula o número do cliente ao operador (`contact_assignments`); `route_conversation` respeita esse vínculo antes da regra do modo, então a próxima transferência da IA desse cliente cai na mesma pessoa |
 
 `route_conversation` roda no handoff (`process-message`); `claim_conversation` avisa quando outro operador já atende (assumir
-"mesmo assim" fica na auditoria); "Ficar com este cliente" (`claim_contact`) põe o número na carteira de quem clicou.
+"mesmo assim" fica na auditoria); "Ficar com este cliente" (`claim_contact`) põe o número na carteira de quem clicou;
+`assign_conversation_operator` (service_role, usada por `send-message`) é o "assumir ao responder".
 
 ## Assistente do painel (botão flutuante, administradores)
 

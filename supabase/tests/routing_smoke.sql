@@ -81,4 +81,38 @@ begin
   assert v = '99999999-0000-0000-0000-000000000002', 'rodízio escolheu quem tem menos: ' || coalesce(v::text, 'null');
   assert public.route_conversation('c0000000-0000-0000-0000-000000000003') = v, 'reenvio mantém o mesmo operador';
 end $$;
+-- 6. Vínculo ao assumir vale em qualquer modo: na fila compartilhada, Bia assume um cliente novo e fica com ele;
+--    a próxima conversa desse cliente que a IA transferir cai para a Bia, mesmo sem carteira configurada.
+reset role;
+update public.workspace_routing set assignment_mode = 'shared', sticky_claim = true where workspace_id = current_setting('test.ws')::uuid;
+insert into public.conversations (id, workspace_id, channel, contact_phone, mode) values
+  ('c0000000-0000-0000-0000-000000000004', current_setting('test.ws')::uuid, 'whatsapp', '5548999990004', 'human');
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"99999999-0000-0000-0000-000000000003","role":"authenticated"}', true);
+do $$ begin
+  perform public.claim_conversation('c0000000-0000-0000-0000-000000000004');
+  assert (select user_id from public.contact_assignments where phone = '5548999990004') = '99999999-0000-0000-0000-000000000003', 'fila compartilhada: assumir vinculou o cliente à Bia';
+end $$;
+reset role;
+insert into public.conversations (id, workspace_id, channel, contact_phone, mode) values
+  ('c0000000-0000-0000-0000-000000000005', current_setting('test.ws')::uuid, 'whatsapp_cloud', '5548999990004', 'human');
+do $$ begin
+  assert public.route_conversation('c0000000-0000-0000-0000-000000000005') = '99999999-0000-0000-0000-000000000003', 'nova conversa do mesmo cliente cai para a Bia em modo shared';
+  -- Responder pela inbox (function send-message, service_role): conversa sem dono vira da Ana e o cliente passa para ela.
+  update public.conversations set assigned_user_id = null, mode = 'bot' where id = 'c0000000-0000-0000-0000-000000000005';
+  assert public.assign_conversation_operator('c0000000-0000-0000-0000-000000000005', '99999999-0000-0000-0000-000000000002') = '99999999-0000-0000-0000-000000000002', 'responder assume';
+  assert (select mode from public.conversations where id = 'c0000000-0000-0000-0000-000000000005') = 'human', 'saiu do bot';
+  assert (select user_id from public.contact_assignments where phone = '5548999990004') = '99999999-0000-0000-0000-000000000002', 'cliente passou para a Ana';
+  -- Com dono, responder não troca o dono nem o vínculo.
+  assert public.assign_conversation_operator('c0000000-0000-0000-0000-000000000005', '99999999-0000-0000-0000-000000000003') = '99999999-0000-0000-0000-000000000002', 'conversa de outro continua com ele';
+  assert (select user_id from public.contact_assignments where phone = '5548999990004') = '99999999-0000-0000-0000-000000000002', 'vínculo mantido';
+end $$;
+-- Vínculo desligado: assumir não mexe na carteira.
+update public.workspace_routing set sticky_claim = false where workspace_id = current_setting('test.ws')::uuid;
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"99999999-0000-0000-0000-000000000003","role":"authenticated"}', true);
+do $$ begin
+  perform public.claim_conversation('c0000000-0000-0000-0000-000000000005', true);
+  assert (select user_id from public.contact_assignments where phone = '5548999990004') = '99999999-0000-0000-0000-000000000002', 'desligado: carteira intacta';
+end $$;
 rollback;

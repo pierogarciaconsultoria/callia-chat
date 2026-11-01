@@ -47,7 +47,7 @@ import {
   type ConversationFilters,
 } from "@/hooks/use-inbox";
 import { useWhatsAppInstances } from "@/hooks/use-whatsapp-instances";
-import { memberLabel, normalizePhone, useClaimConversation, useContactAssignmentActions, useContactAssignments, useMembers, useRouting } from "@/hooks/use-routing";
+import { memberLabel, normalizePhone, useClaimConversation, useContactAssignmentActions, useContactAssignments, useMembers } from "@/hooks/use-routing";
 import { Badge, Button, EmptyState, ErrorState, Notice, Spinner, useToast } from "@/components/ui";
 
 const MODE_LABEL: Record<ConversationMode, string> = { bot: "Bot", human: "Humano", closed: "Encerrada" };
@@ -285,14 +285,12 @@ function Thread({
   const bottomRef = useRef<HTMLDivElement>(null);
   const external = isExternal(conversation);
   const members = useMembers(workspaceId);
-  const routing = useRouting(workspaceId);
   const claim = useClaimConversation(workspaceId);
-  const portfolio = routing.data?.assignment_mode === "portfolio";
-  const assignments = useContactAssignments(workspaceId, portfolio);
+  const assignments = useContactAssignments(workspaceId);
   const { claimContact } = useContactAssignmentActions(workspaceId);
   const [conflictWith, setConflictWith] = useState<string | null>(null);
   const attendedBy = conversation.mode === "human" ? memberLabel(members.data, conversation.assigned_user_id) : null;
-  const contactOwner = portfolio ? assignments.data?.find((a) => a.phone === normalizePhone(conversation.contact_phone)) ?? null : null;
+  const contactOwner = assignments.data?.find((a) => a.phone === normalizePhone(conversation.contact_phone)) ?? null;
 
   // Assumir: se outro operador já atende, avisa e só assume com "mesmo assim" (fica na auditoria).
   async function takeOver(force = false) {
@@ -413,7 +411,7 @@ function Thread({
               <UserRound className="h-4 w-4" /> Assumir
             </Button>
           )}
-          {portfolio && (!contactOwner || contactOwner.user_id !== user?.id) && (
+          {conversation.mode === "human" && (!contactOwner || contactOwner.user_id !== user?.id) && (
             <Button size="sm" variant="ghost" onClick={() => claimContact.mutate(conversation.id, { onSuccess: () => toast.success("Cliente vinculado a você."), onError: (e) => toast.error(e) })} disabled={claimContact.isPending} title={contactOwner ? `Hoje este cliente é de ${memberLabel(members.data, contactOwner.user_id)}` : "Este cliente ainda não tem operador"}>
               Ficar com este cliente
             </Button>

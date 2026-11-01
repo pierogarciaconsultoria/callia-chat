@@ -36,14 +36,12 @@ export function RoutingSettingsCard({ workspaceId }: { workspaceId: string }) {
               <option value="all">Todas as conversas (com filtro “Minhas”)</option>
               <option value="own">Só as suas e as sem dono</option>
             </Select>
-            {value.assignment_mode === "portfolio" && (
-              <Switch
-                checked={value.sticky_claim}
-                onChange={(v) => set({ sticky_claim: v })}
-                label="Quem assume um cliente novo passa a ser o operador dele"
-                description="Ao assumir uma conversa de número sem operador, o número entra na carteira de quem assumiu."
-              />
-            )}
+            <Switch
+              checked={value.sticky_claim}
+              onChange={(v) => set({ sticky_claim: v })}
+              label="Quem assume a conversa fica com o cliente"
+              description="Ao assumir, responder primeiro ou receber uma transferência, o número do cliente é vinculado ao operador. As próximas conversas desse cliente que a IA transferir caem para a mesma pessoa, em qualquer modo de distribuição."
+            />
           </>
         )}
       </CardBody>
@@ -77,7 +75,7 @@ export function ContactAssignmentsCard({ workspaceId }: { workspaceId: string })
 
   return (
     <Card>
-      <CardHeader title="Carteira de clientes" description="Número do cliente → operador. Quando a IA transferir uma conversa desse número, ela cai para esse operador." />
+      <CardHeader title="Carteira de clientes" description="Número do cliente → operador. Quando a IA transferir uma conversa desse número, ela cai para esse operador. Preenchida sozinha quando alguém assume uma conversa (vínculo ao assumir) e editável aqui." />
       <CardBody className="space-y-4">
         <form onSubmit={submit} className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-end">
           <Input label="Telefone do cliente" placeholder="(48) 99999-0000" value={phone} onChange={(e) => setPhone(e.target.value)} required />

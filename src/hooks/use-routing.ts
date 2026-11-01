@@ -8,7 +8,7 @@ export const routingKey = (ws: string) => ["routing", ws] as const;
 export const assignmentsKey = (ws: string) => ["contact-assignments", ws] as const;
 export const membersKey = (ws: string) => ["members", ws] as const;
 
-export const ROUTING_DEFAULTS: Omit<RoutingSettings, "workspace_id" | "updated_at"> = { assignment_mode: "shared", agent_visibility: "all", sticky_claim: false };
+export const ROUTING_DEFAULTS: Omit<RoutingSettings, "workspace_id" | "updated_at"> = { assignment_mode: "shared", agent_visibility: "all", sticky_claim: true };
 
 /** Só os dígitos; "+55 (48) 99999-0000" → "5548999990000". */
 export function normalizePhone(raw: string): string {

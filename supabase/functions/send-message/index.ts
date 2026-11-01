@@ -49,7 +49,7 @@ function cleanText(raw: unknown): string | null {
   return text || null;
 }
 
-Deno.serve(createHandler("send-message", async ({ req, correlationId }) => {
+Deno.serve(createHandler("send-message", async ({ req, correlationId, log }) => {
   if (req.method !== "POST") throw new RuntimeError("invalid_request", "Use POST.");
   const user = await requireUser(req);
   const body = await readJson<Body>(req);
@@ -120,12 +120,10 @@ Deno.serve(createHandler("send-message", async ({ req, correlationId }) => {
   // 3. Quem responde pela inbox assume a conversa: tira do bot (para ele não responder por cima) e vira o operador
   //    dela quando ainda não tem dono (transferida pelo bot ou respondida pelo celular). Conversa de outro operador
   //    continua com ele; trocar é pelo botão "Assumir mesmo assim".
+  //    Com "vínculo ao assumir" ligado, o cliente fica com quem respondeu (próximas transferências da IA caem nele).
   if (conversation && (conversation.mode !== "human" || !conversation.assigned_user_id)) {
-    await db.from("conversations").update({
-      mode: "human",
-      assigned_user_id: conversation.assigned_user_id ?? user.id,
-      ...(conversation.mode !== "human" ? { handoff_at: new Date().toISOString() } : {}),
-    }).eq("id", conversation.id);
+    const { error: assignError } = await db.rpc("assign_conversation_operator", { p_conversation_id: conversation.id, p_user_id: user.id });
+    if (assignError) log.warn("assign_operator_failed", { conversation_id: conversation.id, error: assignError.message });
   }
 
   const result = await sendOutbound(db, {
