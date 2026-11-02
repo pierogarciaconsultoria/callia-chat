@@ -4,8 +4,10 @@ import { AppLayout } from "@/components/AppLayout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { PlatformAdminRoute } from "@/components/PlatformAdminRoute";
 import { PageLoader } from "@/components/ui";
+import { Moved } from "@/components/Moved";
 
 const Landing = lazy(() => import("@/pages/Landing"));
+
 const Login = lazy(() => import("@/pages/Login"));
 const Signup = lazy(() => import("@/pages/Signup"));
 const Welcome = lazy(() => import("@/pages/Welcome"));
@@ -62,12 +64,17 @@ export default function App() {
             <Route path="/team" element={<Team />} />
             <Route path="/agent" element={admin(<Agent />)} />
             <Route path="/agent/setup" element={admin(<AgentSetup />)} />
-            <Route path="/knowledge-base" element={admin(<KnowledgeBase />)} />
-            <Route path="/learnings" element={admin(<Learnings />)} />
+            <Route path="/agent/conhecimento" element={admin(<KnowledgeBase />)} />
+            <Route path="/agent/aprendizados" element={admin(<Learnings />)} />
             <Route path="/integrations" element={admin(<Integrations />)} />
+            <Route path="/integrations/api" element={admin(<ApiKeys />)} />
+            <Route path="/integrations/webhooks" element={admin(<Webhooks />)} />
             <Route path="/whatsapp" element={admin(<WhatsApp />)} />
-            <Route path="/api-keys" element={admin(<ApiKeys />)} />
-            <Route path="/webhooks" element={admin(<Webhooks />)} />
+            {/* Endereços antigos (favoritos, links da jornada e do assistente) seguem funcionando. */}
+            <Route path="/knowledge-base" element={<Moved to="/agent/conhecimento" />} />
+            <Route path="/learnings" element={<Moved to="/agent/aprendizados" />} />
+            <Route path="/api-keys" element={<Moved to="/integrations/api" />} />
+            <Route path="/webhooks" element={<Moved to="/integrations/webhooks" />} />
             <Route path="/logs" element={admin(<Logs />)} />
             <Route path="/settings" element={admin(<Settings />)} />
           </Route>

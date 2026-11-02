@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, KeyRound, Pencil, Plus, RotateCw, Send, Trash2, Webhook as WebhookIcon } from "lucide-react";
 import { useRequiredWorkspace } from "@/lib/workspace";
+import { IntegrationsNav } from "@/components/SectionNav";
 import { supabase } from "@/lib/supabase";
 import { invokeFunction, unwrap } from "@/lib/functions";
 import { formatDateTime } from "@/lib/format";
@@ -132,6 +133,7 @@ export default function Webhooks() {
         description="Avise seus sistemas quando algo acontece no atendimento. Entregas são assinadas e retentadas em caso de falha."
         actions={<Button onClick={() => setDraft({ ...emptyDraft })}><Plus className="h-4 w-4" /> Novo webhook</Button>}
       />
+      <IntegrationsNav />
 
       <div className="space-y-6">
         <Card>

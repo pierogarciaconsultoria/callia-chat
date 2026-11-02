@@ -64,7 +64,7 @@ const STEPS: StepDef[] = [
     done: (s) => Boolean(s.segment),
   },
   {
-    id: "conhecimento", short: "Políticas", title: "Políticas e documentos", to: "/knowledge-base?tab=politicas", optional: false, minutes: 10,
+    id: "conhecimento", short: "Políticas", title: "Políticas e documentos", to: "/agent/conhecimento?tab=politicas", optional: false, minutes: 10,
     tip: "Cadastre as políticas (check-in, cancelamento, crianças…) e, em Documentos e site, envie tabela de preços e outros arquivos. Confira também as perguntas frequentes geradas.",
     done: (s) => s.ownKnowledge > 0,
   },

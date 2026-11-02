@@ -4,7 +4,7 @@ import { useMedia } from "@/hooks/use-media";
 import { PriceTableCard } from "@/components/PriceTableCard";
 import { PoliciesCard } from "@/components/PoliciesCard";
 import { PhotosTab } from "@/components/media/PhotosTab";
-import { QuickRepliesCard } from "@/components/QuickRepliesCard";
+import { AgentNav } from "@/components/SectionNav";
 import { BookOpen, FileUp, Globe, Package, Pencil, Pin, PinOff, Plus, RefreshCw, Search, Sparkles, Trash2, Type } from "lucide-react";
 import { useRequiredWorkspace } from "@/lib/workspace";
 import { useEntitlements } from "@/hooks/use-entitlements";
@@ -52,8 +52,8 @@ import {
   useToast,
 } from "@/components/ui";
 
-type Tab = "politicas" | "catalog" | "fotos" | "faq" | "rapidas" | "docs" | "search";
-const TAB_IDS: Tab[] = ["politicas", "catalog", "fotos", "faq", "rapidas", "docs", "search"];
+type Tab = "politicas" | "catalog" | "fotos" | "faq" | "docs" | "search";
+const TAB_IDS: Tab[] = ["politicas", "catalog", "fotos", "faq", "docs", "search"];
 
 export default function KnowledgeBase() {
   // A aba fica na URL (?tab=fotos) para poder ser linkada.
@@ -64,8 +64,8 @@ export default function KnowledgeBase() {
   return (
     <>
       <PageHeader
-        title="Informações da empresa"
-        description="O que o negócio oferece: políticas, catálogo e preços, fotos, perguntas, respostas rápidas e documentos. É daqui que o agente responde; cada fato fica em um só lugar. Dados cadastrais e de pagamento ficam em Configurações."
+        title="Conhecimento do agente"
+        description="O que a IA sabe sobre o negócio: políticas, catálogo e preços, fotos, perguntas e documentos. Cada fato fica em um só lugar. Dados cadastrais e de pagamento ficam em Configurações."
         actions={
           <Link
             to="/agent/setup"
@@ -75,6 +75,7 @@ export default function KnowledgeBase() {
           </Link>
         }
       />
+      <AgentNav />
       <Tabs<Tab>
         className="mb-5"
         value={tab}
@@ -84,13 +85,11 @@ export default function KnowledgeBase() {
           { id: "catalog", label: "Catálogo e preços" },
           { id: "fotos", label: "Fotos" },
           { id: "faq", label: "Perguntas e respostas" },
-          { id: "rapidas", label: "Respostas rápidas" },
           { id: "docs", label: "Documentos e site" },
           { id: "search", label: "Teste de busca" },
         ]}
       />
       {tab === "faq" && <FaqTab />}
-      {tab === "rapidas" && <QuickRepliesTab />}
       {tab === "politicas" && <PoliciesTab />}
       {tab === "docs" && <DocsTab />}
       {tab === "catalog" && <CatalogTab />}
@@ -98,12 +97,6 @@ export default function KnowledgeBase() {
       {tab === "search" && <SearchTab />}
     </>
   );
-}
-
-// ---------------------------------------------------------------- Respostas rápidas (equipe)
-function QuickRepliesTab() {
-  const { workspaceId } = useRequiredWorkspace();
-  return <QuickRepliesCard workspaceId={workspaceId} />;
 }
 
 // ---------------------------------------------------------------- FAQ

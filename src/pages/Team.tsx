@@ -11,6 +11,7 @@ import { formatDateTime } from "@/lib/format";
 import type { MemberWithEmail, WorkspaceRole } from "@/lib/database.types";
 import { ContactAssignmentsCard, RoutingSettingsCard } from "@/components/team/RoutingCards";
 import { DepartmentsCard } from "@/components/team/DepartmentsCard";
+import { QuickRepliesCard } from "@/components/QuickRepliesCard";
 import { memberName } from "@/hooks/use-routing";
 import {
   Badge,
@@ -98,7 +99,7 @@ export default function Team() {
 
   return (
     <>
-      <PageHeader title="Equipe" description="Quem acessa este workspace. Atendentes usam a inbox; administradores configuram o restante." />
+      <PageHeader title="Equipe" description="Quem atende: membros, setores, distribuição das conversas e respostas rápidas da inbox." />
       <div className="space-y-6">
         {isAdmin && (
           <Card>
@@ -122,6 +123,7 @@ export default function Team() {
         {isAdmin && <RoutingSettingsCard workspaceId={workspaceId} />}
         {isAdmin && <ContactAssignmentsCard workspaceId={workspaceId} />}
         {isAdmin && <DepartmentsCard workspaceId={workspaceId} />}
+        {isAdmin && <div id="rapidas"><QuickRepliesCard workspaceId={workspaceId} /></div>}
 
         <Card>
           <CardHeader title="Membros" />

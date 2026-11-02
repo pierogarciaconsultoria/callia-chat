@@ -62,8 +62,8 @@ Sirva `dist/` pelo Nginx com fallback de SPA (`try_files $uri /index.html;`).
 1. Login → criar workspace → `/whatsapp` → criar instância → ler o QR → status `open`.
 2. Mandar "oi" de outro celular → resposta do agente aparece na inbox.
 3. `/agent` → "Testar agente" com uma pergunta da FAQ.
-4. `/api-keys` → gerar chave → `POST /functions/v1/public-api/messages` para um número de teste.
-5. `/webhooks` → criar apontando para um receptor de teste → "Testar" → entrega `success`.
+4. `/integrations/api` → gerar chave → `POST /functions/v1/public-api/messages` para um número de teste.
+5. `/integrations/webhooks` → criar apontando para um receptor de teste → "Testar" → entrega `success`.
 6. Seguir o [PILOT_GO_LIVE_CHECKLIST.md](PILOT_GO_LIVE_CHECKLIST.md).
 
 ## MCP

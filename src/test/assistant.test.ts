@@ -130,7 +130,7 @@ describe("assistente: horário da equipe e prompt", () => {
     expect(p).toContain('"Kitnet" [tarifas: até 2 pessoas (guests 2)]');
     expect(p).toContain("- [p1] checkin — Check-in: Das 14h às 22h.");
     expect(p).toContain("segunda: 08:00–22:00; terça: fechado");
-    expect(p).toContain("- precos: Informações da empresa → Catálogo e preços");
+    expect(p).toContain("- precos: Agente de IA → Conhecimento → Catálogo e preços");
     expect(p).toContain("nunca grava diretamente");
   });
 });

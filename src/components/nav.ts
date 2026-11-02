@@ -1,20 +1,16 @@
 import {
   Building2,
   Gauge,
-  GraduationCap,
   Layers,
   SlidersHorizontal,
   UserCog,
   Bot,
-  BookOpen,
-  KeyRound,
   LayoutDashboard,
   MessagesSquare,
   Plug,
   ScrollText,
   Settings,
   Users,
-  Webhook,
   type LucideIcon,
 } from "lucide-react";
 
@@ -25,18 +21,16 @@ export interface NavItem {
   adminOnly: boolean;
 }
 
+// Um item por pergunta: ver (Painel), atender (Inbox), configurar a IA (Agente de IA: comportamento, conhecimento,
+// aprendizados, simulador), ligar sistemas (Integrações: WhatsApp, reservas, chaves de API, webhooks), gente (Equipe:
+// membros, setores, distribuição, respostas rápidas), auditar (Logs) e conta (Configurações: empresa, plano, marca).
 export const NAV_ITEMS: NavItem[] = [
   { to: "/dashboard", label: "Painel", icon: LayoutDashboard, adminOnly: false },
   { to: "/inbox", label: "Inbox", icon: MessagesSquare, adminOnly: false },
-  { to: "/agent", label: "Atendimento", icon: Bot, adminOnly: true },
-  { to: "/knowledge-base", label: "Informações da empresa", icon: BookOpen, adminOnly: true },
-  { to: "/learnings", label: "Aprendizados", icon: GraduationCap, adminOnly: true },
-  // WhatsApp e sistema de reservas ficam em Integrações; /whatsapp segue acessível pelo cartão do WhatsApp.
+  { to: "/agent", label: "Agente de IA", icon: Bot, adminOnly: true },
   { to: "/integrations", label: "Integrações", icon: Plug, adminOnly: true },
-  { to: "/api-keys", label: "Chaves de API", icon: KeyRound, adminOnly: true },
-  { to: "/webhooks", label: "Webhooks", icon: Webhook, adminOnly: true },
-  { to: "/logs", label: "Logs", icon: ScrollText, adminOnly: true },
   { to: "/team", label: "Equipe", icon: Users, adminOnly: false },
+  { to: "/logs", label: "Logs", icon: ScrollText, adminOnly: true },
   { to: "/settings", label: "Configurações", icon: Settings, adminOnly: true },
 ];
 

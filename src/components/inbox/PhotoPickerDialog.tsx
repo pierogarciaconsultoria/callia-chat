@@ -1,4 +1,4 @@
-// Enviar fotos da galeria (Informações da empresa → Fotos) na conversa atual, sem baixar nada.
+// Enviar fotos da galeria (Agente de IA → Conhecimento → Fotos) na conversa atual, sem baixar nada.
 import { useMemo, useState } from "react";
 import { ChevronLeft, Image as ImageIcon, Send } from "lucide-react";
 import { cn } from "@/lib/cn";
@@ -65,7 +65,7 @@ export function PhotoPickerDialog({ workspaceId, conversationId, open, onClose, 
       onClose={close}
       size="lg"
       title={album ? albumLabel(album) : "Enviar fotos"}
-      description={album ? `Escolha até ${MAX_PHOTOS_PER_SEND} fotos. Elas saem na ordem em que forem marcadas.` : "Fotos cadastradas em Informações da empresa → Fotos."}
+      description={album ? `Escolha até ${MAX_PHOTOS_PER_SEND} fotos. Elas saem na ordem em que forem marcadas.` : "Fotos cadastradas em Agente de IA → Conhecimento → Fotos."}
       footer={
         <>
           {album ? (
@@ -82,7 +82,7 @@ export function PhotoPickerDialog({ workspaceId, conversationId, open, onClose, 
       {media.isLoading ? (
         <div className="flex justify-center py-8"><Spinner /></div>
       ) : albums.length === 0 ? (
-        <EmptyState icon={ImageIcon} title="Nenhuma foto cadastrada" description="Um administrador pode adicionar fotos em Informações da empresa → Fotos." />
+        <EmptyState icon={ImageIcon} title="Nenhuma foto cadastrada" description="Um administrador pode adicionar fotos em Agente de IA → Conhecimento → Fotos." />
       ) : !album ? (
         <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3" aria-label="Álbuns">
           {albums.map((a) => (

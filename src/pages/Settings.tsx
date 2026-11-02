@@ -17,7 +17,7 @@ const HEX = /^#[0-9a-fA-F]{6}$/;
 export default function Settings() {
   return (
     <>
-      <PageHeader title="Configurações" description="Dados da empresa, plano, identidade visual e conectores. Políticas, preços, fotos, perguntas e respostas rápidas ficam em Informações da empresa." />
+      <PageHeader title="Configurações" description="Dados da empresa, plano, identidade visual e conectores. Políticas, preços, fotos e perguntas ficam em Agente de IA → Conhecimento; respostas rápidas, em Equipe." />
       <div className="space-y-6">
         <div id="empresa"><BusinessInfoCard /></div>
         <PlanUsageCard />

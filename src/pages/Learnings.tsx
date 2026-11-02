@@ -8,6 +8,7 @@ import { useLearningActions, useLearningRuns, useLearningSuggestions } from "@/h
 import { POLICY_TOPICS, policyTopicLabel } from "@/lib/policies";
 import { formatDateTime } from "@/lib/format";
 import type { LearningKind, LearningRun, LearningStatus, LearningSuggestion } from "@/lib/database.types";
+import { AgentNav } from "@/components/SectionNav";
 import { Badge, Button, Card, CardBody, CardHeader, EmptyState, ErrorState, Input, Notice, PageHeader, Select, Spinner, Tabs, Textarea, useToast } from "@/components/ui";
 
 const KIND_LABEL: Record<LearningKind, string> = { faq: "Pergunta e resposta", policy: "Política", guardrail: "Regra do agente" };
@@ -53,6 +54,7 @@ export default function Learnings() {
           </Button>
         }
       />
+      <AgentNav />
       <LastRun runs={runs.data} />
       <Tabs<LearningStatus> className="mb-4" tabs={TABS} value={tab} onChange={setTab} />
       {list.isLoading ? (

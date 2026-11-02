@@ -53,7 +53,7 @@ Configurável por empresa em Equipe → "Distribuição das conversas" (`workspa
 "mesmo assim" fica na auditoria); "Ficar com este cliente" (`claim_contact`) põe o número na carteira de quem clicou;
 `assign_conversation_operator` (service_role, usada por `send-message`) é o "assumir ao responder".
 
-Devolução automática ao bot (`agent_configs.auto_return_minutes`, padrão 30 min, null = desligado; em Atendimento →
+Devolução automática ao bot (`agent_configs.auto_return_minutes`, padrão 30 min, null = desligado; em Agente de IA →
 Transferência para humano): a cada minuto (`cron_auto_return.sql` → function `auto-return` → RPC
 `auto_return_idle_conversations`) conversas em modo humano sem mensagem de nenhum dos lados há N minutos voltam ao bot,
 com mensagem de sistema (`event: auto_return`) e auditoria `conversation.auto_returned`. Só quando a equipe chegou a
@@ -88,7 +88,7 @@ Cartões de autoatendimento para o cliente do SaaS, com o mínimo de campos:
 A ferramenta de disponibilidade do agente usa o provedor conectado (Hospedin → hbook) via `_shared/availability.ts`;
 novos PMS entram como mais um provedor sem mudar o agente. Backend: function `integrations`.
 
-## Fotos (Informações da empresa → Fotos)
+## Fotos (Agente de IA → Conhecimento → Fotos)
 
 Álbuns por acomodação/área no bucket público `media`. Fontes: pasta do Google Drive compartilhada por link
 (subpastas = álbuns; fotos baixadas em até 1600 px, HEIC convertido), fotos das categorias do Hospedin e upload no painel.
@@ -115,7 +115,7 @@ A equipe assume pela inbox (ou respondendo pelo celular, o que também pausa o b
 Pela inbox também dá para anexar arquivos (até 20 MB, bucket privado `inbox-media`), enviar fotos da galeria (até 5 por
 vez, botão ao lado do clipe), encaminhar qualquer mensagem para outra conversa ou número, e iniciar conversa com um número
 que ainda não escreveu (function `send-message`).
-Respostas rápidas (tabela `quick_replies`, cadastro em Informações da empresa → Respostas rápidas, só admin): o operador digita `/` e o atalho (`/pix`,
+Respostas rápidas (tabela `quick_replies`, cadastro em Equipe → Respostas rápidas, só admin): o operador digita `/` e o atalho (`/pix`,
 `/endereco`) ou usa o botão de raio; o texto entra no campo, ainda editável, com `{nome}` e `{primeiro_nome}` do contato,
 e o anexo da resposta (foto, PDF) vai junto.
 

@@ -54,8 +54,8 @@ describe("jornada de configuração", () => {
     expect(stepForPath(j, "/integrations")?.id).toBe("whatsapp");
     // Dados da empresa ficam em Configurações; Políticas em Informações da empresa.
     expect(stepForPath(j, "/settings")?.id).toBe("empresa");
-    expect(stepForPath(j, "/knowledge-base")?.id).toBe("conhecimento");
-    expect(stepForPath(buildJourney({ ...fresh, businessInfo: true, agentGenerated: true, segment: "varejo" }), "/knowledge-base")?.id).toBe("conhecimento");
+    expect(stepForPath(j, "/agent/conhecimento")?.id).toBe("conhecimento");
+    expect(stepForPath(buildJourney({ ...fresh, businessInfo: true, agentGenerated: true, segment: "varejo" }), "/agent/conhecimento")?.id).toBe("conhecimento");
     expect(stepForPath(j, "/logs")).toBeNull();
   });
 });

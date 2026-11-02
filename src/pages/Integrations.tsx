@@ -15,6 +15,7 @@ import {
   type BadgeTone,
 } from "@/components/ui";
 import { useRequiredWorkspace } from "@/lib/workspace";
+import { IntegrationsNav } from "@/components/SectionNav";
 import { formatDateTime } from "@/lib/format";
 import { isValidHttpUrl, sampleBookingLink } from "@/lib/integrations";
 import type { Integration, IntegrationKind, IntegrationStatus } from "@/lib/database.types";
@@ -54,8 +55,9 @@ export default function Integrations() {
     <>
       <PageHeader
         title="Integrações"
-        description="Conecte o WhatsApp e o seu sistema de reservas. Cada conexão leva poucos minutos e não precisa de conhecimento técnico."
+        description="Conecte o WhatsApp e o seu sistema de reservas. Cada conexão leva poucos minutos e não precisa de conhecimento técnico. Chaves de API e webhooks, para quem integra sistemas, ficam nas seções ao lado."
       />
+      <IntegrationsNav />
       {inactive && (
         <div className="mb-4">
           <Notice tone="warn">Este workspace está inativo. Fale com o suporte para reativar antes de conectar novos serviços.</Notice>

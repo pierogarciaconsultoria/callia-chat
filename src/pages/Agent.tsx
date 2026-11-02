@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Bot, Plus, Send, Sparkles, Trash2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useRequiredWorkspace } from "@/lib/workspace";
+import { AgentNav } from "@/components/SectionNav";
 import { invokeFunction } from "@/lib/functions";
 import type { AgentConfig, FollowUpRule, SimulateResult } from "@/lib/database.types";
 import { BusinessHoursEditor, KeywordChips, PaymentLinksEditor } from "@/components/agent-editors";
@@ -93,8 +94,8 @@ export default function Agent() {
   return (
     <>
       <PageHeader
-        title="Atendimento"
-        description="Como o agente atende no WhatsApp: identidade, tom, regras de comportamento, horário e quando passa para a equipe. Preços, políticas e dados do negócio ficam em Informações da empresa."
+        title="Agente de IA"
+        description="Como o agente atende no WhatsApp: identidade, tom, regras de comportamento, horário e quando passa para a equipe. O que ele sabe fica em Conhecimento; o que aprende com as conversas, em Aprendizados."
         actions={
           <Link
             to="/agent/setup"
@@ -104,6 +105,7 @@ export default function Agent() {
           </Link>
         }
       />
+      <AgentNav />
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
         <form onSubmit={submit} className="min-w-0 space-y-6">
           <Card>
@@ -136,7 +138,7 @@ export default function Agent() {
                 rows={3}
                 value={form.guardrails ?? ""}
                 onChange={(e) => set("guardrails", e.target.value)}
-                hint="Como agir, não o que o negócio é. Ex.: não prometer descontos, transferir pedidos de cancelamento. Fatos (preços, capacidade, políticas) ficam em Informações da empresa."
+                hint="Como agir, não o que o negócio é. Ex.: não prometer descontos, transferir pedidos de cancelamento. Fatos (preços, capacidade, políticas) ficam em Conhecimento."
               />
               <div id="segmento" className="scroll-mt-4" />
               <SegmentFields

@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, KeyRound, Plus, RotateCw, Ban } from "lucide-react";
 import { useRequiredWorkspace } from "@/lib/workspace";
+import { IntegrationsNav } from "@/components/SectionNav";
 import { supabase, PUBLIC_API_BASE } from "@/lib/supabase";
 import { invokeFunction, unwrap } from "@/lib/functions";
 import { formatDateTime } from "@/lib/format";
@@ -96,6 +97,7 @@ export default function ApiKeys() {
         description="Autenticam sistemas externos (ERP, CRM, n8n) na API pública. Cada chave só acessa este workspace."
         actions={<Button onClick={() => setCreating(true)}><Plus className="h-4 w-4" /> Nova chave</Button>}
       />
+      <IntegrationsNav />
 
       <div className="space-y-6">
         <Card>

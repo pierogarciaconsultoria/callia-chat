@@ -42,7 +42,7 @@ function renderDocs() {
   return render(
     <QueryClientProvider client={new QueryClient()}>
       <ToastProvider>
-        <MemoryRouter initialEntries={["/knowledge-base?tab=docs"]}>
+        <MemoryRouter initialEntries={["/agent/conhecimento?tab=docs"]}>
           <KnowledgeBase />
         </MemoryRouter>
       </ToastProvider>
