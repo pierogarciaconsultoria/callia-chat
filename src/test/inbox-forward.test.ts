@@ -57,7 +57,7 @@ describe("encaminhar pela inbox (servidor)", () => {
     expect(planPhotos(["a"], assets, null)[0].text).toBe("Vista");
     expect(() => planPhotos([], assets, null)).toThrow(/ao menos uma/);
     expect(() => planPhotos(["a", "a"], assets, null)).toThrow(/inválida/);
-    expect(() => planPhotos(["a", "b", "c", "d", "e", "f"], assets, null)).toThrow(/máximo 5/);
+    expect(() => planPhotos(Array.from({ length: 31 }, (_, i) => `id${i}`), assets, null)).toThrow(/máximo 30/);
     expect(() => planPhotos(["zz"], assets, null)).toThrow(/não encontrada/);
   });
 });

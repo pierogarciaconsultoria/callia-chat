@@ -137,7 +137,7 @@ export interface SendMessageVars {
   type?: "text" | "image" | "video" | "audio" | "document";
   /** Reenvia o conteúdo de outra mensagem. */
   forwardMessageId?: string;
-  /** Fotos da galeria do workspace (até 5); a legenda (text) vai na primeira. */
+  /** Fotos da galeria do workspace (até 30); a legenda (text) vai na primeira. */
   mediaAssetIds?: string[];
 }
 

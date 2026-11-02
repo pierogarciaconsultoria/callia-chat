@@ -78,8 +78,8 @@ export function planForward(source: SourceMessage): ForwardPlan {
   throw new RuntimeError("unprocessable", "Este tipo de mensagem não pode ser encaminhado.");
 }
 
-/** Máximo de fotos da galeria por envio pela inbox (mesmo limite do bot). */
-export const MAX_GALLERY_PHOTOS = 5;
+/** Máximo de fotos da galeria por envio pela inbox: cabe um álbum inteiro de uma vez. O bot continua em 5 (media.ts). */
+export const MAX_GALLERY_PHOTOS = 30;
 
 export interface GalleryAsset {
   id: string;

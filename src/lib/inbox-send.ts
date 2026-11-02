@@ -23,6 +23,28 @@ export function outboundMediaPath(workspaceId: string, fileName: string, id: str
   return `${workspaceId}/outbound/${id}.${ext}`;
 }
 
+/** Quantos arquivos o clipe aceita por envio (cada um vira uma mensagem). */
+export const MAX_FILES_PER_SEND = 30;
+
+/** Soma os arquivos escolhidos aos já anexados: inválidos e excedentes viram avisos, o resto entra na ordem. */
+export function addAttachments(current: File[], picked: File[]): { list: File[]; problems: string[] } {
+  const list = [...current];
+  const problems: string[] = [];
+  for (const file of picked) {
+    const problem = validateUpload(file);
+    if (problem) {
+      problems.push(`${file.name || "arquivo"}: ${problem}`);
+      continue;
+    }
+    if (list.length >= MAX_FILES_PER_SEND) {
+      problems.push(`No máximo ${MAX_FILES_PER_SEND} arquivos por envio. Os demais ficaram de fora.`);
+      break;
+    }
+    list.push(file);
+  }
+  return { list, problems };
+}
+
 export function validateUpload(file: Pick<File, "size" | "name">): string | null {
   if (file.size <= 0) return "O arquivo está vazio.";
   if (file.size > MAX_UPLOAD_BYTES) return "Arquivo acima de 20 MB. Reduza o tamanho e tente de novo.";

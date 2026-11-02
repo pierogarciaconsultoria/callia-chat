@@ -7,8 +7,8 @@ import { useMedia } from "@/hooks/use-media";
 import { useSendMessage } from "@/hooks/use-inbox";
 import { Button, EmptyState, Modal, Spinner, Textarea, useToast } from "@/components/ui";
 
-/** Mesmo limite do bot: até 5 fotos por envio. */
-export const MAX_PHOTOS_PER_SEND = 5;
+/** Até um álbum inteiro por envio (o bot continua mandando até 5). Mesmo valor de MAX_GALLERY_PHOTOS no servidor. */
+export const MAX_PHOTOS_PER_SEND = 30;
 
 export function PhotoPickerDialog({ workspaceId, conversationId, open, onClose, onSent }: {
   workspaceId: string;
@@ -40,6 +40,13 @@ export function PhotoPickerDialog({ workspaceId, conversationId, open, onClose, 
     });
   }
 
+  /** Marca o álbum inteiro na ordem das fotos (ou desmarca tudo), para não precisar de vários envios. */
+  function toggleAll() {
+    if (selected.length === photos.length) return setSelected([]);
+    if (photos.length > MAX_PHOTOS_PER_SEND) toast.error(`No máximo ${MAX_PHOTOS_PER_SEND} fotos por envio: as primeiras ${MAX_PHOTOS_PER_SEND} foram marcadas.`);
+    setSelected(photos.slice(0, MAX_PHOTOS_PER_SEND).map((p) => p.id));
+  }
+
   function close() {
     setAlbum(null);
     setSelected([]);
@@ -65,7 +72,7 @@ export function PhotoPickerDialog({ workspaceId, conversationId, open, onClose, 
       onClose={close}
       size="lg"
       title={album ? albumLabel(album) : "Enviar fotos"}
-      description={album ? `Escolha até ${MAX_PHOTOS_PER_SEND} fotos. Elas saem na ordem em que forem marcadas.` : "Fotos cadastradas em Agente de IA → Conhecimento → Fotos."}
+      description={album ? `Marque as fotos (até ${MAX_PHOTOS_PER_SEND}) ou o álbum inteiro. Elas saem na ordem em que forem marcadas.` : "Fotos cadastradas em Agente de IA → Conhecimento → Fotos."}
       footer={
         <>
           {album ? (
@@ -101,6 +108,12 @@ export function PhotoPickerDialog({ workspaceId, conversationId, open, onClose, 
         </ul>
       ) : (
         <div className="space-y-3">
+          <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
+            <span>{selected.length === 0 ? `${photos.length} foto(s) no álbum` : `${selected.length} de ${photos.length} marcada(s)`}</span>
+            <Button type="button" size="sm" variant="ghost" onClick={toggleAll} disabled={photos.length === 0}>
+              {selected.length === photos.length && photos.length > 0 ? "Desmarcar todas" : "Marcar todas"}
+            </Button>
+          </div>
           <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4" aria-label="Fotos do álbum">
             {photos.map((p) => {
               const idx = selected.indexOf(p.id);

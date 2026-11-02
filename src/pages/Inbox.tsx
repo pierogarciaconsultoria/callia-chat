@@ -35,7 +35,7 @@ import { VoiceRecorder } from "@/components/inbox/VoiceRecorder";
 import { departmentName, useDepartments } from "@/hooks/use-departments";
 import { useQuickReplies } from "@/hooks/use-quick-replies";
 import { renderQuickReply, slashQuery } from "@/lib/quick-replies";
-import { canForward, mediaTypeFor, uploadAttachment, validateUpload, type UploadedAttachment } from "@/lib/inbox-send";
+import { addAttachments, canForward, MAX_FILES_PER_SEND, mediaTypeFor, uploadAttachment, type UploadedAttachment } from "@/lib/inbox-send";
 import { useAuth } from "@/lib/auth";
 import { useRequiredWorkspace } from "@/lib/workspace";
 import { formatPhone, formatRelativeShort, initials } from "@/lib/format";
@@ -272,11 +272,12 @@ function Thread({
   const update = useUpdateConversation(workspaceId);
   const send = useSendMessage();
   const [text, setText] = useState("");
-  const [attachment, setAttachment] = useState<File | null>(null);
+  /** Arquivos escolhidos pelo clipe (vários de uma vez) ou gravados pelo microfone; cada um vira uma mensagem. */
+  const [attachments, setAttachments] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   /** Gravando voz pelo microfone: a barra de gravação toma o lugar do campo de texto. */
   const [recording, setRecording] = useState(false);
-  /** Pré-escuta do áudio anexado (gravado ou escolhido no clipe). */
+  /** Pré-escuta quando o único anexo é um áudio (gravado ou escolhido no clipe). */
   const [attachmentUrl, setAttachmentUrl] = useState<string | null>(null);
   const [forwardOf, setForwardOf] = useState<Message | null>(null);
   const [photosOpen, setPhotosOpen] = useState(false);
@@ -293,14 +294,15 @@ function Thread({
   const bottomRef = useRef<HTMLDivElement>(null);
   const external = isExternal(conversation);
   useEffect(() => {
-    if (!attachment || !attachment.type.startsWith("audio/") || typeof URL.createObjectURL !== "function") {
+    const only = attachments.length === 1 ? attachments[0] : null;
+    if (!only || !only.type.startsWith("audio/") || typeof URL.createObjectURL !== "function") {
       setAttachmentUrl(null);
       return;
     }
-    const url = URL.createObjectURL(attachment);
+    const url = URL.createObjectURL(only);
     setAttachmentUrl(url);
     return () => URL.revokeObjectURL(url);
-  }, [attachment]);
+  }, [attachments]);
   // Trocar de conversa no meio de uma gravação descarta a gravação.
   useEffect(() => setRecording(false), [conversation.id]);
   const members = useMembers(workspaceId);
@@ -357,12 +359,18 @@ function Thread({
     );
   };
 
-  function pickFile(file: File | null) {
-    if (!file) return setAttachment(null);
-    const problem = validateUpload(file);
-    if (problem) return toast.error(problem);
-    setAttachment(file);
+  // Clipe ou microfone: os arquivos válidos entram na lista (somando aos já escolhidos); os inválidos viram aviso.
+  function pickFiles(files: File[]) {
+    const { list, problems } = addAttachments(attachments, files);
+    for (const problem of problems) toast.error(problem);
+    if (list.length === attachments.length) return;
+    setAttachments(list);
     setQuickMedia(null);
+    if (fileRef.current) fileRef.current.value = "";
+  }
+
+  function removeAttachment(index: number) {
+    setAttachments((cur) => cur.filter((_, i) => i !== index));
   }
 
   // Resposta rápida escolhida: o texto entra no campo (ainda editável) e o anexo dela vira o anexo da mensagem.
@@ -370,7 +378,7 @@ function Thread({
     setText(renderQuickReply(r.content, { name: conversation.contact_name }));
     if (r.media_path) {
       setQuickMedia({ mediaPath: r.media_path, fileName: r.media_name ?? "anexo", mimetype: r.media_mime ?? "application/octet-stream", type: mediaTypeFor(r.media_mime ?? "") });
-      setAttachment(null);
+      setAttachments([]);
       if (fileRef.current) fileRef.current.value = "";
     }
     setQuickOpen(false);
@@ -380,17 +388,25 @@ function Thread({
   async function submit(e: FormEvent) {
     e.preventDefault();
     const body = text.trim();
-    if (!body && !attachment && !quickMedia) return;
+    if (!body && attachments.length === 0 && !quickMedia) return;
     try {
-      if (attachment || quickMedia) {
-        let up = quickMedia!;
-        if (attachment) {
-          setUploading(true);
-          up = await uploadAttachment(workspaceId, attachment).finally(() => setUploading(false));
-        }
-        await send.mutateAsync({ conversationId: conversation.id, text: body || undefined, mediaPath: up.mediaPath, fileName: up.fileName, mimetype: up.mimetype, type: up.type });
-        setAttachment(null);
+      if (quickMedia) {
+        await send.mutateAsync({ conversationId: conversation.id, text: body || undefined, mediaPath: quickMedia.mediaPath, fileName: quickMedia.fileName, mimetype: quickMedia.mimetype, type: quickMedia.type });
         setQuickMedia(null);
+      } else if (attachments.length > 0) {
+        // Um arquivo por mensagem, na ordem da lista; a legenda vai com o primeiro. O que já saiu sai da lista,
+        // então um erro no meio deixa só o restante para tentar de novo.
+        setUploading(true);
+        try {
+          for (const [i, file] of attachments.entries()) {
+            const up = await uploadAttachment(workspaceId, file);
+            await send.mutateAsync({ conversationId: conversation.id, text: i === 0 ? body || undefined : undefined, mediaPath: up.mediaPath, fileName: up.fileName, mimetype: up.mimetype, type: up.type });
+            setAttachments((cur) => cur.filter((f) => f !== file));
+            if (i === 0) setText("");
+          }
+        } finally {
+          setUploading(false);
+        }
         if (fileRef.current) fileRef.current.value = "";
       } else {
         await send.mutateAsync({ conversationId: conversation.id, text: body });
@@ -509,26 +525,43 @@ function Thread({
                 onCreate={isAdmin ? () => { setQuickOpen(false); setNewQuickOpen(true); } : undefined}
               />
             )}
-            {(attachment || quickMedia) && (
+            {quickMedia && (
               <div className="mb-2 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800">
-                {attachmentUrl ? <Mic className="h-3.5 w-3.5 shrink-0 text-slate-400" /> : <Paperclip className="h-3.5 w-3.5 shrink-0 text-slate-400" />}
-                {attachmentUrl ? (
-                  <audio controls src={attachmentUrl} aria-label="Ouvir o áudio antes de enviar" className="h-8 min-w-0 flex-1" />
-                ) : (
-                  <span className="min-w-0 flex-1 truncate">{attachment?.name ?? quickMedia?.fileName}</span>
-                )}
-                <button type="button" className="underline" onClick={() => { pickFile(null); setQuickMedia(null); }}>Remover</button>
+                <Paperclip className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                <span className="min-w-0 flex-1 truncate">{quickMedia.fileName}</span>
+                <button type="button" className="underline" onClick={() => setQuickMedia(null)}>Remover</button>
               </div>
+            )}
+            {attachments.length > 0 && (
+              <ul aria-label="Anexos" className="mb-2 max-h-40 space-y-1 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800">
+                {attachments.map((file, i) => (
+                  <li key={`${file.name}-${file.size}-${i}`} className="flex items-center gap-2">
+                    {attachmentUrl ? <Mic className="h-3.5 w-3.5 shrink-0 text-slate-400" /> : <Paperclip className="h-3.5 w-3.5 shrink-0 text-slate-400" />}
+                    {attachmentUrl ? (
+                      <audio controls src={attachmentUrl} aria-label="Ouvir o áudio antes de enviar" className="h-8 min-w-0 flex-1" />
+                    ) : (
+                      <span className="min-w-0 flex-1 truncate">{file.name}</span>
+                    )}
+                    <button type="button" className="underline" onClick={() => removeAttachment(i)} aria-label={`Remover ${file.name}`}>Remover</button>
+                  </li>
+                ))}
+                {attachments.length > 1 && (
+                  <li className="flex items-center justify-between gap-2 pt-1 text-slate-500">
+                    <span>{attachments.length} arquivos, um por mensagem, na ordem acima.</span>
+                    <button type="button" className="underline" onClick={() => setAttachments([])}>Remover todos</button>
+                  </li>
+                )}
+              </ul>
             )}
             {recording ? (
               <VoiceRecorder
-                onRecorded={(file) => { setRecording(false); pickFile(file); textRef.current?.focus(); }}
+                onRecorded={(file) => { setRecording(false); pickFiles([file]); textRef.current?.focus(); }}
                 onCancel={() => { setRecording(false); textRef.current?.focus(); }}
               />
             ) : (
             <div className="flex items-end gap-2">
-            <input ref={fileRef} type="file" className="hidden" aria-label="Anexar arquivo" onChange={(e) => pickFile(e.target.files?.[0] ?? null)} accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip" />
-            <Button type="button" variant="ghost" onClick={() => fileRef.current?.click()} aria-label="Anexar" title="Anexar arquivo (até 20 MB)">
+            <input ref={fileRef} type="file" multiple className="hidden" aria-label="Anexar arquivos" onChange={(e) => pickFiles(Array.from(e.target.files ?? []))} accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip" />
+            <Button type="button" variant="ghost" onClick={() => fileRef.current?.click()} aria-label="Anexar" title={`Anexar arquivos (até ${MAX_FILES_PER_SEND} por vez, 20 MB cada)`}>
               <Paperclip className="h-4 w-4" />
             </Button>
             <Button type="button" variant="ghost" onClick={() => setPhotosOpen(true)} aria-label="Fotos" title="Enviar fotos da galeria">
@@ -556,10 +589,10 @@ function Thread({
                 }
               }}
               rows={1}
-              placeholder={attachmentUrl ? "Texto junto com o áudio (opcional)…" : attachment || quickMedia ? "Legenda (opcional)…" : conversation.mode === "bot" ? "Responder (assume a conversa do bot)…" : "Escreva uma mensagem… (/ para respostas rápidas)"}
+              placeholder={attachmentUrl ? "Texto junto com o áudio (opcional)…" : attachments.length > 1 ? "Legenda do primeiro arquivo (opcional)…" : attachments.length > 0 || quickMedia ? "Legenda (opcional)…" : conversation.mode === "bot" ? "Responder (assume a conversa do bot)…" : "Escreva uma mensagem… (/ para respostas rápidas)"}
               className="max-h-40 min-h-[2.5rem] min-w-0 flex-1 resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30 dark:border-slate-700 dark:bg-slate-900"
             />
-            <Button type="submit" loading={send.isPending || uploading} disabled={!text.trim() && !attachment && !quickMedia} aria-label="Enviar">
+            <Button type="submit" loading={send.isPending || uploading} disabled={!text.trim() && attachments.length === 0 && !quickMedia} aria-label="Enviar">
               <Send className="h-4 w-4" />
               <span className="hidden sm:inline">Enviar</span>
             </Button>

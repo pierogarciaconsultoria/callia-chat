@@ -103,4 +103,22 @@ describe("diálogos da inbox", () => {
     await waitFor(() => expect(onSent).toHaveBeenCalled());
     expect(mocks.toast.success).toHaveBeenCalledWith("2 fotos enviadas.");
   });
+
+  it("fotos da galeria: Marcar todas pega o álbum inteiro na ordem e Desmarcar todas limpa", async () => {
+    wrap(<PhotoPickerDialog workspaceId="ws" conversationId="c-ana" open onClose={() => {}} />);
+    fireEvent.click(screen.getByText("Suíte Master"));
+    expect(screen.getByText("2 foto(s) no álbum")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Marcar todas" }));
+    expect(screen.getByText("2 de 2 marcada(s)")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Enviar 2/ }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("send-message", expect.objectContaining({ media_asset_ids: ["f1", "f2"] })));
+  });
+
+  it("fotos da galeria: Desmarcar todas limpa a seleção", () => {
+    wrap(<PhotoPickerDialog workspaceId="ws" conversationId="c-ana" open onClose={() => {}} />);
+    fireEvent.click(screen.getByText("Suíte Master"));
+    fireEvent.click(screen.getByRole("button", { name: "Marcar todas" }));
+    fireEvent.click(screen.getByRole("button", { name: "Desmarcar todas" }));
+    expect(screen.getByRole("button", { name: /^Enviar$/ }).hasAttribute("disabled")).toBe(true);
+  });
 });

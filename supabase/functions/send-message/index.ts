@@ -19,7 +19,7 @@ interface Body {
   file_name?: string;
   mimetype?: string;
   forward_message_id?: string;
-  /** Fotos da galeria do workspace (Informações da empresa → Fotos), até 5 por envio. */
+  /** Fotos da galeria do workspace (Agente de IA → Conhecimento → Fotos), até 30 por envio. */
   media_asset_ids?: string[];
 }
 

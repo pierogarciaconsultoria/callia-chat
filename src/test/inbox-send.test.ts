@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canForward, forwardPreview, mediaTypeFor, outboundMediaPath, validateUpload } from "@/lib/inbox-send";
+import { addAttachments, canForward, forwardPreview, MAX_FILES_PER_SEND, mediaTypeFor, outboundMediaPath, validateUpload } from "@/lib/inbox-send";
 
 const msg = { sender: "customer" as const, type: "text" as const, content: "oi", media_url: null, metadata: {} };
 
@@ -15,6 +15,18 @@ describe("envio pela inbox (painel)", () => {
     expect(validateUpload({ size: 10, name: "a.pdf" })).toBeNull();
     expect(validateUpload({ size: 0, name: "a.pdf" })).toMatch(/vazio/);
     expect(validateUpload({ size: 21 * 1024 * 1024, name: "a.pdf" })).toMatch(/20 MB/);
+  });
+
+  it("vários arquivos de uma vez: soma aos já escolhidos, avisa os inválidos e corta no limite", () => {
+    const f = (name: string, size = 10) => ({ name, size }) as File;
+    const first = addAttachments([], [f("a.jpg"), f("vazio.jpg", 0), f("b.jpg")]);
+    expect(first.list.map((x) => x.name)).toEqual(["a.jpg", "b.jpg"]);
+    expect(first.problems).toEqual(["vazio.jpg: O arquivo está vazio."]);
+    const more = addAttachments(first.list, [f("c.jpg")]);
+    expect(more.list.map((x) => x.name)).toEqual(["a.jpg", "b.jpg", "c.jpg"]);
+    const many = addAttachments([], Array.from({ length: MAX_FILES_PER_SEND + 2 }, (_, i) => f(`p${i}.jpg`)));
+    expect(many.list).toHaveLength(MAX_FILES_PER_SEND);
+    expect(many.problems).toEqual([`No máximo ${MAX_FILES_PER_SEND} arquivos por envio. Os demais ficaram de fora.`]);
   });
 
   it("sabe o que pode ser encaminhado e resume a mensagem", () => {
