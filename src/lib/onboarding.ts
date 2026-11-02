@@ -49,7 +49,7 @@ interface StepDef extends Omit<JourneyStep, "state"> {
 
 const STEPS: StepDef[] = [
   {
-    id: "empresa", short: "Empresa", title: "Dados da empresa", to: "/knowledge-base?tab=empresa", optional: false, minutes: 2,
+    id: "empresa", short: "Empresa", title: "Dados da empresa", to: "/settings#empresa", optional: false, minutes: 2,
     tip: "Digite o CNPJ e clique em Buscar: razão social, endereço e CNAE vêm da Receita. Depois salve.",
     done: (s) => s.businessInfo,
   },

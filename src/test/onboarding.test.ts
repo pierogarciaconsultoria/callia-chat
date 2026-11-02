@@ -52,8 +52,9 @@ describe("jornada de configuração", () => {
     expect(j.current?.id).toBe("teste");
     expect(stepForPath(j, "/agent")?.id).toBe("teste");
     expect(stepForPath(j, "/integrations")?.id).toBe("whatsapp");
-    // Empresa e Políticas ficam na mesma tela: com as duas feitas vale a primeira; com uma pendente, a pendente.
-    expect(stepForPath(j, "/knowledge-base")?.id).toBe("empresa");
+    // Dados da empresa ficam em Configurações; Políticas em Informações da empresa.
+    expect(stepForPath(j, "/settings")?.id).toBe("empresa");
+    expect(stepForPath(j, "/knowledge-base")?.id).toBe("conhecimento");
     expect(stepForPath(buildJourney({ ...fresh, businessInfo: true, agentGenerated: true, segment: "varejo" }), "/knowledge-base")?.id).toBe("conhecimento");
     expect(stepForPath(j, "/logs")).toBeNull();
   });

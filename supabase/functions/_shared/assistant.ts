@@ -268,7 +268,7 @@ export function applyHours(current: Hours, changes: Array<{ days: string[]; rang
 // ---------------------------------------------------------------------------
 export const SCREENS: Array<{ id: string; label: string; to: string; what: string }> = [
   { id: "atendimento", label: "Atendimento", to: "/agent", what: "nome do agente, persona, regras de comportamento, segmento, emojis, modelo, horário da equipe, mensagem fora do horário, palavras-chave de transferência, simulador" },
-  { id: "empresa", label: "Informações da empresa → Empresa", to: "/knowledge-base?tab=empresa", what: "razão social, CNPJ, endereço, telefone, dados de pagamento, PIX, sinal, link de pré-reserva" },
+  { id: "empresa", label: "Configurações → Dados da empresa", to: "/settings#empresa", what: "razão social, CNPJ, endereço, telefone, dados de pagamento, PIX, sinal, link de pré-reserva" },
   { id: "politicas", label: "Informações da empresa → Políticas", to: "/knowledge-base?tab=politicas", what: "check-in, check-out, cancelamento, crianças, animais, comodidades, localização" },
   { id: "precos", label: "Informações da empresa → Catálogo e preços", to: "/knowledge-base?tab=catalog", what: "acomodações/produtos, tabela de preços, temporadas, fechamentos, capacidade" },
   { id: "fotos", label: "Informações da empresa → Fotos", to: "/knowledge-base?tab=fotos", what: "álbuns de fotos que o agente envia" },

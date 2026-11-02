@@ -6,6 +6,7 @@ import { useRequiredWorkspace } from "@/lib/workspace";
 import { supabase } from "@/lib/supabase";
 import { unwrap } from "@/lib/functions";
 import { applyBranding, DEFAULT_PRIMARY, DEFAULT_SECONDARY } from "@/lib/branding";
+import { BusinessInfoCard } from "@/components/BusinessInfoCard";
 import { PlanUsageCard } from "@/components/PlanUsageCard";
 import { SubscriptionCard } from "@/components/SubscriptionCard";
 import type { WorkspaceBranding } from "@/lib/database.types";
@@ -16,8 +17,9 @@ const HEX = /^#[0-9a-fA-F]{6}$/;
 export default function Settings() {
   return (
     <>
-      <PageHeader title="Configurações" description="Plano, identidade visual e conectores. Dados, políticas, preços e respostas rápidas do negócio ficam em Informações da empresa." />
+      <PageHeader title="Configurações" description="Dados da empresa, plano, identidade visual e conectores. Políticas, preços, fotos, perguntas e respostas rápidas ficam em Informações da empresa." />
       <div className="space-y-6">
+        <div id="empresa"><BusinessInfoCard /></div>
         <PlanUsageCard />
         <SubscriptionCard />
         <WorkspaceNameCard />

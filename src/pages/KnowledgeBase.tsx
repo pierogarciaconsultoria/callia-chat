@@ -3,7 +3,6 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useMedia } from "@/hooks/use-media";
 import { PriceTableCard } from "@/components/PriceTableCard";
 import { PoliciesCard } from "@/components/PoliciesCard";
-import { BusinessInfoCard } from "@/components/BusinessInfoCard";
 import { PhotosTab } from "@/components/media/PhotosTab";
 import { QuickRepliesCard } from "@/components/QuickRepliesCard";
 import { BookOpen, FileUp, Globe, Package, Pencil, Pin, PinOff, Plus, RefreshCw, Search, Sparkles, Trash2, Type } from "lucide-react";
@@ -53,20 +52,20 @@ import {
   useToast,
 } from "@/components/ui";
 
-type Tab = "empresa" | "politicas" | "catalog" | "fotos" | "faq" | "rapidas" | "docs" | "search";
-const TAB_IDS: Tab[] = ["empresa", "politicas", "catalog", "fotos", "faq", "rapidas", "docs", "search"];
+type Tab = "politicas" | "catalog" | "fotos" | "faq" | "rapidas" | "docs" | "search";
+const TAB_IDS: Tab[] = ["politicas", "catalog", "fotos", "faq", "rapidas", "docs", "search"];
 
 export default function KnowledgeBase() {
   // A aba fica na URL (?tab=fotos) para poder ser linkada.
   const [params, setParams] = useSearchParams();
   const fromUrl = params.get("tab") as Tab | null;
-  const tab: Tab = fromUrl && TAB_IDS.includes(fromUrl) ? fromUrl : "empresa";
-  const setTab = (next: Tab) => setParams(next === "empresa" ? {} : { tab: next }, { replace: true });
+  const tab: Tab = fromUrl && TAB_IDS.includes(fromUrl) ? fromUrl : "politicas";
+  const setTab = (next: Tab) => setParams(next === "politicas" ? {} : { tab: next }, { replace: true });
   return (
     <>
       <PageHeader
         title="Informações da empresa"
-        description="O que o negócio é e oferece: dados, políticas, catálogo e preços, fotos, perguntas e documentos. É daqui que o agente responde; cada fato fica em um só lugar."
+        description="O que o negócio oferece: políticas, catálogo e preços, fotos, perguntas, respostas rápidas e documentos. É daqui que o agente responde; cada fato fica em um só lugar. Dados cadastrais e de pagamento ficam em Configurações."
         actions={
           <Link
             to="/agent/setup"
@@ -81,7 +80,6 @@ export default function KnowledgeBase() {
         value={tab}
         onChange={setTab}
         tabs={[
-          { id: "empresa", label: "Empresa" },
           { id: "politicas", label: "Políticas" },
           { id: "catalog", label: "Catálogo e preços" },
           { id: "fotos", label: "Fotos" },
@@ -91,7 +89,6 @@ export default function KnowledgeBase() {
           { id: "search", label: "Teste de busca" },
         ]}
       />
-      {tab === "empresa" && <div id="empresa"><BusinessInfoCard /></div>}
       {tab === "faq" && <FaqTab />}
       {tab === "rapidas" && <QuickRepliesTab />}
       {tab === "politicas" && <PoliciesTab />}
