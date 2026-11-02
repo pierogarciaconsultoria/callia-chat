@@ -62,6 +62,8 @@ export default function App() {
             <Route path="/inbox" element={<Inbox />} />
             <Route path="/inbox/:conversationId" element={<Inbox />} />
             <Route path="/team" element={<Team />} />
+            <Route path="/team/distribuicao" element={admin(<Team section="distribuicao" />)} />
+            <Route path="/team/respostas" element={admin(<Team section="respostas" />)} />
             <Route path="/agent" element={admin(<Agent />)} />
             <Route path="/agent/setup" element={admin(<AgentSetup />)} />
             <Route path="/agent/conhecimento" element={admin(<KnowledgeBase />)} />
@@ -77,6 +79,8 @@ export default function App() {
             <Route path="/webhooks" element={<Moved to="/integrations/webhooks" />} />
             <Route path="/logs" element={admin(<Logs />)} />
             <Route path="/settings" element={admin(<Settings />)} />
+            <Route path="/settings/plano" element={admin(<Settings section="plano" />)} />
+            <Route path="/settings/marca" element={admin(<Settings section="marca" />)} />
           </Route>
           <Route
             element={

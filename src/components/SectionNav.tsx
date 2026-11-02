@@ -40,6 +40,26 @@ export const INTEGRATION_SECTIONS: SectionItem[] = [
   { to: "/integrations/webhooks", label: "Webhooks" },
 ];
 
+export const SETTINGS_SECTIONS: SectionItem[] = [
+  { to: "/settings", label: "Empresa", end: true },
+  { to: "/settings/plano", label: "Plano e assinatura" },
+  { to: "/settings/marca", label: "Identidade visual" },
+];
+
+export const TEAM_SECTIONS: SectionItem[] = [
+  { to: "/team", label: "Membros", end: true },
+  { to: "/team/distribuicao", label: "Distribuição" },
+  { to: "/team/respostas", label: "Respostas rápidas" },
+];
+
+export function SettingsNav() {
+  return <SectionNav items={SETTINGS_SECTIONS} label="Seções de configurações" />;
+}
+
+export function TeamNav() {
+  return <SectionNav items={TEAM_SECTIONS} label="Seções da equipe" />;
+}
+
 export function AgentNav() {
   return <SectionNav items={AGENT_SECTIONS} label="Seções do agente" />;
 }

@@ -51,12 +51,13 @@ export function QuickRepliesCard({ workspaceId }: { workspaceId: string }) {
   );
 }
 
-function QuickReplyModal({ workspaceId, reply, existing, onClose }: { workspaceId: string; reply: QuickReply | null; existing: QuickReply[]; onClose: () => void }) {
+/** Também usado pela inbox (Ctrl+Shift+S): abre com o texto digitado como conteúdo. */
+export function QuickReplyModal({ workspaceId, reply, existing, onClose, initialContent }: { workspaceId: string; reply: QuickReply | null; existing: QuickReply[]; onClose: () => void; initialContent?: string }) {
   const toast = useToast();
   const { save } = useQuickReplyActions(workspaceId);
   const [shortcut, setShortcut] = useState(reply?.shortcut ?? "");
   const [title, setTitle] = useState(reply?.title ?? "");
-  const [content, setContent] = useState(reply?.content ?? "");
+  const [content, setContent] = useState(reply?.content ?? initialContent ?? "");
   const [media, setMedia] = useState<{ path: string; name: string; mime: string } | null>(reply?.media_path ? { path: reply.media_path, name: reply.media_name ?? "anexo", mime: reply.media_mime ?? "" } : null);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -97,6 +98,7 @@ function QuickReplyModal({ workspaceId, reply, existing, onClose }: { workspaceI
       open
       onClose={onClose}
       title={reply ? "Editar resposta rápida" : "Nova resposta rápida"}
+      description={!reply && initialContent ? "O texto que você escreveu vira uma resposta rápida da equipe. Dê um atalho e um título." : undefined}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>Cancelar</Button>

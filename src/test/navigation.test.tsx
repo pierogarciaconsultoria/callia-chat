@@ -3,7 +3,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { NAV_ITEMS } from "@/components/nav";
 import { Moved } from "@/components/Moved";
-import { AgentNav, IntegrationsNav } from "@/components/SectionNav";
+import { AgentNav, IntegrationsNav, SettingsNav, TeamNav } from "@/components/SectionNav";
 
 function Where() {
   const l = useLocation();
@@ -39,5 +39,17 @@ describe("módulos unificados", () => {
     render(<MemoryRouter initialEntries={["/integrations/webhooks"]}><IntegrationsNav /></MemoryRouter>);
     expect(screen.getByRole("link", { name: "Webhooks" }).getAttribute("aria-current")).toBe("page");
     expect(screen.getByRole("link", { name: "Conexões" }).getAttribute("aria-current")).toBeNull();
+  });
+});
+
+describe("seções de Configurações e Equipe", () => {
+  it("navegação marca a seção atual", () => {
+    render(<MemoryRouter initialEntries={["/settings/marca"]}><SettingsNav /></MemoryRouter>);
+    expect(screen.getByRole("link", { name: "Identidade visual" }).getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("link", { name: "Empresa" }).getAttribute("aria-current")).toBeNull();
+    cleanup();
+    render(<MemoryRouter initialEntries={["/team/respostas"]}><TeamNav /></MemoryRouter>);
+    expect(screen.getByRole("link", { name: "Respostas rápidas" }).getAttribute("aria-current")).toBe("page");
+    expect(screen.getByRole("link", { name: "Membros" }).getAttribute("href")).toBe("/team");
   });
 });

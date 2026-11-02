@@ -268,18 +268,18 @@ export function applyHours(current: Hours, changes: Array<{ days: string[]; rang
 // ---------------------------------------------------------------------------
 export const SCREENS: Array<{ id: string; label: string; to: string; what: string }> = [
   { id: "atendimento", label: "Agente de IA → Comportamento", to: "/agent", what: "nome do agente, persona, regras de comportamento, segmento, emojis, modelo, horário da equipe, mensagem fora do horário, palavras-chave de transferência, devolução automática ao bot, simulador" },
-  { id: "empresa", label: "Configurações → Dados da empresa", to: "/settings#empresa", what: "razão social, CNPJ, endereço, telefone, dados de pagamento, PIX, sinal, link de pré-reserva" },
+  { id: "empresa", label: "Configurações → Dados da empresa", to: "/settings", what: "razão social, CNPJ, endereço, telefone, dados de pagamento, PIX, sinal, link de pré-reserva" },
   { id: "politicas", label: "Agente de IA → Conhecimento → Políticas", to: "/agent/conhecimento?tab=politicas", what: "check-in, check-out, cancelamento, crianças, animais, comodidades, localização" },
   { id: "precos", label: "Agente de IA → Conhecimento → Catálogo e preços", to: "/agent/conhecimento?tab=catalog", what: "acomodações/produtos, tabela de preços, temporadas, fechamentos, capacidade" },
   { id: "fotos", label: "Agente de IA → Conhecimento → Fotos", to: "/agent/conhecimento?tab=fotos", what: "álbuns de fotos que o agente envia" },
   { id: "faq", label: "Agente de IA → Conhecimento → Perguntas e respostas", to: "/agent/conhecimento?tab=faq", what: "perguntas frequentes" },
   { id: "documentos", label: "Agente de IA → Conhecimento → Documentos e site", to: "/agent/conhecimento?tab=docs", what: "PDFs, textos, páginas do site, Instagram" },
   { id: "aprendizados", label: "Agente de IA → Aprendizados", to: "/agent/aprendizados", what: "sugestões diárias tiradas das conversas (perguntas sem resposta, políticas, regras) para aprovar ou descartar" },
-  { id: "rapidas", label: "Equipe → Respostas rápidas", to: "/team#rapidas", what: "textos prontos da equipe para a inbox (atalho /pix, /endereco), com anexo" },
+  { id: "rapidas", label: "Equipe → Respostas rápidas", to: "/team/respostas", what: "textos prontos da equipe para a inbox (atalho /pix, /endereco), com anexo" },
   { id: "integracoes", label: "Integrações", to: "/integrations", what: "WhatsApp (QR code), Hospedin, hbook, link de reserva; chaves de API e webhooks nas seções ao lado" },
   { id: "equipe", label: "Equipe", to: "/team", what: "convidar pessoas, papéis, nomes, setores, distribuição das conversas, carteira de clientes" },
   { id: "inbox", label: "Inbox", to: "/inbox", what: "conversas, assumir, devolver ao bot, transferir" },
-  { id: "configuracoes", label: "Configurações", to: "/settings", what: "dados da empresa, plano, assinatura, identidade visual" },
+  { id: "configuracoes", label: "Configurações", to: "/settings/plano", what: "plano, assinatura e uso; identidade visual em /settings/marca" },
 ];
 
 export const ASSISTANT_TOOLS: ToolDefinition[] = [

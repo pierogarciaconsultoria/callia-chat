@@ -29,6 +29,7 @@ import { ForwardDialog } from "@/components/inbox/ForwardDialog";
 import { NewConversationDialog } from "@/components/inbox/NewConversationDialog";
 import { PhotoPickerDialog } from "@/components/inbox/PhotoPickerDialog";
 import { QuickReplyPicker } from "@/components/inbox/QuickReplyPicker";
+import { QuickReplyModal } from "@/components/QuickRepliesCard";
 import { TransferDialog } from "@/components/inbox/TransferDialog";
 import { departmentName, useDepartments } from "@/hooks/use-departments";
 import { useQuickReplies } from "@/hooks/use-quick-replies";
@@ -263,6 +264,7 @@ function Thread({
   instanceName?: string;
 }) {
   const { user } = useAuth();
+  const { isAdmin } = useRequiredWorkspace();
   const toast = useToast();
   const navigate = useNavigate();
   const messages = useMessages(conversation.id);
@@ -274,6 +276,7 @@ function Thread({
   const [forwardOf, setForwardOf] = useState<Message | null>(null);
   const [photosOpen, setPhotosOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
+  const [newQuickOpen, setNewQuickOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
   const departments = useDepartments(workspaceId);
   /** Anexo que veio de uma resposta rápida (já guardado no bucket). */
@@ -487,6 +490,7 @@ function Thread({
                 query={slash ?? ""}
                 onPick={pickQuickReply}
                 onClose={() => { setQuickOpen(false); if (slash !== null) setText(""); }}
+                onCreate={isAdmin ? () => { setQuickOpen(false); setNewQuickOpen(true); } : undefined}
               />
             )}
             {(attachment || quickMedia) && (
@@ -515,6 +519,11 @@ function Thread({
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   e.currentTarget.form?.requestSubmit();
+                } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "s") {
+                  // Salvar o texto escrito como resposta rápida (admin).
+                  e.preventDefault();
+                  if (isAdmin) setNewQuickOpen(true);
+                  else toast.error("Só administradores criam respostas rápidas. Peça em Equipe → Respostas rápidas.");
                 }
               }}
               rows={1}
@@ -526,6 +535,9 @@ function Thread({
               <span className="hidden sm:inline">Enviar</span>
             </Button>
             </div>
+            {newQuickOpen && (
+              <QuickReplyModal workspaceId={workspaceId} reply={null} existing={quickReplies.data ?? []} initialContent={text} onClose={() => { setNewQuickOpen(false); textRef.current?.focus(); }} />
+            )}
           </form>
         )}
       </footer>

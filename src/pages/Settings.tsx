@@ -1,12 +1,11 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
-import { ArrowRight } from "lucide-react";
 import { useRequiredWorkspace } from "@/lib/workspace";
 import { supabase } from "@/lib/supabase";
 import { unwrap } from "@/lib/functions";
 import { applyBranding, DEFAULT_PRIMARY, DEFAULT_SECONDARY } from "@/lib/branding";
 import { BusinessInfoCard } from "@/components/BusinessInfoCard";
+import { SettingsNav } from "@/components/SectionNav";
 import { PlanUsageCard } from "@/components/PlanUsageCard";
 import { SubscriptionCard } from "@/components/SubscriptionCard";
 import type { WorkspaceBranding } from "@/lib/database.types";
@@ -14,17 +13,27 @@ import { Button, Card, CardBody, CardHeader, Input, PageHeader, useToast } from 
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
-export default function Settings() {
+export type SettingsSection = "empresa" | "plano" | "marca";
+
+export default function Settings({ section = "empresa" }: { section?: SettingsSection }) {
   return (
     <>
-      <PageHeader title="Configurações" description="Dados da empresa, plano, identidade visual e conectores. Políticas, preços, fotos e perguntas ficam em Agente de IA → Conhecimento; respostas rápidas, em Equipe." />
+      <PageHeader title="Configurações" description="Dados da empresa, plano e identidade visual. Políticas, preços, fotos e perguntas ficam em Agente de IA → Conhecimento; respostas rápidas, em Equipe." />
+      <SettingsNav />
       <div className="space-y-6">
-        <div id="empresa"><BusinessInfoCard /></div>
-        <PlanUsageCard />
-        <SubscriptionCard />
-        <WorkspaceNameCard />
-        <BrandingCard />
-        <ConnectorsPointer />
+        {section === "empresa" && (
+          <>
+            <div id="empresa"><BusinessInfoCard /></div>
+            <WorkspaceNameCard />
+          </>
+        )}
+        {section === "plano" && (
+          <>
+            <PlanUsageCard />
+            <SubscriptionCard />
+          </>
+        )}
+        {section === "marca" && <BrandingCard />}
       </div>
     </>
   );
@@ -170,18 +179,3 @@ function ColorField({ label, value, onChange }: { label: string; value: string; 
 }
 
 // ---------------------------------------------------------------- conectores
-function ConnectorsPointer() {
-  return (
-    <Card>
-      <CardHeader
-        title="Conectores"
-        description="As integrações agora ficam em Integrações: WhatsApp, sistema de reservas (Hospedin) e link de reservas."
-        actions={
-          <Link to="/integrations" className="inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline">
-            Abrir Integrações <ArrowRight className="h-4 w-4" />
-          </Link>
-        }
-      />
-    </Card>
-  );
-}

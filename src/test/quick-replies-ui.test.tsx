@@ -14,7 +14,7 @@ vi.mock("@/hooks/use-quick-replies", () => ({
 vi.mock("@/components/ui", async (importOriginal) => ({ ...(await importOriginal<typeof import("@/components/ui")>()), useToast: () => mocks.toast }));
 
 import { QuickReplyPicker } from "@/components/inbox/QuickReplyPicker";
-import { QuickRepliesCard } from "@/components/QuickRepliesCard";
+import { QuickRepliesCard, QuickReplyModal } from "@/components/QuickRepliesCard";
 
 afterEach(() => { cleanup(); mocks.save.mockClear(); });
 
@@ -55,5 +55,22 @@ describe("respostas rápidas (interface)", () => {
     fireEvent.click(save);
     await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ shortcut: "endereco", title: "Endereço", content: "Rua das Flores, 100", media_path: null })));
     expect(mocks.toast.success).toHaveBeenCalledWith("Resposta criada.");
+  });
+});
+
+describe("respostas rápidas a partir do chat", () => {
+  it("o seletor oferece salvar o texto escrito e o modal abre já preenchido", async () => {
+    const onCreate = vi.fn();
+    render(<QuickReplyPicker replies={replies} query="" onPick={() => {}} onClose={() => {}} onCreate={onCreate} />);
+    fireEvent.click(screen.getByText(/Salvar o texto escrito como resposta rápida/));
+    expect(onCreate).toHaveBeenCalled();
+    cleanup();
+    render(<QuickReplyModal workspaceId="ws" reply={null} existing={replies} initialContent="Nossa chave PIX é o CNPJ 00.000.000/0001-00." onClose={() => {}} />);
+    expect((screen.getByLabelText("Texto") as HTMLTextAreaElement).value).toBe("Nossa chave PIX é o CNPJ 00.000.000/0001-00.");
+    expect(screen.getByText(/O texto que você escreveu vira uma resposta rápida/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Atalho"), { target: { value: "chave" } });
+    fireEvent.change(screen.getByLabelText("Título"), { target: { value: "Chave PIX (nova)" } });
+    fireEvent.click(screen.getByRole("button", { name: /Salvar/ }));
+    await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ shortcut: "chave", title: "Chave PIX (nova)", content: "Nossa chave PIX é o CNPJ 00.000.000/0001-00." })));
   });
 });

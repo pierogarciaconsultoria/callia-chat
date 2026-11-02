@@ -12,6 +12,7 @@ import type { MemberWithEmail, WorkspaceRole } from "@/lib/database.types";
 import { ContactAssignmentsCard, RoutingSettingsCard } from "@/components/team/RoutingCards";
 import { DepartmentsCard } from "@/components/team/DepartmentsCard";
 import { QuickRepliesCard } from "@/components/QuickRepliesCard";
+import { TeamNav } from "@/components/SectionNav";
 import { memberName } from "@/hooks/use-routing";
 import {
   Badge,
@@ -44,7 +45,9 @@ function friendly(err: unknown): string {
   return errorMessage(err);
 }
 
-export default function Team() {
+export type TeamSection = "membros" | "distribuicao" | "respostas";
+
+export default function Team({ section = "membros" }: { section?: TeamSection }) {
   const { workspaceId, isAdmin, isOwner } = useRequiredWorkspace();
   const { user, updateProfile } = useAuth();
   const qc = useQueryClient();
@@ -100,8 +103,9 @@ export default function Team() {
   return (
     <>
       <PageHeader title="Equipe" description="Quem atende: membros, setores, distribuição das conversas e respostas rápidas da inbox." />
+      {isAdmin && <TeamNav />}
       <div className="space-y-6">
-        {isAdmin && (
+        {section === "membros" && isAdmin && (
           <Card>
             <CardHeader title="Adicionar membro" description="Quem já tem usuário entra na hora; quem não tem recebe um convite por e-mail para definir a senha." />
             <CardBody className="space-y-3">
@@ -120,11 +124,16 @@ export default function Team() {
           </Card>
         )}
 
-        {isAdmin && <RoutingSettingsCard workspaceId={workspaceId} />}
-        {isAdmin && <ContactAssignmentsCard workspaceId={workspaceId} />}
-        {isAdmin && <DepartmentsCard workspaceId={workspaceId} />}
-        {isAdmin && <div id="rapidas"><QuickRepliesCard workspaceId={workspaceId} /></div>}
+        {section === "distribuicao" && isAdmin && (
+          <>
+            <RoutingSettingsCard workspaceId={workspaceId} />
+            <ContactAssignmentsCard workspaceId={workspaceId} />
+            <DepartmentsCard workspaceId={workspaceId} />
+          </>
+        )}
+        {section === "respostas" && isAdmin && <QuickRepliesCard workspaceId={workspaceId} />}
 
+        {(section === "membros" || !isAdmin) && (
         <Card>
           <CardHeader title="Membros" />
           {members.isLoading ? (
@@ -175,6 +184,7 @@ export default function Team() {
             </ul>
           )}
         </Card>
+        )}
       </div>
       <Modal
         open={Boolean(renaming)}
