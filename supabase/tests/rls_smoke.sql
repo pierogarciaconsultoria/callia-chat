@@ -57,6 +57,26 @@ insert into public.workspace_business_info (workspace_id, legal_name, pix_key_ty
   values (current_setting('test.ws_a')::uuid, 'Pousada Alfa Ltda', 'cnpj', '00.000.000/0001-00', true);
 
 -- Bia (owner B) não enxerga nada de A, nem pela busca.
+-- Ana (owner de A) salva a tela do agente: o painel manda todas as colunas editáveis de uma vez, então basta uma
+-- coluna nova sem GRANT para o salvamento inteiro falhar (aconteceu com auto_return_minutes).
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}', true);
+do $$
+declare faltando text;
+begin
+  update public.agent_configs set persona_prompt = 'Sou a Ana', auto_return_minutes = 45, emoji_policy = 'none'
+    where workspace_id = current_setting('test.ws_a')::uuid;
+  assert (select auto_return_minutes from public.agent_configs where workspace_id = current_setting('test.ws_a')::uuid) = 45,
+    'owner deveria salvar a config do agente';
+  select string_agg(column_name, ', ' order by column_name) into faltando
+    from information_schema.columns c
+    where c.table_schema = 'public' and c.table_name = 'agent_configs'
+      and c.column_name not in ('workspace_id', 'updated_at')
+      and not exists (select 1 from information_schema.column_privileges p
+                      where p.table_schema = 'public' and p.table_name = 'agent_configs'
+                        and p.column_name = c.column_name and p.grantee = 'authenticated' and p.privilege_type = 'UPDATE');
+  assert faltando is null, 'colunas de agent_configs sem GRANT UPDATE para o painel: ' || faltando;
+end $$;
+
 select set_config('request.jwt.claims', '{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}', true);
 do $$
 begin
