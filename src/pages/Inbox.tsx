@@ -31,6 +31,7 @@ import { PhotoPickerDialog } from "@/components/inbox/PhotoPickerDialog";
 import { QuickReplyPicker } from "@/components/inbox/QuickReplyPicker";
 import { QuickReplyModal } from "@/components/QuickRepliesCard";
 import { TransferDialog } from "@/components/inbox/TransferDialog";
+import { VoiceRecorder } from "@/components/inbox/VoiceRecorder";
 import { departmentName, useDepartments } from "@/hooks/use-departments";
 import { useQuickReplies } from "@/hooks/use-quick-replies";
 import { renderQuickReply, slashQuery } from "@/lib/quick-replies";
@@ -273,6 +274,10 @@ function Thread({
   const [text, setText] = useState("");
   const [attachment, setAttachment] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  /** Gravando voz pelo microfone: a barra de gravação toma o lugar do campo de texto. */
+  const [recording, setRecording] = useState(false);
+  /** Pré-escuta do áudio anexado (gravado ou escolhido no clipe). */
+  const [attachmentUrl, setAttachmentUrl] = useState<string | null>(null);
   const [forwardOf, setForwardOf] = useState<Message | null>(null);
   const [photosOpen, setPhotosOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
@@ -287,6 +292,17 @@ function Thread({
   const textRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const external = isExternal(conversation);
+  useEffect(() => {
+    if (!attachment || !attachment.type.startsWith("audio/") || typeof URL.createObjectURL !== "function") {
+      setAttachmentUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(attachment);
+    setAttachmentUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [attachment]);
+  // Trocar de conversa no meio de uma gravação descarta a gravação.
+  useEffect(() => setRecording(false), [conversation.id]);
   const members = useMembers(workspaceId);
   const claim = useClaimConversation(workspaceId);
   const assignments = useContactAssignments(workspaceId);
@@ -495,11 +511,21 @@ function Thread({
             )}
             {(attachment || quickMedia) && (
               <div className="mb-2 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800">
-                <Paperclip className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                <span className="min-w-0 flex-1 truncate">{attachment?.name ?? quickMedia?.fileName}</span>
+                {attachmentUrl ? <Mic className="h-3.5 w-3.5 shrink-0 text-slate-400" /> : <Paperclip className="h-3.5 w-3.5 shrink-0 text-slate-400" />}
+                {attachmentUrl ? (
+                  <audio controls src={attachmentUrl} aria-label="Ouvir o áudio antes de enviar" className="h-8 min-w-0 flex-1" />
+                ) : (
+                  <span className="min-w-0 flex-1 truncate">{attachment?.name ?? quickMedia?.fileName}</span>
+                )}
                 <button type="button" className="underline" onClick={() => { pickFile(null); setQuickMedia(null); }}>Remover</button>
               </div>
             )}
+            {recording ? (
+              <VoiceRecorder
+                onRecorded={(file) => { setRecording(false); pickFile(file); textRef.current?.focus(); }}
+                onCancel={() => { setRecording(false); textRef.current?.focus(); }}
+              />
+            ) : (
             <div className="flex items-end gap-2">
             <input ref={fileRef} type="file" className="hidden" aria-label="Anexar arquivo" onChange={(e) => pickFile(e.target.files?.[0] ?? null)} accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip" />
             <Button type="button" variant="ghost" onClick={() => fileRef.current?.click()} aria-label="Anexar" title="Anexar arquivo (até 20 MB)">
@@ -510,6 +536,9 @@ function Thread({
             </Button>
             <Button type="button" variant="ghost" onClick={() => setQuickOpen((v) => !v)} aria-label="Respostas rápidas" title="Respostas rápidas (ou digite /)">
               <Zap className="h-4 w-4" />
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => { setQuickOpen(false); setRecording(true); }} aria-label="Gravar áudio" title="Gravar mensagem de voz (até 5 min)">
+              <Mic className="h-4 w-4" />
             </Button>
             <textarea
               ref={textRef}
@@ -527,7 +556,7 @@ function Thread({
                 }
               }}
               rows={1}
-              placeholder={attachment || quickMedia ? "Legenda (opcional)…" : conversation.mode === "bot" ? "Responder (assume a conversa do bot)…" : "Escreva uma mensagem… (/ para respostas rápidas)"}
+              placeholder={attachmentUrl ? "Texto junto com o áudio (opcional)…" : attachment || quickMedia ? "Legenda (opcional)…" : conversation.mode === "bot" ? "Responder (assume a conversa do bot)…" : "Escreva uma mensagem… (/ para respostas rápidas)"}
               className="max-h-40 min-h-[2.5rem] min-w-0 flex-1 resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/30 dark:border-slate-700 dark:bg-slate-900"
             />
             <Button type="submit" loading={send.isPending || uploading} disabled={!text.trim() && !attachment && !quickMedia} aria-label="Enviar">
@@ -535,6 +564,7 @@ function Thread({
               <span className="hidden sm:inline">Enviar</span>
             </Button>
             </div>
+            )}
             {newQuickOpen && (
               <QuickReplyModal workspaceId={workspaceId} reply={null} existing={quickReplies.data ?? []} initialContent={text} onClose={() => { setNewQuickOpen(false); textRef.current?.focus(); }} />
             )}
