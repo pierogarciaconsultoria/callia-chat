@@ -170,8 +170,11 @@ export default function Landing() {
               </Link>
             ) : (
               <>
-                <Link to="/entrar" className="inline-flex h-10 items-center rounded-lg px-3 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800">Entrar</Link>
-                <Cta site={site} className="hidden sm:inline-flex" />
+                {/* Quando a chamada principal já é "Entrar" (sem autoatendimento nem contato), o link de texto seria repetido. */}
+                {(site.self_service || site.support_email) && (
+                  <Link to="/entrar" className="inline-flex h-10 items-center rounded-lg px-3 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800">Entrar</Link>
+                )}
+                <Cta site={site} className={site.self_service || site.support_email ? "hidden sm:inline-flex" : undefined} />
               </>
             )}
           </div>

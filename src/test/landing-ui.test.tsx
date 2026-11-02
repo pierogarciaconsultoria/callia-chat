@@ -56,6 +56,17 @@ describe("landing comercial", () => {
     expect(screen.getByRole("link", { name: /Ir para o painel/ }).getAttribute("href")).toBe("/dashboard");
   });
 
+  it("sem autoatendimento nem e-mail: um único Entrar colorido no cabeçalho, mais o do rodapé", () => {
+    site.data = { ...site.data, self_service: false, support_email: null };
+    show();
+    const header = screen.getByRole("banner");
+    const entrar = Array.from(header.querySelectorAll('a[href="/entrar"]'));
+    expect(entrar).toHaveLength(1);
+    expect(entrar[0].className).toContain("bg-brand-accent");
+    expect(entrar[0].className).not.toContain("hidden");
+    expect(screen.getAllByRole("link", { name: /Entrar/ }).length).toBeGreaterThanOrEqual(2);
+  });
+
   it("perguntas frequentes e segmentos aparecem", () => {
     show();
     expect(screen.getByText("Preciso trocar de número ou de chip?")).toBeTruthy();
