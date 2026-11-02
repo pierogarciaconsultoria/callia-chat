@@ -17,6 +17,7 @@ vi.mock("@/lib/workspace", () => ({
 vi.mock("@/components/PlanBanner", () => ({ PlanBanner: () => null }));
 vi.mock("@/components/onboarding/Journey", () => ({ JourneyBar: () => null }));
 vi.mock("@/components/LearningsBadge", () => ({ PendingLearningsBadge: () => null }));
+vi.mock("@/components/InboxUnreadBadge", () => ({ InboxUnreadBadge: () => null }));
 
 import { AppLayout } from "@/components/AppLayout";
 

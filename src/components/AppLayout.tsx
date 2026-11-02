@@ -10,6 +10,7 @@ import { PlanBanner } from "./PlanBanner";
 import { JourneyBar } from "./onboarding/Journey";
 import { AssistantDrawer } from "./assistant/AssistantDrawer";
 import { PendingLearningsBadge } from "./LearningsBadge";
+import { InboxUnreadBadge } from "./InboxUnreadBadge";
 import { CalliaIcon } from "./Logo";
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -136,6 +137,7 @@ export function AppLayout() {
             <NavLink key={item.to} to={item.to} onClick={() => setOpen(false)} className={railLink(rail)} title={rail ? item.label : undefined}>
               <item.icon className="h-4 w-4 shrink-0" />
               <span className={cn(rail && "sr-only")}>{item.label}</span>
+              {item.to === "/inbox" && !rail && workspace && <InboxUnreadBadge workspaceId={workspace.id} />}
               {item.to === "/agent" && !rail && workspace && <PendingLearningsBadge workspaceId={workspace.id} />}
             </NavLink>
           ))}
