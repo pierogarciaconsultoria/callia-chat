@@ -15,6 +15,7 @@ import { type InstanceRow, sendOutbound } from "../_shared/channel.ts";
 import { looksLikePaymentProof, mediaNote, unintelligibleTranscript } from "../_shared/inbox-media.ts";
 import { adminDb, type Db, isInternalCall, optionalEnv, requireUser, requireWorkspaceRole } from "../_shared/supabase.ts";
 import { emitEvent } from "../_shared/webhooks.ts";
+import { MEMORY_LOAD_LIMIT, type MemoryMessage, planMemory, summarizeHistory, teamContext, toHistoryItem } from "../_shared/conversation-memory.ts";
 import { assertActive, hasFeature, loadEntitlements, monthlyMessagesLeft } from "../_shared/entitlements.ts";
 
 Deno.serve(createHandler("process-message", async ({ req, correlationId, log }) => {
@@ -36,6 +37,8 @@ interface ConversationRow {
   contact_phone: string;
   contact_name: string | null;
   mode: "bot" | "human" | "closed";
+  ai_summary: string | null;
+  ai_summary_through_seq: number | null;
 }
 
 async function processMessage(db: Db, messageId: string, correlationId: string, log: Logger) {
@@ -51,7 +54,7 @@ async function processMessage(db: Db, messageId: string, correlationId: string, 
   const loadConversation = async () =>
     (await db
       .from("conversations")
-      .select("id, workspace_id, instance_id, channel, contact_phone, contact_name, mode")
+      .select("id, workspace_id, instance_id, channel, contact_phone, contact_name, mode, ai_summary, ai_summary_through_seq")
       .eq("id", msg.conversation_id)
       .single()).data as ConversationRow;
   let conversation = await loadConversation();
@@ -114,29 +117,64 @@ async function processMessage(db: Db, messageId: string, correlationId: string, 
       : { data: null };
 
     const ai = hasFeature(entitlements, "ai_enabled") ? aiFromEnv() : null;
+    // Memória: tudo depois do que já virou resumo (ordem de chegada, seq, não created_at: o carimbo do WhatsApp tem
+    // precisão de segundo e uma mensagem do cliente podia "ficar antes" da nossa resposta anterior e sair das pendentes).
     const { data: recent } = await db
       .from("messages")
-      .select("id, direction, sender, type, content, media_mime, metadata, created_at")
+      .select("id, seq, direction, sender, type, content, media_mime, metadata, created_at, agent_user_id")
       .eq("conversation_id", conversation.id)
-      // Ordem de chegada (seq), não created_at: o carimbo do WhatsApp tem precisão de segundo e uma mensagem
-      // do cliente podia "ficar antes" da nossa resposta anterior e sair das pendentes.
+      .gt("seq", conversation.ai_summary_through_seq ?? 0)
       .order("seq", { ascending: false })
-      .limit(20);
-    const chronological = (recent ?? []).reverse();
+      .limit(MEMORY_LOAD_LIMIT);
+    const loaded = ((recent ?? []) as Array<MemoryMessage & { id: string; media_mime: string | null }>).reverse();
+    if (loaded.length >= MEMORY_LOAD_LIMIT) log.warn("memory_window_overflow", { conversation_id: conversation.id, loaded: loaded.length });
+    const names = new Map<string, string | null>();
+    const nameOf = async (userId: string | null | undefined): Promise<string | null> => {
+      if (!userId) return null;
+      if (!names.has(userId)) {
+        const { data } = await db.rpc("user_label", { p_user_id: userId });
+        names.set(userId, typeof data === "string" && data.trim() ? data.trim() : null);
+      }
+      return names.get(userId) ?? null;
+    };
 
+    // Conversa longa: as mensagens além da janela viram resumo (incorporando o anterior) e saem do histórico.
+    let summary = conversation.ai_summary;
+    let chronological = loaded;
+    const plan = planMemory(loaded);
+    if (plan.toSummarize.length && ai) {
+      try {
+        const items = await Promise.all(plan.toSummarize.map(async (m) => ({ ...m, text: textForHistory(m), agentName: m.sender === "agent" ? await nameOf(m.agent_user_id) : null })));
+        summary = await summarizeHistory(ai, { previous: summary, items, timeZone: config.timezone, model: config.ai_model });
+        const through = plan.toSummarize[plan.toSummarize.length - 1].seq;
+        await db.from("conversations").update({ ai_summary: summary, ai_summary_through_seq: through }).eq("id", conversation.id);
+        chronological = plan.window;
+        log.info("memory_summarized", { conversation_id: conversation.id, through_seq: through, summarized: plan.toSummarize.length });
+      } catch (err) {
+        log.warn("memory_summary_failed", { conversation_id: conversation.id, error: String(err) });
+      }
+    }
+
+    // Mensagens de sistema (devolvida ao bot, transferida) não contam como resposta ao cliente nem entram no histórico
+    // que a IA lê: viram a seção "participação da equipe" do prompt.
+    const spoken = chronological.filter((m) => m.sender !== "system");
     // Mensagens do cliente desde a última resposta (nossa ou da equipe).
-    const lastOutboundIdx = chronological.map((m: { direction: string }) => m.direction).lastIndexOf("outbound");
-    const pending = chronological.slice(lastOutboundIdx + 1).filter((m: { sender: string }) => m.sender === "customer");
+    const lastOutboundIdx = spoken.map((m) => m.direction).lastIndexOf("outbound");
+    const pending = spoken.slice(lastOutboundIdx + 1).filter((m) => m.sender === "customer");
     const history: HistoryItem[] = [];
     let paymentProof = false;
     let unintelligibleAudio = pending.length > 0;
-    for (const m of chronological) {
-      const isPending = pending.some((p: { id: string }) => p.id === m.id);
+    for (const m of spoken) {
+      const isPending = pending.some((p) => p.id === m.id);
       const text = isPending ? await preprocessMedia(db, ai, instance as InstanceRow | null, m, config.language) : textForHistory(m);
       if (isPending && (m.type === "image" || m.type === "document") && looksLikePaymentProof(text)) paymentProof = true;
       if (isPending && (m.type !== "audio" || !unintelligibleTranscript(text))) unintelligibleAudio = false;
-      history.push({ direction: m.direction, sender: m.sender, type: m.type, content: text, created_at: m.created_at });
+      history.push(toHistoryItem(m, text, m.sender === "agent" ? await nameOf(m.agent_user_id) : null));
     }
+    const team = teamContext(
+      await Promise.all(chronological.map(async (m) => ({ ...m, text: textForHistory(m), agentName: m.sender === "agent" ? await nameOf(m.agent_user_id) : null }))),
+      config.timezone,
+    );
     const pendingText = history.slice(history.length - pending.length).map((h) => h.content).filter(Boolean).join("\n") ||
       msg.content || "";
 
@@ -150,6 +188,8 @@ async function processMessage(db: Db, messageId: string, correlationId: string, 
       products: await loadProducts(db, msg.workspace_id),
       paymentProof,
       unintelligibleAudio,
+      conversationSummary: summary,
+      teamContext: team,
     };
     const deps = await buildPipelineDeps(db, { workspaceId: msg.workspace_id, config, ai, entitlements, correlationId, log: log.info });
     const outcome = await runAgentPipeline(input, deps);

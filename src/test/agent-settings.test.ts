@@ -44,7 +44,7 @@ describe("regras do agente", () => {
       { direction: "inbound", sender: "customer", type: "image", content: null, created_at: at },
     ])).toEqual([
       { role: "user", content: "oi\ntudo bem?" },
-      { role: "assistant", content: "Olá!" },
+      { role: "assistant", content: "[Equipe, da equipe] Olá!" },
       { role: "user", content: "[imagem]" },
     ]);
     // Fotos que nós enviamos viram nota (a IA imitava "[image]" com links de imagem inventados).

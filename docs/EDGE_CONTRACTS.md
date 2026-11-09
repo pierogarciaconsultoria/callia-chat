@@ -55,6 +55,13 @@ Resposta: `{ message }` (linha atualizada). Apagar feito no celular conectado ch
 
 ## process-message
 
+Memória da conversa: a IA lê as últimas 40 mensagens (sem as de sistema) e, antes delas, `conversations.ai_summary`,
+resumo gerado pela própria IA quando há mais de 50 mensagens não resumidas (as além da janela viram resumo; `ai_summary_through_seq`
+marca até onde). Mensagens do atendente humano entram rotuladas `[Nome, da equipe]`; a seção "Participação da equipe" do
+prompt traz a última fala humana e a devolução automática, se houve. Trava `promised_handoff`: resposta que promete passar
+para a equipe sem chamar `transferir_para_atendente` vira handoff de fato (motivo em `agent_runs.reason`).
+
+
 - Chamada interna (header `x-callia-internal`): `{ message_id }` → executa o pipeline.
 - Simulador do painel (admin): `{ action: "simulate", workspace_id, messages: [{ role: "customer" | "bot", text }] }`
   → `{ reply, handoff, engine, knowledge: [{ source_title, content, score }], tool_calls: [{ name, arguments, result }] }`.

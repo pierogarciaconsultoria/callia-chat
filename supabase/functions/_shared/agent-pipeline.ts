@@ -33,6 +33,10 @@ export interface PipelineInput {
   paymentProof?: boolean;
   /** Só áudio(s) sem fala aproveitável desde a última resposta: pede para repetir, sem chamar a IA. */
   unintelligibleAudio?: boolean;
+  /** Resumo das mensagens anteriores à janela do histórico (conversas longas). */
+  conversationSummary?: string | null;
+  /** O que a equipe humana fez nesta conversa (última mensagem, devolução ao bot). */
+  teamContext?: string | null;
 }
 
 /** A IA não confere pagamento: agradece e passa para a equipe confirmar. */
@@ -104,6 +108,17 @@ const ACTION_PROMISE = /\b(vou|irei|deixa eu|deixe-me|vou te|vou já|já vou)\b[
 
 export function promisesAction(text: string): boolean {
   return ACTION_PROMISE.test(text);
+}
+
+const HANDOFF_PROMISE = new RegExp([
+  String.raw`\b(vou|irei|j[áa]|deixa que eu)\s+(te\s+)?(passar|encaminhar|repassar|acionar|chamar|transferir|avisar)\b[^.!?\n]{0,40}\b(equipe|atendente|respons[áa]vel|pessoal|time|humano|algu[ée]m|recep[çc][ãa]o)`,
+  String.raw`\b(a|nossa|o|nosso)\s+(equipe|atendente|respons[áa]vel|pessoal|time|recep[çc][ãa]o)\s+(vai|ir[áa]|j[áa] vai)\s+(te\s+)?(enviar|mandar|passar|confirmar|retornar|responder|entrar em contato|falar|continuar|assumir|atender)`,
+  String.raw`\b(j[áa]\s+)?(passei|encaminhei|repassei|acionei|chamei|transferi)\b[^.!?\n]{0,30}\b(equipe|atendente|respons[áa]vel|pessoal|time)`,
+].join("|"), "i");
+
+/** A IA disse que ia passar para a equipe ("vou passar para a equipe", "a equipe vai te enviar o PIX"). */
+export function promisesHandoff(text: string): boolean {
+  return HANDOFF_PROMISE.test(text);
 }
 
 /** Resultado como a IA vê: sem a contagem de unidades livres (dado interno que ela repetia ao hóspede). */
@@ -404,6 +419,8 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
         hasPriceTable: Boolean(deps.priceTable),
         priceTableText: deps.priceTable?.summary ?? null,
         paymentInfo: deps.paymentInfo ?? null,
+        conversationSummary: input.conversationSummary ?? null,
+        teamContext: input.teamContext ?? null,
       }),
     },
     ...historyToChat(input.history),
@@ -544,6 +561,10 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
           messages.push({ role: "assistant", content: text });
           messages.push({ role: "user", content: "(instrução interna) Você disse que enviaria fotos, mas não chamou a ferramenta. Chame enviar_fotos agora para o(s) álbum(ns) citado(s)." });
           continue;
+        }
+        // Trava: prometeu a equipe sem chamar a ferramenta de transferência → transfere de fato, com o mesmo texto.
+        if (text && promisesHandoff(text)) {
+          return { ...outcome, action: "handoff", handoffReason: "promised_handoff", reply: finalize(text) };
         }
         return text ? { ...outcome, reply: finalize(text) } : fallback();
       }

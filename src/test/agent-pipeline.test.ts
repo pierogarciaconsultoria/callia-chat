@@ -124,6 +124,25 @@ describe("pipeline do agente", () => {
     expect(sent.at(-1)).toEqual({ role: "user", content: "que horas é o café?" });
   });
 
+  it("IA que promete a equipe sem chamar a ferramenta transfere de fato, mantendo o texto", async () => {
+    const text = "Vou passar para a equipe, que vai te enviar os dados do PIX e confirmar a reserva.";
+    const ai = fakeAi([{ content: text }]);
+    const out = await runAgentPipeline(input("Vc pode me passar o pix?"), deps({ ai }));
+    expect(out.action).toBe("handoff");
+    expect(out.handoffReason).toBe("promised_handoff");
+    expect(out.reply).toContain("Vou passar para a equipe");
+  });
+
+  it("resumo e participação da equipe entram no prompt de sistema", async () => {
+    const ai = fakeAi([{ content: "Claro! O que a equipe combinou vale." }]);
+    await runAgentPipeline({ ...input("E o parcelamento?"), conversationSummary: "- Cliente quer 27/12 a 02/01, 2 adultos", teamContext: "- A equipe participou desta conversa." }, deps({ ai }));
+    const system = (ai.calls[0] as { messages: Array<{ role: string; content: string }> }).messages[0].content;
+    expect(system).toContain("# Resumo do que já foi conversado");
+    expect(system).toContain("27/12 a 02/01");
+    expect(system).toContain("# Participação da equipe nesta conversa");
+    expect(system).toContain("[Nome, da equipe]");
+  });
+
   it("IA pode transferir via ferramenta", async () => {
     const ai = fakeAi([{ toolCalls: [{ id: "t1", type: "function", function: { name: "transferir_para_atendente", arguments: '{"motivo":"reclamação"}' } }] }]);
     const out = await runAgentPipeline(input("meu quarto estava sujo"), deps({ ai }));

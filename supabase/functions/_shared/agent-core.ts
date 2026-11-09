@@ -64,6 +64,8 @@ export interface HistoryItem {
   type: string;
   content: string | null;
   created_at: string;
+  /** Nome de exibição do atendente humano (sender = agent); null = sem nome conhecido. */
+  agentName?: string | null;
 }
 
 export function normalizeText(value: string): string {
@@ -174,6 +176,8 @@ export const BASE_GUARDRAILS = [
   // Tom humano: o que fazia as respostas soarem como call center.
   "Fale como uma pessoa da equipe, não como um sistema: sem fórmulas de atendimento (\"Como posso ajudar você hoje?\", \"Obrigada pelas informações\", \"Você pode me informar, por favor?\", \"Se precisar de mais informações, estou à disposição\"). Saudação simples: \"Bom dia! Em que posso ajudar?\". Nunca ofereça um menu de assuntos.",
   "Quando o cliente já perguntou algo, responda à pergunta; não cumprimente em separado nem repita o que ele disse.",
+  "Responda primeiro ao que o cliente perguntou nesta mensagem. Só calcule valores ou consulte disponibilidade quando ele pedir valores, vaga ou reserva para datas; pergunta sobre pagamento, parcelamento, estrutura ou regras se responde com o contexto, sem ferramenta de cálculo.",
+  "Mensagens marcadas com [Nome, da equipe] foram escritas por uma pessoa da equipe, não por você. O que a equipe combinou com o cliente (valores, condições, prazos) vale: não recalcule, não contradiga e não reabra a negociação. Se o cliente retomar um assunto que estava sendo tratado pela equipe (negociação, pagamento combinado, pedido em andamento), transfira para a equipe em vez de responder por ela.",
   "Use o nome do cliente no máximo uma vez na conversa. Não explique por que está perguntando.",
   "Ao pedir um dado, reaja em poucas palavras e pergunte: \"Perfeito, 30/12 a 04/01. Tem criança entre vocês?\". Se faltarem dois dados simples, pergunte os dois na mesma mensagem.",
   "Feche com uma pergunta natural ligada ao assunto, não com frase de encerramento genérica.",
@@ -198,6 +202,10 @@ export interface PromptContext {
   hasPriceTable?: boolean;
   /** Texto gerado da tabela de preços (períodos, fechamentos, capacidade, diárias). */
   priceTableText?: string | null;
+  /** Resumo das mensagens anteriores à janela do histórico (conversas longas). */
+  conversationSummary?: string | null;
+  /** O que a equipe humana fez nesta conversa (última mensagem, devolução ao bot). */
+  teamContext?: string | null;
   /** Dados de pagamento da empresa (só quando o dono habilitou o compartilhamento). */
   paymentInfo?: PaymentInfo | null;
 }
@@ -260,6 +268,10 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   if (config.website_url) facts.push(`Site: ${config.website_url}`);
   if (ctx.contactName) facts.push(`Nome do cliente (pelo WhatsApp): ${ctx.contactName}.`);
   sections.push(`# Informações do atendimento\n${facts.map((f) => `- ${f}`).join("\n")}`);
+  if (ctx.conversationSummary?.trim()) {
+    sections.push(`# Resumo do que já foi conversado (mensagens anteriores às do histórico)\n${ctx.conversationSummary.trim()}`);
+  }
+  if (ctx.teamContext?.trim()) sections.push(`# Participação da equipe nesta conversa\n${ctx.teamContext.trim()}`);
 
   if (config.payment_links.length) {
     sections.push(
@@ -393,7 +405,8 @@ export function buildSystemPrompt(ctx: PromptContext): string {
   return sections.join("\n\n");
 }
 
-/** Histórico em formato de chat; mensagens do atendente humano entram como assistant. */
+/** Histórico em formato de chat; mensagens do atendente humano entram como assistant, marcadas com o nome; as de
+ * sistema (devolvida ao bot, transferida) ficam de fora: viram contexto na seção da equipe. */
 const MEDIA_LABEL: Record<string, string> = { image: "imagem", audio: "áudio", video: "vídeo", document: "documento", sticker: "figurinha" };
 
 /** Mídia sem texto no histórico. A foto que nós enviamos fica como nota, para a IA não imitar com links inventados. */
@@ -402,11 +415,12 @@ function mediaPlaceholder(item: HistoryItem): string {
   return `[${MEDIA_LABEL[item.type] ?? item.type}]`;
 }
 
-export function historyToChat(history: HistoryItem[], maxItems = 20): Array<{ role: "user" | "assistant"; content: string }> {
+export function historyToChat(history: HistoryItem[], maxItems = 40): Array<{ role: "user" | "assistant"; content: string }> {
   const out: Array<{ role: "user" | "assistant"; content: string }> = [];
-  for (const item of history.slice(-maxItems)) {
-    const text = item.content?.trim() || (item.type !== "text" ? mediaPlaceholder(item) : "");
+  for (const item of history.filter((h) => h.sender !== "system").slice(-maxItems)) {
+    let text = item.content?.trim() || (item.type !== "text" ? mediaPlaceholder(item) : "");
     if (!text) continue;
+    if (item.sender === "agent") text = `[${item.agentName?.trim() || "Equipe"}, da equipe] ${text}`;
     const role = item.direction === "inbound" ? "user" : "assistant";
     const last = out[out.length - 1];
     // Mensagens seguidas do mesmo lado viram uma só (clientes mandam várias curtas).

@@ -111,6 +111,9 @@ WhatsApp ─► Evolution API ─► whatsapp-webhook ─► record_message (con
                                    └─► sendOutbound ─► Evolution ─► cliente  (+ webhook message.sent)
 ```
 
+Memória da IA: últimas 40 mensagens na íntegra, resumo automático do que ficou antes em conversas longas, mensagens da
+equipe rotuladas com o nome do atendente (o que a equipe combinou vale e não é recalculado) e trava que transforma
+"vou passar para a equipe" em transferência de fato.
 O menu mostra ao lado de "Inbox" quantas conversas têm mensagens não lidas (atualiza por realtime em qualquer tela).
 A equipe assume pela inbox (ou respondendo pelo celular, o que também pausa o bot) e devolve ao bot quando quiser.
 Pela inbox também dá para anexar vários arquivos de uma vez (até 30 por envio, 20 MB cada, um por mensagem, bucket privado `inbox-media`), enviar fotos da galeria (até 30 por

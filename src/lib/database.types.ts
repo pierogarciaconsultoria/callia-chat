@@ -316,6 +316,9 @@ export interface Conversation {
   conversation_key: string;
   mode: ConversationMode;
   unread_count: number;
+  /** Memória da IA em conversas longas (resumo do que ficou antes da janela de 40 mensagens). */
+  ai_summary: string | null;
+  ai_summary_through_seq: number | null;
   last_message_at: string | null;
   last_message_preview: string | null;
   assigned_user_id: string | null;
