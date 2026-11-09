@@ -126,7 +126,8 @@ async function processMessage(db: Db, messageId: string, correlationId: string, 
       .gt("seq", conversation.ai_summary_through_seq ?? 0)
       .order("seq", { ascending: false })
       .limit(MEMORY_LOAD_LIMIT);
-    const loaded = ((recent ?? []) as Array<MemoryMessage & { id: string; media_mime: string | null }>).reverse();
+    type LoadedMessage = Omit<MemoryMessage, "metadata"> & { id: string; media_mime: string | null; metadata: Record<string, unknown> };
+    const loaded = ((recent ?? []) as LoadedMessage[]).reverse();
     if (loaded.length >= MEMORY_LOAD_LIMIT) log.warn("memory_window_overflow", { conversation_id: conversation.id, loaded: loaded.length });
     const names = new Map<string, string | null>();
     const nameOf = async (userId: string | null | undefined): Promise<string | null> => {
