@@ -116,7 +116,8 @@ A equipe assume pela inbox (ou respondendo pelo celular, o que também pausa o b
 Pela inbox também dá para anexar vários arquivos de uma vez (até 30 por envio, 20 MB cada, um por mensagem, bucket privado `inbox-media`), enviar fotos da galeria (até 30 por
 vez ou o álbum inteiro com "Marcar todas", botão ao lado do clipe), gravar mensagem de voz pelo microfone (botão de microfone, até 5 min; o arquivo entra como
 anexo para o operador ouvir antes de enviar e a Evolution o converte em nota de voz ogg/opus), encaminhar qualquer mensagem
-para outra conversa ou número, e iniciar conversa com um número que ainda não escreveu (function `send-message`).
+para outra conversa ou número, apagar para todos uma mensagem nossa no WhatsApp do cliente (até ~2 dias) ou ocultá-la da
+equipe no painel (admin, reversível; function `message-actions`), e iniciar conversa com um número que ainda não escreveu (function `send-message`).
 Respostas rápidas (tabela `quick_replies`, cadastro em Equipe → Respostas rápidas, só admin): o operador digita `/` e o atalho (`/pix`,
 `/endereco`) ou usa o botão de raio; o texto entra no campo, ainda editável, com `{nome}` e `{primeiro_nome}` do contato,
 e o anexo da resposta (foto, PDF) vai junto.

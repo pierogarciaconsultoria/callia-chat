@@ -4,27 +4,22 @@ import {
   ArrowLeft,
   ArrowRightLeft,
   Bot,
-  CheckCheck,
-  FileText,
-  Forward,
   Image as ImageIcon,
   Inbox as InboxIcon,
   Lock,
-  MapPin,
   MessageSquarePlus,
   Mic,
   Paperclip,
   Search,
   Send,
   UserRound,
-  Video,
   XCircle,
   Zap,
 } from "lucide-react";
 import { invokeFunction } from "@/lib/functions";
 import { cn } from "@/lib/cn";
 import { JourneyCard } from "@/components/onboarding/Journey";
-import { PaymentProofBadge, ReceivedMedia, receivedMediaPath } from "@/components/inbox/ReceivedMedia";
+import { MessageBubble } from "@/components/inbox/MessageBubble";
 import { ForwardDialog } from "@/components/inbox/ForwardDialog";
 import { NewConversationDialog } from "@/components/inbox/NewConversationDialog";
 import { PhotoPickerDialog } from "@/components/inbox/PhotoPickerDialog";
@@ -36,6 +31,7 @@ import { departmentName, useDepartments } from "@/hooks/use-departments";
 import { useQuickReplies } from "@/hooks/use-quick-replies";
 import { renderQuickReply, slashQuery } from "@/lib/quick-replies";
 import { addAttachments, canForward, MAX_FILES_PER_SEND, mediaTypeFor, uploadAttachment, type UploadedAttachment } from "@/lib/inbox-send";
+import { ACTION_COPY, canDeleteForEveryone, type MessageAction } from "@/lib/message-moderation";
 import { useAuth } from "@/lib/auth";
 import { useRequiredWorkspace } from "@/lib/workspace";
 import { formatPhone, formatRelativeShort, initials } from "@/lib/format";
@@ -43,6 +39,7 @@ import type { Conversation, ConversationMode, Message, QuickReply } from "@/lib/
 import {
   useConversations,
   useInboxRealtime,
+  useMessageAction,
   useMessages,
   useSendMessage,
   useUpdateConversation,
@@ -50,7 +47,7 @@ import {
 } from "@/hooks/use-inbox";
 import { useWhatsAppInstances } from "@/hooks/use-whatsapp-instances";
 import { memberLabel, normalizePhone, useClaimConversation, useContactAssignmentActions, useContactAssignments, useMembers } from "@/hooks/use-routing";
-import { Badge, Button, EmptyState, ErrorState, Notice, Spinner, useToast } from "@/components/ui";
+import { Badge, Button, EmptyState, ErrorState, Modal, Notice, Spinner, useToast } from "@/components/ui";
 
 const MODE_LABEL: Record<ConversationMode, string> = { bot: "Bot", human: "Humano", closed: "Encerrada" };
 const MODE_TONE = { bot: "brand", human: "violet", closed: "neutral" } as const;
@@ -280,6 +277,9 @@ function Thread({
   /** Pré-escuta quando o único anexo é um áudio (gravado ou escolhido no clipe). */
   const [attachmentUrl, setAttachmentUrl] = useState<string | null>(null);
   const [forwardOf, setForwardOf] = useState<Message | null>(null);
+  /** Ação de moderação aguardando confirmação (apagar para todos, ocultar, restaurar). */
+  const [pendingAction, setPendingAction] = useState<{ action: MessageAction; message: Message } | null>(null);
+  const messageAction = useMessageAction();
   const [photosOpen, setPhotosOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
   const [newQuickOpen, setNewQuickOpen] = useState(false);
@@ -493,12 +493,56 @@ function Thread({
           <ErrorState error={messages.error} onRetry={() => void messages.refetch()} />
         ) : (
           <div className="mx-auto flex max-w-3xl flex-col gap-2">
-            {messages.data?.map((m) => <Bubble key={m.id} message={m} onForward={canForward(m) ? () => setForwardOf(m) : undefined} />)}
+            {messages.data?.map((m) => (
+              <MessageBubble
+                key={m.id}
+                message={m}
+                isAdmin={isAdmin}
+                onForward={canForward(m) ? () => setForwardOf(m) : undefined}
+                onDelete={canDeleteForEveryone(m) ? () => setPendingAction({ action: "delete_for_everyone", message: m }) : undefined}
+                onHide={isAdmin && !m.hidden_at ? () => setPendingAction({ action: "hide", message: m }) : undefined}
+                onUnhide={isAdmin && m.hidden_at ? () => setPendingAction({ action: "unhide", message: m }) : undefined}
+              />
+            ))}
             <div ref={bottomRef} />
           </div>
         )}
       </div>
       <ForwardDialog workspaceId={workspaceId} message={forwardOf} onClose={() => setForwardOf(null)} />
+      {pendingAction && (
+        <Modal
+          open
+          size="sm"
+          onClose={() => !messageAction.isPending && setPendingAction(null)}
+          title={ACTION_COPY[pendingAction.action].title}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setPendingAction(null)} disabled={messageAction.isPending}>Cancelar</Button>
+              <Button
+                variant={pendingAction.action === "unhide" ? "primary" : "danger"}
+                loading={messageAction.isPending}
+                onClick={async () => {
+                  const { action, message } = pendingAction;
+                  try {
+                    await messageAction.mutateAsync({ action, messageId: message.id });
+                    toast.success(ACTION_COPY[action].success);
+                    setPendingAction(null);
+                  } catch (err) {
+                    toast.error(err);
+                  }
+                }}
+              >
+                {ACTION_COPY[pendingAction.action].confirm}
+              </Button>
+            </>
+          }
+        >
+          <p className="text-sm text-slate-600 dark:text-slate-300">{ACTION_COPY[pendingAction.action].description}</p>
+          {pendingAction.message.content && (
+            <p className="mt-2 line-clamp-3 rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">{pendingAction.message.content}</p>
+          )}
+        </Modal>
+      )}
       <PhotoPickerDialog
         workspaceId={workspaceId}
         conversationId={conversation.id}
@@ -605,95 +649,5 @@ function Thread({
         )}
       </footer>
     </>
-  );
-}
-
-const MEDIA_ICON = { image: ImageIcon, audio: Mic, video: Video, document: FileText, location: MapPin } as const;
-const MEDIA_LABEL: Record<string, string> = {
-  image: "Imagem",
-  audio: "Áudio",
-  video: "Vídeo",
-  document: "Documento",
-  sticker: "Figurinha",
-  location: "Localização",
-  contact: "Contato",
-  reaction: "Reação",
-  unknown: "Mensagem não suportada",
-};
-const SENDER_LABEL = { customer: "Cliente", bot: "Bot", agent: "Atendente", system: "Sistema" } as const;
-
-function Bubble({ message: m, onForward }: { message: Message; onForward?: () => void }) {
-  const outbound = m.direction === "outbound";
-  if (m.sender === "system") {
-    return (
-      <div className="my-1 self-center rounded-full bg-slate-200 px-3 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-        {m.content}
-      </div>
-    );
-  }
-  const transcript = typeof m.metadata?.transcript === "string" ? (m.metadata.transcript as string) : null;
-  const description = typeof m.metadata?.image_description === "string" ? (m.metadata.image_description as string) : null;
-  const Icon = MEDIA_ICON[m.type as keyof typeof MEDIA_ICON];
-  const isMedia = m.type !== "text";
-  const stored = receivedMediaPath(m) !== null;
-  const proof = m.metadata?.payment_proof === true;
-  const documentText = typeof m.metadata?.document_text === "string" ? (m.metadata.document_text as string) : null;
-
-  return (
-    <div className={cn("flex max-w-[85%] flex-col sm:max-w-[70%]", outbound ? "items-end self-end" : "items-start self-start")}>
-      <div
-        className={cn(
-          "min-w-0 max-w-full rounded-2xl px-3 py-2 text-sm shadow-sm",
-          outbound
-            ? m.sender === "bot"
-              ? "rounded-br-sm bg-brand/10 text-slate-900 dark:bg-brand/25 dark:text-slate-100"
-              : "rounded-br-sm bg-brand text-brand-fg"
-            : "rounded-bl-sm bg-white text-slate-900 dark:bg-slate-800 dark:text-slate-100",
-        )}
-      >
-        {proof && <PaymentProofBadge />}
-        {stored ? (
-          <ReceivedMedia message={m} />
-        ) : m.type === "image" && m.media_url ? (
-          <a href={m.media_url} target="_blank" rel="noreferrer" className="-mx-1 -mt-0.5 mb-1 block overflow-hidden rounded-xl">
-            <img src={m.media_url} alt={m.content ?? "Imagem"} loading="lazy" className="max-h-64 w-full max-w-xs object-cover" />
-          </a>
-        ) : (
-          isMedia && (
-            <div className="mb-1 flex items-center gap-1.5 text-xs opacity-80">
-              {Icon && <Icon className="h-3.5 w-3.5" />}
-              <span>{MEDIA_LABEL[m.type] ?? m.type}</span>
-            </div>
-          )
-        )}
-        {m.content && <p className="whitespace-pre-wrap break-words">{m.content}</p>}
-        {transcript && transcript !== m.content && (
-          <p className="mt-1 whitespace-pre-wrap break-words border-l-2 border-current/30 pl-2 text-xs italic opacity-80">
-            Transcrição: {transcript}
-          </p>
-        )}
-        {description && <p className="mt-1 break-words text-xs italic opacity-80">{m.type === "document" ? "Lido" : "Imagem"}: {description}</p>}
-        {documentText && (
-          <details className="mt-1 text-xs opacity-80">
-            <summary className="cursor-pointer">Texto lido do documento</summary>
-            <p className="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap break-words">{documentText}</p>
-          </details>
-        )}
-      </div>
-      <div className="mt-0.5 flex items-center gap-1 px-1 text-[11px] text-slate-400">
-        <span>{SENDER_LABEL[m.sender]}</span>
-        <span>·</span>
-        <span>{formatRelativeShort(m.created_at)}</span>
-        {outbound && m.status === "failed" && <span className="font-medium text-red-500">· falhou</span>}
-        {outbound && m.status === "pending" && <span>· enviando</span>}
-        {outbound && (m.status === "sent" || m.status === "delivered" || m.status === "read") && <CheckCheck className="h-3 w-3" />}
-        {m.metadata?.forwarded_from ? <span>· encaminhada</span> : null}
-        {onForward && (
-          <button type="button" onClick={onForward} className="ml-1 inline-flex items-center gap-0.5 rounded px-1 hover:bg-slate-200 hover:text-slate-600 dark:hover:bg-slate-800" aria-label="Encaminhar mensagem" title="Encaminhar">
-            <Forward className="h-3 w-3" /> encaminhar
-          </button>
-        )}
-      </div>
-    </div>
   );
 }

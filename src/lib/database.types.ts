@@ -359,6 +359,12 @@ export interface Message {
   agent_user_id: string | null;
   metadata: Record<string, unknown>;
   created_at: string;
+  /** "Apagar para todos" no WhatsApp (deleted_by nulo = feito pelo celular conectado). */
+  deleted_at: string | null;
+  deleted_by: string | null;
+  /** Oculta da inbox da equipe por um admin; o conteúdo continua no banco. */
+  hidden_at: string | null;
+  hidden_by: string | null;
 }
 
 export interface OutboundMessage {

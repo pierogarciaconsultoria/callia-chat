@@ -43,6 +43,16 @@ ligado, fica com o cliente (`contact_assignments`); conversa de outro operador n
 muda de dono (isso é o "Assumir mesmo assim" da inbox, RPC `claim_conversation`). Conversas com
 `channel != 'whatsapp'` retornam `422 channel_not_supported`. Áudio não aceita legenda: o texto vai como segunda mensagem.
 
+## message-actions (membro; `hide`/`unhide` só admin)
+
+| action | body | efeito |
+|---|---|---|
+| `delete_for_everyone` | `message_id` | "Apagar para todos" no WhatsApp do cliente (Evolution `chat/deleteMessageForEveryone`, JID da última mensagem do cliente ou `<telefone>@s.whatsapp.net`). Só mensagens `outbound` de `agent`/`bot`, entregues (`external_id`, status ≠ failed/pending), até 60 h após o envio; fora disso `422 unprocessable`. Grava `deleted_at`/`deleted_by`, auditoria `message.deleted_for_everyone`. O registro continua no banco. |
+| `hide` / `unhide` | `message_id` | Oculta da inbox da equipe (ou restaura) sem mexer no WhatsApp: `hidden_at`/`hidden_by`; auditoria `message.hidden`/`message.unhidden`. |
+
+Resposta: `{ message }` (linha atualizada). Apagar feito no celular conectado chega ao `whatsapp-webhook` como
+`protocolMessage` REVOKE e marca `deleted_at` (sem `deleted_by`), auditoria `message.deleted_from_device`.
+
 ## process-message
 
 - Chamada interna (header `x-callia-internal`): `{ message_id }` → executa o pipeline.

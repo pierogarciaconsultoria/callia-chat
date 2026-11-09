@@ -97,6 +97,9 @@ begin
   update public.conversations set mode = 'human', unread_count = 0;
   assert (select mode from public.conversations) = 'human', 'Caio deveria conseguir assumir a conversa';
   assert (select count(*) from public.api_keys) = 0 and (select count(*) from public.audit_logs) = 0, 'Caio não vê área admin';
+  -- Moderação (ocultar/apagar) só pela function message-actions: update direto em messages não pega nenhuma linha.
+  update public.messages set hidden_at = now();
+  assert (select count(*) from public.messages where hidden_at is not null) = 0, 'membro não oculta mensagem por update direto';
   assert (select count(*) from public.workspace_business_info) = 0, 'operador (agent) não vê dados bancários';
   begin
     insert into public.faqs (workspace_id, question, answer) values (current_setting('test.ws_a')::uuid, 'x', 'y');

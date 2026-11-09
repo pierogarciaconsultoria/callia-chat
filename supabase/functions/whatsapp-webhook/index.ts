@@ -68,6 +68,8 @@ Deno.serve(createHandler("whatsapp-webhook", async ({ req, url, correlationId, l
       results.push({ kind: "connection", state: ev.state });
     } else if (ev.kind === "message") {
       results.push(await handleMessage(db, instance, ev, correlationId, log));
+    } else if (ev.kind === "revoke") {
+      results.push(await handleRevoke(db, instance, ev.externalId, correlationId));
     } else {
       results.push({ kind: "ignored", reason: ev.reason });
     }
@@ -251,4 +253,23 @@ async function isOurOwnSend(db: Db, workspaceId: string, providerId: string, pho
     if (inFlight?.length) return true;
   }
   return false;
+}
+
+/** "Apagar para todos" feito no celular (ou já registrado pelo painel): marca deleted_at sem apagar o registro. */
+async function handleRevoke(db: Db, instance: Instance, externalId: string, correlationId: string): Promise<Record<string, unknown>> {
+  const { data } = await db.from("messages").select("id, conversation_id, deleted_at")
+    .eq("workspace_id", instance.workspace_id).eq("external_id", externalId).maybeSingle();
+  if (!data) return { kind: "revoke", found: false };
+  if (data.deleted_at) return { kind: "revoke", already: true };
+  await db.from("messages").update({ deleted_at: new Date().toISOString() }).eq("id", data.id);
+  await db.from("audit_logs").insert({
+    workspace_id: instance.workspace_id,
+    actor_type: "system",
+    action: "message.deleted_from_device",
+    entity: "message",
+    entity_id: data.id,
+    details: { conversation_id: data.conversation_id, external_id: externalId },
+    correlation_id: correlationId,
+  });
+  return { kind: "revoke", message_id: data.id };
 }

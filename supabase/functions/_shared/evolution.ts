@@ -42,6 +42,8 @@ export type EvolutionEvent =
     reason: number | null;
   }
   | EvolutionMessageEvent
+  /** "Apagar para todos" feito no celular conectado: a mensagem com esse id some para o cliente. */
+  | { kind: "revoke"; instanceName: string; externalId: string; fromMe: boolean }
   | { kind: "ignored"; instanceName: string; reason: string };
 
 // deno-lint-ignore no-explicit-any
@@ -135,7 +137,15 @@ function parseMessage(instanceName: string, data: Json): EvolutionEvent {
     return { kind: "ignored", instanceName, reason: "broadcast" };
   }
   const raw = data.message ?? {};
-  if (raw.protocolMessage || raw.senderKeyDistributionMessage && Object.keys(raw).length === 1) {
+  if (raw.protocolMessage) {
+    const proto = raw.protocolMessage;
+    const revoked = proto.key?.id;
+    if ((proto.type === "REVOKE" || proto.type === 0) && typeof revoked === "string" && revoked) {
+      return { kind: "revoke", instanceName, externalId: revoked, fromMe: proto.key?.fromMe === true || key.fromMe === true };
+    }
+    return { kind: "ignored", instanceName, reason: "protocol_message" };
+  }
+  if (raw.senderKeyDistributionMessage && Object.keys(raw).length === 1) {
     return { kind: "ignored", instanceName, reason: "protocol_message" };
   }
   // Contas com LID (@lid) trazem o número real em campos alternativos.
@@ -295,6 +305,11 @@ export class EvolutionClient {
 
   deleteInstance(instanceName: string) {
     return this.call("DELETE", `/instance/delete/${encodeURIComponent(instanceName)}`);
+  }
+
+  /** "Apagar para todos" de uma mensagem nossa (id do provedor + JID da conversa). O WhatsApp limita a ~2 dias. */
+  deleteMessageForEveryone(instanceName: string, msg: { id: string; remoteJid: string; fromMe: boolean; participant?: string }) {
+    return this.call("DELETE", `/chat/deleteMessageForEveryone/${encodeURIComponent(instanceName)}`, msg);
   }
 
   async sendText(instanceName: string, number: string, text: string, delayMs = 1200): Promise<SendResult> {

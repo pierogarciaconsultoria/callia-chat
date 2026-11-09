@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tansta
 import { supabase } from "@/lib/supabase";
 import { invokeFunction, unwrap } from "@/lib/functions";
 import type { Conversation, ConversationMode, Message } from "@/lib/database.types";
+import type { MessageAction } from "@/lib/message-moderation";
 
 export interface ConversationFilters {
   instanceId: string | "all";
@@ -172,6 +173,18 @@ export function useSendMessage() {
       if (res?.created || vars.toPhone || (vars.conversationId && res?.conversation_id !== vars.conversationId)) {
         void qc.invalidateQueries({ queryKey: ["conversations"] });
       }
+    },
+  });
+}
+
+/** Apagar para todos / ocultar / restaurar (function message-actions); a mensagem devolvida substitui a do cache. */
+export function useMessageAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { action: MessageAction; messageId: string }) =>
+      invokeFunction<{ message: Message }>("message-actions", { action: vars.action, message_id: vars.messageId }),
+    onSuccess: (res) => {
+      if (res?.message) upsertMessageInCache(qc, res.message);
     },
   });
 }
