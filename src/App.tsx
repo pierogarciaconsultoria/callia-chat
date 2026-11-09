@@ -5,6 +5,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { PlatformAdminRoute } from "@/components/PlatformAdminRoute";
 import { PageLoader } from "@/components/ui";
 import { Moved } from "@/components/Moved";
+import { FrameGuard } from "@/components/FrameGuard";
 
 const Landing = lazy(() => import("@/pages/Landing"));
 
@@ -35,70 +36,113 @@ const AdminUsers = lazy(() => import("@/pages/admin/Users"));
 const AdminAudit = lazy(() => import("@/pages/admin/Audit"));
 const AdminSettings = lazy(() => import("@/pages/admin/PlatformSettings"));
 
-const admin = (el: ReactElement) => <ProtectedRoute adminOnly>{el}</ProtectedRoute>;
+const admin = (el: ReactElement) => (
+  <ProtectedRoute adminOnly>{el}</ProtectedRoute>
+);
 
 export default function App() {
   return (
     <BrowserRouter>
       <Suspense fallback={<PageLoader />}>
-        <Routes>
-          {/* Público: site, acesso e cadastro. */}
-          <Route path="/" element={<Landing />} />
-          <Route path="/entrar" element={<Login />} />
-          <Route path="/cadastro" element={<Signup />} />
-          <Route path="/bem-vindo" element={<Welcome />} />
-          <Route path="/definir-senha" element={<SetPassword />} />
-          <Route path="/acompanhamento" element={<Roadmap />} />
-          <Route path="/termos" element={<Legal document="termos" />} />
-          <Route path="/privacidade" element={<Legal document="privacidade" />} />
-          <Route
-            element={
-              <ProtectedRoute>
-                <AppLayout />
-              </ProtectedRoute>
-            }
-          >
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/inbox" element={<Inbox />} />
-            <Route path="/inbox/:conversationId" element={<Inbox />} />
-            <Route path="/team" element={<Team />} />
-            <Route path="/team/distribuicao" element={admin(<Team section="distribuicao" />)} />
-            <Route path="/team/respostas" element={admin(<Team section="respostas" />)} />
-            <Route path="/agent" element={admin(<Agent />)} />
-            <Route path="/agent/setup" element={admin(<AgentSetup />)} />
-            <Route path="/agent/conhecimento" element={admin(<KnowledgeBase />)} />
-            <Route path="/agent/aprendizados" element={admin(<Learnings />)} />
-            <Route path="/integrations" element={admin(<Integrations />)} />
-            <Route path="/integrations/api" element={admin(<ApiKeys />)} />
-            <Route path="/integrations/webhooks" element={admin(<Webhooks />)} />
-            <Route path="/whatsapp" element={admin(<WhatsApp />)} />
-            {/* Endereços antigos (favoritos, links da jornada e do assistente) seguem funcionando. */}
-            <Route path="/knowledge-base" element={<Moved to="/agent/conhecimento" />} />
-            <Route path="/learnings" element={<Moved to="/agent/aprendizados" />} />
-            <Route path="/api-keys" element={<Moved to="/integrations/api" />} />
-            <Route path="/webhooks" element={<Moved to="/integrations/webhooks" />} />
-            <Route path="/logs" element={admin(<Logs />)} />
-            <Route path="/settings" element={admin(<Settings />)} />
-            <Route path="/settings/plano" element={admin(<Settings section="plano" />)} />
-            <Route path="/settings/marca" element={admin(<Settings section="marca" />)} />
-          </Route>
-          <Route
-            element={
-              <PlatformAdminRoute>
-                <AppLayout />
-              </PlatformAdminRoute>
-            }
-          >
-            <Route path="/admin" element={<AdminOverview />} />
-            <Route path="/admin/tenants" element={<AdminTenants />} />
-            <Route path="/admin/tenants/:id" element={<AdminTenantDetail />} />
-            <Route path="/admin/plans" element={<AdminPlans />} />
-            <Route path="/admin/users" element={<AdminUsers />} />
-            <Route path="/admin/audit" element={<AdminAudit />} />
-            <Route path="/admin/settings" element={<AdminSettings />} />
-          </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <FrameGuard>
+          <Routes>
+            {/* Público: site, acesso e cadastro. */}
+            <Route path="/" element={<Landing />} />
+            <Route path="/entrar" element={<Login />} />
+            <Route path="/cadastro" element={<Signup />} />
+            <Route path="/bem-vindo" element={<Welcome />} />
+            <Route path="/definir-senha" element={<SetPassword />} />
+            <Route path="/acompanhamento" element={<Roadmap />} />
+            <Route path="/termos" element={<Legal document="termos" />} />
+            <Route
+              path="/privacidade"
+              element={<Legal document="privacidade" />}
+            />
+            <Route
+              element={
+                <ProtectedRoute>
+                  <AppLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/inbox" element={<Inbox />} />
+              <Route path="/inbox/:conversationId" element={<Inbox />} />
+              <Route path="/team" element={<Team />} />
+              <Route
+                path="/team/distribuicao"
+                element={admin(<Team section="distribuicao" />)}
+              />
+              <Route
+                path="/team/respostas"
+                element={admin(<Team section="respostas" />)}
+              />
+              <Route path="/agent" element={admin(<Agent />)} />
+              <Route path="/agent/setup" element={admin(<AgentSetup />)} />
+              <Route
+                path="/agent/conhecimento"
+                element={admin(<KnowledgeBase />)}
+              />
+              <Route
+                path="/agent/aprendizados"
+                element={admin(<Learnings />)}
+              />
+              <Route path="/integrations" element={admin(<Integrations />)} />
+              <Route path="/integrations/api" element={admin(<ApiKeys />)} />
+              <Route
+                path="/integrations/webhooks"
+                element={admin(<Webhooks />)}
+              />
+              <Route path="/whatsapp" element={admin(<WhatsApp />)} />
+              {/* Endereços antigos (favoritos, links da jornada e do assistente) seguem funcionando. */}
+              <Route
+                path="/knowledge-base"
+                element={<Moved to="/agent/conhecimento" />}
+              />
+              <Route
+                path="/learnings"
+                element={<Moved to="/agent/aprendizados" />}
+              />
+              <Route
+                path="/api-keys"
+                element={<Moved to="/integrations/api" />}
+              />
+              <Route
+                path="/webhooks"
+                element={<Moved to="/integrations/webhooks" />}
+              />
+              <Route path="/logs" element={admin(<Logs />)} />
+              <Route path="/settings" element={admin(<Settings />)} />
+              <Route
+                path="/settings/plano"
+                element={admin(<Settings section="plano" />)}
+              />
+              <Route
+                path="/settings/marca"
+                element={admin(<Settings section="marca" />)}
+              />
+            </Route>
+            <Route
+              element={
+                <PlatformAdminRoute>
+                  <AppLayout />
+                </PlatformAdminRoute>
+              }
+            >
+              <Route path="/admin" element={<AdminOverview />} />
+              <Route path="/admin/tenants" element={<AdminTenants />} />
+              <Route
+                path="/admin/tenants/:id"
+                element={<AdminTenantDetail />}
+              />
+              <Route path="/admin/plans" element={<AdminPlans />} />
+              <Route path="/admin/users" element={<AdminUsers />} />
+              <Route path="/admin/audit" element={<AdminAudit />} />
+              <Route path="/admin/settings" element={<AdminSettings />} />
+            </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </FrameGuard>
       </Suspense>
     </BrowserRouter>
   );

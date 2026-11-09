@@ -84,6 +84,9 @@ Para o fluxo OAuth de ChatGPT/Claude, habilite o servidor OAuth 2.1 do Supabase 
 | Certificado | Let's Encrypt via Certbot (renovação automática) |
 
 - Redeploy: `bash scripts/deploy.sh` (ou `frontend` / `functions`).
+- Embed: o nginx envia `X-Frame-Options: SAMEORIGIN` em tudo, exceto em `location = /` (página inicial pública, para
+  apresentações e suplementos do PowerPoint). No app, `FrameGuard` impede que login e painel apareçam dentro de um
+  quadro de terceiros mesmo quando a navegação parte da página inicial embutida.
 - Migration nova: `docker exec -i callia-db psql -U postgres -v ON_ERROR_STOP=1 -1 < supabase/migrations/<arquivo>.sql`
   e depois `docker exec callia-db psql -U postgres -c "notify pgrst, 'reload schema'"`.
 - Mudou `functions.env`: `cd /opt/supabase-callia && docker compose up -d functions`.
