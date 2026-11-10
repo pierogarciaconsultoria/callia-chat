@@ -272,7 +272,9 @@ function agentTools(hasAvailability: boolean, photoAlbums: string[] = [], hasPri
       type: "function",
       function: {
         name: "calcular_valor",
-        description: "Calcula o valor exato da estadia pela tabela de preços oficial (noite a noite, por período e número de pessoas). Use sempre para informar valores.",
+        description: hasAvailability
+          ? "Calcula o valor exato da estadia pela tabela de preços oficial (noite a noite, por período e número de pessoas) e confirma no sistema do hotel quais acomodações têm vaga nas datas. Use sempre para informar valores."
+          : "Calcula o valor exato da estadia pela tabela de preços oficial (noite a noite, por período e número de pessoas). Use sempre para informar valores.",
         parameters: {
           type: "object",
           properties: {
@@ -580,6 +582,9 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
         }
         let tooSmall: string | undefined;
         if (call.function.name === "calcular_valor" || call.function.name === "consultar_disponibilidade") ({ args, note: tooSmall } = fitArgs(args));
+        // Com o sistema de reservas conectado, valor com datas sempre passa pela vaga: a tabela sozinha listava
+        // acomodações lotadas como se estivessem livres (Laura, 28/12 a 02/01).
+        const toolName = call.function.name === "calcular_valor" && deps.checkAvailability && deps.priceTable ? "consultar_disponibilidade" : call.function.name;
         let toolResult: unknown;
         if (call.function.name === "transferir_para_atendente") {
           outcome.toolCalls.push({ name: call.function.name, arguments: args, result: "ok" });
@@ -594,7 +599,7 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
             pergunte_criancas: true,
             instrucao: "Antes de passar valores, pergunte com simpatia se entre as pessoas há alguma criança e, se houver, a idade de cada uma (a tarifa e a acomodação dependem disso). Não informe valores nem envie link nesta resposta.",
           };
-        } else if (call.function.name === "calcular_valor" && deps.priceTable) {
+        } else if (toolName === "calcular_valor" && deps.priceTable) {
           toolResult = stripPmsIds(sized(args, quoteFrom(args)));
         } else if (call.function.name === "enviar_fotos" && deps.photos) {
           const names = deps.photos.albums.map((a) => a.name);
@@ -610,7 +615,7 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
             const sent = await sendAlbum(album, Math.max(1, Math.trunc(Number(args.quantidade ?? 4)) || 4));
             toolResult = sent ? { enviadas: sent, album } : { erro: "álbum sem fotos", album };
           }
-        } else if (call.function.name === "consultar_disponibilidade" && deps.checkAvailability) {
+        } else if (toolName === "consultar_disponibilidade" && deps.checkAvailability) {
           // Com tabela de preços: fechamento primeiro, vaga pelo PMS (categorias vinculadas) e preço pela tabela.
           const table = deps.priceTable ? quoteFrom(args) as { fechado?: boolean; sem_tarifa?: boolean; erro?: string; noites?: number; estadia_minima?: number; atende_estadia_minima?: boolean; opcoes?: Array<{ pms_category_ids?: number[] }> } : null;
           const categoryIds = [...new Set((table?.opcoes ?? []).flatMap((o) => o.pms_category_ids ?? []))];
@@ -648,7 +653,7 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
           toolResult = { erro: "ferramenta desconhecida" };
         }
         if (tooSmall && toolResult && typeof toolResult === "object") toolResult = { acomodacao_pedida_nao_comporta: tooSmall, ...toolResult };
-        outcome.toolCalls.push({ name: call.function.name, arguments: args, result: toolResult });
+        outcome.toolCalls.push({ name: toolName, arguments: args, result: toolResult });
         messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(forAi(toolResult)).slice(0, 6000) });
       }
       if (promisedReply) {

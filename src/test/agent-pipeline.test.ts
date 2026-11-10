@@ -303,6 +303,32 @@ describe("pipeline do agente", () => {
     expect(first.messages[0].content).toContain("Valor da tabela NÃO confirma disponibilidade");
   });
 
+  it("com motor conectado, calcular_valor também confirma a vaga: acomodação lotada sai da lista", async () => {
+    const quote = vi.fn(() => ({
+      checkin: "28/12/2026", checkout: "02/01/2027", noites: 5, hospedes: 2, atende_estadia_minima: true,
+      opcoes: [
+        { acomodacao: "Kitnet", total: 2750, total_formatado: "R$ 2.750,00", pms_category_ids: [276] },
+        { acomodacao: "Apartamentos 205 e 206", total: 5000, total_formatado: "R$ 5.000,00", pms_category_ids: [275] },
+      ],
+    }));
+    const checkAvailability = vi.fn(async () => ({
+      checkin: "28/12/2026", checkout: "02/01/2027", nights: 5, adults: 2, children: 0, currency: "BRL", sold_out: false,
+      rooms: [{ name: "Casal + 2", category_id: 275, rate: null, total_price: 4000, price_per_night: 800, available_units: 1 }],
+      booking_link: "https://hbook.example/x",
+    }));
+    const ai = fakeAi([
+      { toolCalls: [{ id: "t1", type: "function", function: { name: "calcular_valor", arguments: '{"checkin":"28/12/2026","checkout":"02/01/2027","adultos":2,"idades_criancas":[]}' } }] },
+      { content: "Para o casal, temos o Apartamento 205 e 206 por R$ 5.000,00." },
+    ]);
+    const out = await runAgentPipeline(input("Dois adultos, sem crianças"), deps({ ai, checkAvailability, priceTable: { quote } }));
+    expect(checkAvailability).toHaveBeenCalledWith(expect.objectContaining({ checkin: "28/12/2026", checkout: "02/01/2027", adults: 2, categoryIds: [276, 275] }));
+    expect(out.toolCalls[0].name).toBe("consultar_disponibilidade");
+    expect(out.toolCalls[0].result).toMatchObject({ disponibilidade_confirmada: true, sem_vaga: ["Kitnet"], opcoes: [expect.objectContaining({ acomodacao: "Apartamentos 205 e 206", unidades_disponiveis: 1 })] });
+    expect(out.reply).toBe("Para o casal, temos o Apartamento 205 e 206 por R$ 5.000,00.");
+    const tools = (ai.calls[0] as { tools: Array<{ function: { name: string; description: string } }> }).tools;
+    expect(tools.find((t) => t.function.name === "calcular_valor")?.function.description).toContain("confirma no sistema do hotel");
+  });
+
   it("trava: 'vou consultar, um momento' sem ferramenta → Callia obriga a consultar antes de responder", async () => {
     const quote = vi.fn(() => ({ opcoes: [{ acomodacao: "Apartamentos 205 e 206", total: 8500, total_formatado: "R$ 8.500,00" }] }));
     const ai = fakeAi([

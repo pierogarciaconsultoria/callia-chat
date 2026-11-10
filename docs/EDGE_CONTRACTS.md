@@ -341,6 +341,10 @@ Quando `share_payment_info` e `deposit_percent` estão definidos, cada opção d
 | `price_table_save` | `workspace_id`, `name`, `currency?`, `data` | `{ price_table }` — valida e substitui a tabela ativa; `400` com `error.details.issues[{path,message}]` se inválida (admin) |
 | `price_quote` | `workspace_id`, `checkin`, `checkout` (DD/MM/AAAA), `adults`, `children_ages?` | `{ quote }` — mesmo cálculo do agente (membro) |
 
+No agente, `calcular_valor` cota pela tabela; com um conector de reservas ativo (Hospedin/hbook) a chamada é tratada como
+`consultar_disponibilidade`: preço da tabela, vaga do PMS pelas categorias vinculadas (`pms_category_ids`), acomodações
+lotadas vão para `sem_vaga` e a resposta nunca lista valor sem a vaga confirmada.
+
 `data` (ver `supabase/functions/_shared/pricing.ts`, `priceTableSchema`):
 ```ts
 { default_period: string /* id do período usado fora dos intervalos */,
