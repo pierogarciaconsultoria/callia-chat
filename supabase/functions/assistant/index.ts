@@ -5,7 +5,7 @@ import { aiFromEnv, loadAgentConfig, loadBusinessName } from "../_shared/agent-r
 import { assertActive, assertFeature, loadEntitlements } from "../_shared/entitlements.ts";
 import type { ChatMessage } from "../_shared/ai.ts";
 import { priceTableSchema } from "../_shared/pricing.ts";
-import { applyHours, applyPriceOps, ASSISTANT_TOOLS, AssistantError, buildAssistantPrompt, type Hours, type PriceOp, SCREENS } from "../_shared/assistant.ts";
+import { applyHours, applyPriceOps, ASSISTANT_TOOLS, AssistantError, buildAssistantPrompt, CALENDAR_REDIRECT, type Hours, looksLikeCalendar, type PriceOp, SCREENS } from "../_shared/assistant.ts";
 
 const MAX_ROUNDS = 4;
 const MAX_HISTORY = 20;
@@ -129,6 +129,8 @@ Deno.serve(createHandler("assistant", async ({ req, correlationId, log }) => {
           const dias = (Array.isArray(args.dias) ? args.dias : []) as Array<{ days: string[]; ranges: Array<[string, string]> }>;
           const { hours, changes } = applyHours((facts.config.business_hours ?? {}) as Hours, dias);
           const msg = args.mensagem_fora_do_horario;
+          // "Iremos atender de 19 a 22/11" não é mensagem fora do horário: é calendário (tabela de preços).
+          if (typeof msg === "string" && looksLikeCalendar(msg) && args.confirmar_mensagem !== true) throw new AssistantError(CALENDAR_REDIRECT);
           if (typeof msg === "string" && msg.trim() !== (facts.config.out_of_hours_message ?? "").trim()) changes.push(`Mensagem fora do horário: "${facts.config.out_of_hours_message ?? ""}" → "${msg.trim()}"`);
           if (!changes.length) throw new AssistantError("Nada mudaria em relação ao horário atual.");
           toolResult = await propose("business_hours", "Horário da equipe", changes, { business_hours: hours, ...(typeof msg === "string" ? { out_of_hours_message: msg.trim() || null } : {}) });

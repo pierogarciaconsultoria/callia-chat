@@ -246,6 +246,24 @@ export function formatHours(h: Hours): string {
   return DAYS.map(([k, label]) => `${label}: ${(h[k] ?? []).map(([a, b]) => `${a}–${b}`).join(", ") || "fechado"}`).join("; ");
 }
 
+const MONTHS = "janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro";
+const CALENDAR_PATTERNS = [
+  /\b\d{1,2}\/\d{1,2}(\/\d{2,4})?\b/, // 19/11, 04/12/2026
+  new RegExp(`\\b(${MONTHS})\\b`), // "de 19 a 22 de novembro"
+  /\bdias? \d{1,2} ?(a|e|ate) ?\d{1,2}\b/, // "dias 19 a 22"
+];
+
+/** Texto que fala de datas do calendário (abertura, fechamento, "atendemos de 19 a 22/11"), e não de horas do dia. */
+export function looksLikeCalendar(text: string | null | undefined): boolean {
+  const t = norm(text);
+  return !!t && CALENDAR_PATTERNS.some((re) => re.test(t));
+}
+
+export const CALENDAR_REDIRECT =
+  "Isso são datas de funcionamento do hotel, não horário da equipe. Abertura e fechamento por data ficam na tabela de preços: " +
+  "use propor_tabela_precos com add_closed/remove_closed para fechar ou reabrir datas e set_period/set_range para que as datas abertas tenham valores. " +
+  "A mensagem fora do horário é só o que o agente diz quando a equipe não está online; se o administrador confirmar que quer mesmo este texto nela, repita com confirmar_mensagem = true.";
+
 /** Aplica intervalos por dia ("todos" = os 7). Vazio em um dia = sem atendimento. */
 export function applyHours(current: Hours, changes: Array<{ days: string[]; ranges: Array<[string, string]> }>): { hours: Hours; changes: string[] } {
   const hours: Hours = structuredClone(current ?? {});
@@ -339,12 +357,13 @@ export const ASSISTANT_TOOLS: ToolDefinition[] = [
     type: "function",
     function: {
       name: "propor_horario",
-      description: "Propõe o horário em que a equipe humana atende (afeta só o que o agente diz ao transferir fora do horário) e a mensagem fora do horário.",
+      description: "Propõe as HORAS DO DIA, por dia da semana, em que a equipe humana atende (afeta só o que o agente diz ao transferir fora do horário) e a mensagem fora do horário. Não serve para datas de abertura ou fechamento do hotel: isso é calendário da tabela de preços (propor_tabela_precos).",
       parameters: {
         type: "object",
         properties: {
           dias: { type: "array", items: { type: "object", properties: { days: { type: "array", items: { type: "string" } }, ranges: { type: "array", items: { type: "array", items: { type: "string" }, minItems: 2, maxItems: 2 } } }, required: ["days", "ranges"] } },
-          mensagem_fora_do_horario: { type: ["string", "null"] },
+          mensagem_fora_do_horario: { type: ["string", "null"], description: "Texto que o agente envia quando a equipe não está online. Não é lugar para datas de funcionamento." },
+          confirmar_mensagem: { type: "boolean", description: "true só quando o administrador confirmou que um texto com datas é mesmo a mensagem fora do horário." },
         },
       },
     },
@@ -407,6 +426,7 @@ export function buildAssistantPrompt(f: AssistantFacts, now = new Date()): strin
     "- Um pedido com várias mudanças vira uma única chamada de ferramenta com todas as operações. Não repita a mesma proposta.",
     "- Datas de temporada: para mudar o início ou o fim de uma faixa (\"a alta de janeiro termina 10/02\"), use set_range com match = uma data da faixa atual e o novo from/to. Nunca remova um período para isso.",
     "- Fechamentos: para trocar as datas de um fechamento existente, use add_closed com o nome dele (ex.: \"Inverno\") e as datas novas.",
+    "- Funcionamento do hotel por DATA (\"vamos atender de 19 a 22/11\", \"fechado até 04/12\", \"abrimos dia 5\") é calendário da tabela de preços, nunca horário da equipe: remova ou encurte o fechamento que cobre as datas (remove_closed/add_closed) e garanta que elas caiam num período com valores (set_range ou set_period, copiando os valores de um período parecido). propor_horario é só para as horas do dia em que a equipe responde.",
     "- Valores em reais são por diária. Datas em DD/MM/AAAA; se o ano não for dito, use a temporada em andamento ou a próxima (os períodos cadastrados ajudam).",
     "- Para 'onde eu mudo X' ou algo que você não altera (fotos, documentos, dados da empresa, integrações, equipe, plano): use a ferramenta navegar.",
     "- Mudanças de fatos nunca vão para as regras do agente; vão para políticas ou tabela de preços.",

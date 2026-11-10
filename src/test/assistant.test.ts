@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyHours, applyPriceOps, AssistantError, buildAssistantPrompt, normalizeOp, toIsoDate } from "../../supabase/functions/_shared/assistant.ts";
+import { applyHours, applyPriceOps, AssistantError, buildAssistantPrompt, CALENDAR_REDIRECT, looksLikeCalendar, normalizeOp, toIsoDate } from "../../supabase/functions/_shared/assistant.ts";
 import { priceTableSchema } from "../../supabase/functions/_shared/pricing.ts";
 
 const table = priceTableSchema.parse({
@@ -120,6 +120,18 @@ describe("assistente: horário da equipe e prompt", () => {
     expect(() => applyHours({}, [{ days: ["sexta"], ranges: [["8h", "22h"]] }])).toThrow(/HH:MM/);
   });
 
+  it("datas de funcionamento não passam por mensagem fora do horário", () => {
+    expect(looksLikeCalendar("Iremos atender nos dias 19 a 22/11de2026")).toBe(true);
+    expect(looksLikeCalendar("O hotel estará aberto no final de semana do dia 19 a 22 de novembro, das 08h às 22h.")).toBe(true);
+    expect(looksLikeCalendar("Fechado até 04/12")).toBe(true);
+    expect(looksLikeCalendar("Atendemos nos dias 19 e 22")).toBe(true);
+    expect(looksLikeCalendar("Em caso de interesse em vaga de emprego, entre em contato pelo número (48) 99987-1500 e fale com a Geórgia.")).toBe(false);
+    expect(looksLikeCalendar("Nossa equipe responde das 8h às 22h. Deixe sua mensagem!")).toBe(false);
+    expect(looksLikeCalendar(null)).toBe(false);
+    expect(CALENDAR_REDIRECT).toContain("propor_tabela_precos");
+    expect(CALENDAR_REDIRECT).toContain("confirmar_mensagem");
+  });
+
   it("prompt traz identificadores exatos, políticas com id, horário e telas", () => {
     const p = buildAssistantPrompt({
       agentName: "MarIA", businessName: "Morada", priceTable: table, currency: "BRL",
@@ -132,5 +144,6 @@ describe("assistente: horário da equipe e prompt", () => {
     expect(p).toContain("segunda: 08:00–22:00; terça: fechado");
     expect(p).toContain("- precos: Agente de IA → Conhecimento → Catálogo e preços");
     expect(p).toContain("nunca grava diretamente");
+    expect(p).toContain("Funcionamento do hotel por DATA");
   });
 });

@@ -68,6 +68,9 @@ prompt com a tabela de preços (ids de períodos e acomodações), políticas, h
 `propor_*` que viram **propostas** (`assistant_proposals`) com linhas "de → para". Nada é gravado até o administrador
 clicar em Confirmar (`action=apply`), e a aplicação entra na auditoria (`assistant.applied.*`). As operações sobre a
 tabela (`_shared/assistant.ts`, `applyPriceOps`) são puras e validadas pelo schema antes de virar proposta.
+Datas de funcionamento do hotel (*"vamos atender de 19 a 22/11"*, *"fechado até 04/12"*) são calendário da tabela de
+preços (fechamentos e períodos), nunca horário da equipe: `propor_horario` recusa uma mensagem fora do horário com datas
+(`looksLikeCalendar`) e manda o modelo propor pela tabela, salvo confirmação explícita do administrador.
 
 ## Assistente de configuração (`/agent/setup`)
 
