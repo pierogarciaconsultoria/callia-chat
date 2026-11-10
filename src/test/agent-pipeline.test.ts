@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AiProvider, ChatResult } from "../../supabase/functions/_shared/ai.ts";
 import type { AgentConfig, KnowledgeHit } from "../../supabase/functions/_shared/agent-core.ts";
-import { childrenAddressed, claimsAvailability, mentionsGuests, PAYMENT_PROOF_REPLY, UNINTELLIGIBLE_AUDIO_REPLY, mentionsStayDates, trimEarlyLink, wantsBookingLink, type PipelineDeps, type PipelineInput, promisesAction, promisesPhotos, runAgentPipeline, stripAvailabilityClaims, stripPhotoPromise } from "../../supabase/functions/_shared/agent-pipeline.ts";
+import { childrenAddressed, claimsAvailability, mentionsGuests, PAYMENT_PROOF_REPLY, UNINTELLIGIBLE_AUDIO_REPLY, mentionsStayDates, noAvailabilityReply, trimEarlyLink, wantsBookingLink, type PipelineDeps, type PipelineInput, promisesAction, promisesPhotos, runAgentPipeline, stripAvailabilityClaims, stripPhotoPromise } from "../../supabase/functions/_shared/agent-pipeline.ts";
 import { callExternalAgent, ExternalAgentError, resolveExternalSecret } from "../../supabase/functions/_shared/external-agent.ts";
 
 const config: AgentConfig = {
@@ -327,6 +327,30 @@ describe("pipeline do agente", () => {
     expect(out.reply).toBe("Para o casal, temos o Apartamento 205 e 206 por R$ 5.000,00.");
     const tools = (ai.calls[0] as { tools: Array<{ function: { name: string; description: string } }> }).tools;
     expect(tools.find((t) => t.function.name === "calcular_valor")?.function.description).toContain("confirma no sistema do hotel");
+  });
+
+  it("trava: sem vaga no sistema, a resposta diz isso primeiro e não lista valores", async () => {
+    const quote = vi.fn(() => ({
+      checkin: "28/12/2026", checkout: "02/01/2027", noites: 5, hospedes: 2, atende_estadia_minima: true,
+      opcoes: [{ acomodacao: "Kitnet", total: 2750, total_formatado: "R$ 2.750,00", pms_category_ids: [276] }],
+    }));
+    const soldOut = vi.fn(async () => ({ checkin: "28/12/2026", checkout: "02/01/2027", nights: 5, adults: 2, children: 0, currency: "BRL", sold_out: true, rooms: [], booking_link: null }));
+    const quoteCall = { toolCalls: [{ id: "t1", type: "function" as const, function: { name: "calcular_valor", arguments: '{"checkin":"28/12/2026","checkout":"02/01/2027","adultos":2,"idades_criancas":[]}' } }] };
+
+    // A IA aceita a instrução interna e corrige.
+    let ai = fakeAi([quoteCall, { content: "A Kitnet fica R$ 2.750,00 para o período." }, { content: "Infelizmente não temos vaga de 28/12 a 02/01. Quer ver outras datas?" }]);
+    let out = await runAgentPipeline(input("Dois adultos, sem crianças"), deps({ ai, checkAvailability: soldOut, priceTable: { quote } }));
+    expect(out.toolCalls[0].result).toMatchObject({ disponibilidade_confirmada: false, sem_vaga: ["Kitnet"], opcoes: [] });
+    expect(out.reply).toBe("Infelizmente não temos vaga de 28/12 a 02/01. Quer ver outras datas?");
+    expect((ai.calls[2] as { messages: Array<{ content: string }> }).messages.at(-1)?.content).toContain("NÃO tem vaga");
+
+    // A IA insiste nos valores: resposta fixa, sem valor.
+    ai = fakeAi([quoteCall, { content: "A Kitnet fica R$ 2.750,00 para o período." }, { content: "Temos a Kitnet por R$ 2.750,00!" }]);
+    out = await runAgentPipeline(input("Dois adultos, sem crianças"), deps({ ai, checkAvailability: soldOut, priceTable: { quote } }));
+    expect(out.reply).toBe(noAvailabilityReply("28/12/2026", "02/01/2027"));
+    expect(out.reply).not.toMatch(/R\$/);
+    const system = (ai.calls[0] as { messages: Array<{ content: string }> }).messages[0].content;
+    expect(system).toContain("comece dizendo se há vaga ou não");
   });
 
   it("trava: 'vou consultar, um momento' sem ferramenta → Callia obriga a consultar antes de responder", async () => {

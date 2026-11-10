@@ -343,7 +343,8 @@ Quando `share_payment_info` e `deposit_percent` estão definidos, cada opção d
 
 No agente, `calcular_valor` cota pela tabela; com um conector de reservas ativo (Hospedin/hbook) a chamada é tratada como
 `consultar_disponibilidade`: preço da tabela, vaga do PMS pelas categorias vinculadas (`pms_category_ids`), acomodações
-lotadas vão para `sem_vaga` e a resposta nunca lista valor sem a vaga confirmada.
+lotadas vão para `sem_vaga` e a resposta nunca lista valor sem a vaga confirmada. Sem vaga em nenhuma acomodação, a
+primeira resposta diz isso: a IA é instruída a não citar valores e, se insistir, sai a resposta fixa `noAvailabilityReply`.
 
 `data` (ver `supabase/functions/_shared/pricing.ts`, `priceTableSchema`):
 ```ts

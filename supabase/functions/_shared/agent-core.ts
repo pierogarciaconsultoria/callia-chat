@@ -386,6 +386,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
         ...(ctx.hasPriceTable
           ? [
             "- Quando o resultado trouxer disponibilidade_confirmada, há vaga confirmada só para as opcoes listadas; as de sem_vaga estão lotadas nessas datas. Informe os valores dessas opções exatamente como vieram.",
+            "- Ao responder uma consulta de datas, comece dizendo se há vaga ou não. Valores só depois, e só das acomodações disponíveis. Sem vaga em nenhuma (opcoes vazio), diga isso primeiro, não informe valores e sugira outras datas.",
             "- Ter vaga não é ter reserva: nunca diga que a reserva está confirmada ou garantida. Ela só existe depois que o hóspede conclui pelo link de reserva (ou a equipe confirma o pagamento).",
             "- Se a consulta falhar, use os valores_tabela do resultado; o link_reserva confirma a vaga quando o hóspede quiser reservar.",
           ]

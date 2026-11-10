@@ -156,6 +156,12 @@ export function quotesPrice(text: string): boolean {
   return /R\$\s?\d|\b\d{1,3}(\.\d{3})+,\d{2}\b|\b\d+\s*reais\b/i.test(text);
 }
 
+/** Resposta fixa quando o sistema de reservas não tem vaga e a IA insiste em listar valores. */
+export function noAvailabilityReply(checkin?: string, checkout?: string): string {
+  const when = checkin && checkout ? ` de ${checkin} a ${checkout}` : " nessas datas";
+  return `Infelizmente não temos disponibilidade${when} nas acomodações que comportam o grupo. Se quiser, me passe outras datas que eu verifico na hora.`;
+}
+
 const MONTHS = "janeiro|fevereiro|mar[cç]o|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro";
 const DAY_MONTH = /\b\d{1,2}\/\d{1,2}(\/\d{2,4})?\b/g;
 const DAY_RANGE = new RegExp(`\\b\\d{1,2}(º|°)?\\s*(a|até|ao|-)\\s*\\d{1,2}(º|°)?\\s*de\\s*(${MONTHS})`, "i");
@@ -492,6 +498,14 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
   const stayContext = () => mentionsStayDates(customerText) || outcome.toolCalls.some((t) => (actionTools as string[]).includes(t.name));
   const claimsUnconfirmed = (text: string) => stayContext() && !availabilityConfirmed() && claimsAvailability(text);
   let claimNudged = false;
+  // Trava: o sistema de reservas disse que não há vaga → a resposta informa isso primeiro e não lista valores.
+  const soldOutCall = () =>
+    outcome.toolCalls.find((t) => {
+      const r = t.result as { sold_out?: boolean; disponibilidade_confirmada?: boolean; rooms?: unknown[]; erro?: unknown } | null;
+      return t.name === "consultar_disponibilidade" && !!r && typeof r === "object" && !r.erro &&
+        (r.disponibilidade_confirmada === false || (r.sold_out === true && !(Array.isArray(r.rooms) && r.rooms.length)));
+    });
+  let soldOutNudged = false;
   // Links de reserva devolvidos pelas ferramentas nesta rodada (link_reserva / booking_link).
   const bookingUrls = () =>
     outcome.toolCalls.flatMap((t) => {
@@ -547,6 +561,17 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
           messages.push({ role: "assistant", content: text });
           messages.push({ role: "user", content: `(instrução interna) Você informou valores sem consultar a ferramenta nesta resposta; valores ditos antes na conversa podem estar errados para este grupo ou acomodação. Chame agora ${actionTools.join(" ou ")} com as datas, o número de adultos, as idades das crianças e a acomodação pedida, e responda só com o resultado.` });
           continue;
+        }
+        const soldOut = text ? soldOutCall() : undefined;
+        if (text && soldOut && quotesPrice(text)) {
+          if (!soldOutNudged && round < MAX_TOOL_ROUNDS - 1) {
+            soldOutNudged = true;
+            messages.push({ role: "assistant", content: text });
+            messages.push({ role: "user", content: "(instrução interna) O sistema do hotel NÃO tem vaga para essas datas em nenhuma acomodação que comporta o grupo. Não informe valores. Diga primeiro, com clareza, que não há disponibilidade para essas datas e sugira outras datas." });
+            continue;
+          }
+          const a = soldOut.arguments as { checkin?: unknown; checkout?: unknown };
+          return { ...outcome, reply: finalize(noAvailabilityReply(typeof a.checkin === "string" ? a.checkin : undefined, typeof a.checkout === "string" ? a.checkout : undefined)) };
         }
         if (text && !claimNudged && claimsUnconfirmed(text) && round < MAX_TOOL_ROUNDS - 1) {
           claimNudged = true;
