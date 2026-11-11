@@ -1,15 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
-import { isoToBr, isValidHttpUrl, maskBrPhone, nextWeekend, parseChildrenAges, phoneDigits, sampleBookingLink } from "@/lib/integrations";
+import { cleanup, render, screen } from "@testing-library/react";
+import {
+  isoToBr,
+  isValidHttpUrl,
+  maskBrPhone,
+  nextWeekend,
+  parseChildrenAges,
+  phoneDigits,
+  sampleBookingLink,
+} from "@/lib/integrations";
 import { AvailabilityTable } from "@/components/integrations/AvailabilityTest";
 import type { AvailabilityTest } from "@/lib/database.types";
 
 describe("utilidades das integrações", () => {
   it("próximo fim de semana é sexta → domingo, sempre no futuro", () => {
     // 26/10/2026 é segunda; 30/10 é sexta.
-    expect(nextWeekend(new Date(2026, 9, 26))).toEqual({ checkin: "2026-10-30", checkout: "2026-11-01" });
+    expect(nextWeekend(new Date(2026, 9, 26))).toEqual({
+      checkin: "2026-10-30",
+      checkout: "2026-11-01",
+    });
     // Numa sexta, vai para a sexta seguinte.
-    expect(nextWeekend(new Date(2026, 9, 30))).toEqual({ checkin: "2026-11-06", checkout: "2026-11-08" });
+    expect(nextWeekend(new Date(2026, 9, 30))).toEqual({
+      checkin: "2026-11-06",
+      checkout: "2026-11-08",
+    });
     expect(isoToBr("2026-12-20")).toBe("20/12/2026");
   });
 
@@ -31,8 +45,13 @@ describe("utilidades das integrações", () => {
   });
 
   it("link de exemplo preserva o companyId e preenche datas e hóspedes", () => {
-    const link = sampleBookingLink("https://hbook.hsystem.com.br/Booking?companyId=abc", { checkin: "2026-12-20", checkout: "2026-12-27" });
-    expect(link).toBe("https://hbook.hsystem.com.br/Booking?companyId=abc&checkin=20%2F12%2F2026&checkout=27%2F12%2F2026&adults=2&children=0");
+    const link = sampleBookingLink(
+      "https://hbook.hsystem.com.br/Booking?companyId=abc",
+      { checkin: "2026-12-20", checkout: "2026-12-27" },
+    );
+    expect(link).toBe(
+      "https://hbook.hsystem.com.br/Booking?companyId=abc&checkin=20%2F12%2F2026&checkout=27%2F12%2F2026&adults=2&children=0",
+    );
     expect(sampleBookingLink("ftp://x")).toBeNull();
     expect(isValidHttpUrl("https://x.com")).toBe(true);
     expect(isValidHttpUrl("x.com")).toBe(false);
@@ -50,7 +69,16 @@ describe("tabela de disponibilidade", () => {
     currency: "BRL",
     sold_out: false,
     booking_link: "https://hbook.example/Booking?x=1",
-    rooms: [{ name: "Apartamento 101 a 204", rate: null, total_price: 900, price_per_night: 450, available_units: 3, capacity: 3 }],
+    rooms: [
+      {
+        name: "Apartamento 101 a 204",
+        rate: null,
+        total_price: 900,
+        price_per_night: 450,
+        available_units: 3,
+        capacity: 3,
+      },
+    ],
   };
 
   it("mostra categoria, capacidade, valores e link", () => {
@@ -58,11 +86,90 @@ describe("tabela de disponibilidade", () => {
     expect(screen.getByText("Apartamento 101 a 204")).toBeTruthy();
     expect(screen.getByText("3 pessoa(s)")).toBeTruthy();
     expect(screen.getByText(/crianças: 6 anos/)).toBeTruthy();
-    expect(screen.getByText("Link de reserva").closest("a")?.getAttribute("href")).toBe("https://hbook.example/Booking?x=1");
+    expect(
+      screen.getByText("Link de reserva").closest("a")?.getAttribute("href"),
+    ).toBe("https://hbook.example/Booking?x=1");
   });
 
   it("avisa quando não há disponibilidade", () => {
     render(<AvailabilityTable data={{ ...base, sold_out: true, rooms: [] }} />);
     expect(screen.getByText("Sem disponibilidade")).toBeTruthy();
+  });
+
+  it("com tabela de preços mostra o valor da tabela, a vaga por acomodação e as lotadas", () => {
+    cleanup();
+    const tabela = {
+      noites: 5,
+      periodos: ["Pacote Natal e Ano Novo"],
+      estadia_minima: 5,
+      atende_estadia_minima: true,
+      disponibilidade_confirmada: true,
+      opcoes: [
+        {
+          acomodacao: "Apartamentos 205 e 206",
+          tarifa: "até 4 pessoas",
+          total: 5000,
+          total_formatado: "R$ 5.000,00",
+          unidades_disponiveis: 1,
+          detalhamento: [
+            {
+              periodo: "Pacote Natal e Ano Novo",
+              noites: 5,
+              diaria: 1000,
+              diaria_formatada: "R$ 1.000,00",
+            },
+          ],
+        },
+      ],
+      sem_vaga: ["Kitnet", "Apartamentos 101 a 104 e 201 a 204"],
+      link_reserva: "https://hbook.example/Booking?y=2",
+    };
+    render(
+      <AvailabilityTable
+        data={{
+          ...base,
+          rooms: [
+            {
+              name: "Kit",
+              rate: null,
+              total_price: 1650,
+              price_per_night: 330,
+              available_units: 1,
+              capacity: 2,
+            },
+          ],
+          tabela,
+        }}
+      />,
+    );
+    expect(screen.getByText("Apartamentos 205 e 206")).toBeTruthy();
+    expect(screen.getByText("R$ 5.000,00")).toBeTruthy();
+    expect(screen.getByText("1 unidade(s)")).toBeTruthy();
+    expect(
+      screen.getByText(/Kitnet, Apartamentos 101 a 104 e 201 a 204/),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Link de reserva").closest("a")?.getAttribute("href"),
+    ).toBe("https://hbook.example/Booking?y=2");
+    // Tarifa base do Hospedin fica só como referência, fora da tabela principal.
+    expect(screen.queryByText("Kit")).toBeNull();
+    expect(screen.getByText(/Tarifas base do Hospedin/)).toBeTruthy();
+
+    cleanup();
+    render(
+      <AvailabilityTable
+        data={{
+          ...base,
+          sold_out: true,
+          rooms: [],
+          tabela: {
+            fechado: true,
+            periodos_fechados: "Inverno: 21/06/2027 a 22/09/2027",
+            opcoes: [],
+          },
+        }}
+      />,
+    );
+    expect(screen.getByText(/Hotel fechado nessas datas/)).toBeTruthy();
   });
 });

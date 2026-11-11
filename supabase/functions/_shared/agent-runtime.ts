@@ -122,7 +122,7 @@ async function loadPaymentInfo(db: Db, workspaceId: string): Promise<PaymentInfo
   return { ...info, pix_key: null, pix_key_type: null, bank_name: null, bank_code: null, agency: null, account: null, account_type: null };
 }
 
-async function loadPriceTable(db: Db, workspaceId: string, depositPercent: number | null = null): Promise<PipelineDeps["priceTable"]> {
+export async function loadPriceTable(db: Db, workspaceId: string, depositPercent: number | null = null): Promise<PipelineDeps["priceTable"]> {
   const { data } = await db.from("price_tables").select("data, currency").eq("workspace_id", workspaceId).eq("active", true).maybeSingle();
   if (!data) return undefined;
   const parsed = priceTableSchema.safeParse(data.data);

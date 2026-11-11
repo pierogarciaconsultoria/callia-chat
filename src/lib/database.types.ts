@@ -5,7 +5,16 @@ export type ConversationMode = "bot" | "human" | "closed";
 export type MessageDirection = "inbound" | "outbound";
 export type MessageSender = "customer" | "bot" | "agent" | "system";
 export type MessageType =
-  | "text" | "image" | "audio" | "video" | "document" | "sticker" | "location" | "contact" | "reaction" | "unknown";
+  | "text"
+  | "image"
+  | "audio"
+  | "video"
+  | "document"
+  | "sticker"
+  | "location"
+  | "contact"
+  | "reaction"
+  | "unknown";
 
 export type TenantStatus = "trial" | "active" | "suspended" | "canceled";
 export type EffectiveTenantStatus = TenantStatus | "trial_expired";
@@ -39,8 +48,13 @@ export interface PlanLimits {
   connectors_enabled: boolean;
 }
 
-export type NumericLimitKey = "max_instances" | "max_members" | "max_monthly_messages" | "max_knowledge_sources";
-export type FeatureKey = "ai_enabled" | "external_agent_enabled" | "connectors_enabled";
+export type NumericLimitKey =
+  | "max_instances"
+  | "max_members"
+  | "max_monthly_messages"
+  | "max_knowledge_sources";
+export type FeatureKey =
+  "ai_enabled" | "external_agent_enabled" | "connectors_enabled";
 
 export interface Plan extends PlanLimits {
   id: string;
@@ -109,7 +123,13 @@ export interface PlatformTenant {
 }
 
 export type AttentionKind =
-  | "instance_down" | "quota_near" | "quota_exceeded" | "trial_ending" | "trial_expired" | "agent_failures" | "webhook_failures";
+  | "instance_down"
+  | "quota_near"
+  | "quota_exceeded"
+  | "trial_ending"
+  | "trial_expired"
+  | "agent_failures"
+  | "webhook_failures";
 
 export interface PlatformOverview {
   totals: {
@@ -127,21 +147,45 @@ export interface PlatformOverview {
     /** Custo estimado do chat de IA no mês (US$), somando todos os clientes. */
     monthly_ai_cost_usd: number;
   };
-  attention: { workspace_id: string; workspace_name: string; kind: AttentionKind; detail: string }[];
+  attention: {
+    workspace_id: string;
+    workspace_name: string;
+    kind: AttentionKind;
+    detail: string;
+  }[];
 }
 
 export interface PlatformTenantDetail {
   tenant: PlatformTenant;
   entitlements: Entitlements;
   members: MemberWithEmail[];
-  instances: { id: string; name: string; status: InstanceStatus; phone_number: string | null; is_default: boolean }[];
+  instances: {
+    id: string;
+    name: string;
+    status: InstanceStatus;
+    phone_number: string | null;
+    is_default: boolean;
+  }[];
   counts: { api_keys: number; webhooks: number; conversations: number };
   /** Custo estimado do chat de IA no período de uso (US$), por modelo. */
-  ai_cost: { usd: number; by_model: Record<string, { runs: number; prompt_tokens: number; completion_tokens: number; usd: number }>; unknown_models: string[] };
+  ai_cost: {
+    usd: number;
+    by_model: Record<
+      string,
+      {
+        runs: number;
+        prompt_tokens: number;
+        completion_tokens: number;
+        usd: number;
+      }
+    >;
+    unknown_models: string[];
+  };
   audit: AuditLog[];
 }
 
-export type SubscriptionStatus = "pending" | "authorized" | "paused" | "cancelled";
+export type SubscriptionStatus =
+  "pending" | "authorized" | "paused" | "cancelled";
 
 export interface WorkspaceSubscription {
   id: string;
@@ -160,15 +204,38 @@ export interface WorkspaceSubscription {
 export interface BillingStatus {
   configured: boolean;
   subscription: WorkspaceSubscription | null;
-  plans: { id: string; code: string; name: string; price_cents: number | null; currency: string; subscribable: boolean }[];
+  plans: {
+    id: string;
+    code: string;
+    name: string;
+    price_cents: number | null;
+    currency: string;
+    subscribable: boolean;
+  }[];
 }
 
-export interface PlatformSecretStatus { configured: boolean; source: "database" | "env" | null; hint: string | null; updated_at: string | null }
+export interface PlatformSecretStatus {
+  configured: boolean;
+  source: "database" | "env" | null;
+  hint: string | null;
+  updated_at: string | null;
+}
 
 /** Resposta de platform-admin action=get_billing. */
 export interface BillingAdmin {
-  secrets: Record<"mercadopago_access_token" | "mercadopago_webhook_secret", PlatformSecretStatus>;
-  plans: { id: string; code: string; name: string; price_cents: number | null; currency: string; active: boolean; mp_preapproval_plan_id: string | null }[];
+  secrets: Record<
+    "mercadopago_access_token" | "mercadopago_webhook_secret",
+    PlatformSecretStatus
+  >;
+  plans: {
+    id: string;
+    code: string;
+    name: string;
+    price_cents: number | null;
+    currency: string;
+    active: boolean;
+    mp_preapproval_plan_id: string | null;
+  }[];
   webhook_url: string;
 }
 
@@ -181,7 +248,12 @@ export interface PlatformUser {
   confirmed: boolean;
   blocked: boolean;
   platform_admin: boolean;
-  workspaces: { id: string; name: string; role: WorkspaceRole; is_support: boolean }[];
+  workspaces: {
+    id: string;
+    name: string;
+    role: WorkspaceRole;
+    is_support: boolean;
+  }[];
 }
 
 export interface PlatformAuditEntry extends AuditLog {
@@ -271,7 +343,8 @@ export interface WorkspaceConnector {
   updated_at: string;
 }
 
-export type InstanceStatus = "created" | "connecting" | "qr" | "open" | "close" | "error";
+export type InstanceStatus =
+  "created" | "connecting" | "qr" | "open" | "close" | "error";
 
 export interface WhatsAppInstance {
   id: string;
@@ -441,7 +514,8 @@ export interface AgentRun {
   workspace_id: string;
   conversation_id: string;
   trigger_message_id: string;
-  status: "running" | "replied" | "handoff" | "skipped" | "superseded" | "failed";
+  status:
+    "running" | "replied" | "handoff" | "skipped" | "superseded" | "failed";
   engine: "internal" | "external" | "fallback" | null;
   reason: string | null;
   error: string | null;
@@ -510,7 +584,8 @@ export interface KnowledgeSource {
   metadata?: KnowledgeSourceMetadata | null;
 }
 
-export type KnowledgeSourceKind = "faq" | "product" | "text" | "url" | "document" | "site" | "social";
+export type KnowledgeSourceKind =
+  "faq" | "product" | "text" | "url" | "document" | "site" | "social";
 
 export interface KnowledgeSourceMetadata {
   /** Fixa no agente: a IA lê sempre esta fonte. */
@@ -538,12 +613,27 @@ export interface AgentSetupContent {
     instagram: string | null;
     tone_observed: string;
   };
-  agent: { agent_name: string; language: string; persona_prompt: string; guardrails: string };
+  agent: {
+    agent_name: string;
+    language: string;
+    persona_prompt: string;
+    guardrails: string;
+  };
   business_hours: { timezone: string; weekly: BusinessHours } | null;
-  handoff: { keywords: string[]; message: string; out_of_hours_message: string | null };
+  handoff: {
+    keywords: string[];
+    message: string;
+    out_of_hours_message: string | null;
+  };
   payment_links: { label: string; url: string; description: string | null }[];
   faqs: { question: string; answer: string; source: string }[];
-  products: { name: string; description: string | null; price: number | null; currency: string; url: string | null }[];
+  products: {
+    name: string;
+    description: string | null;
+    price: number | null;
+    currency: string;
+    url: string | null;
+  }[];
   missing_information: { topic: string; question: string }[];
   sources_used: { title: string; kind: string }[];
 }
@@ -712,8 +802,10 @@ export interface HbookAvailability {
 }
 
 // ---------------------------------------------------------------- Integrações simplificadas (function integrations)
-export type IntegrationKind = "whatsapp" | "hospedin" | "hbook" | "booking_link";
-export type IntegrationStatus = "connected" | "error" | "disconnected" | "pending";
+export type IntegrationKind =
+  "whatsapp" | "hospedin" | "hbook" | "booking_link";
+export type IntegrationStatus =
+  "connected" | "error" | "disconnected" | "pending";
 
 export interface Integration {
   kind: IntegrationKind;
@@ -725,7 +817,11 @@ export interface Integration {
   /** Nunca sensível: account_id, categories, price_unit, booking_link, instance_id… */
   details: {
     account_id?: string;
-    categories?: { id: number | string; title: string; occupants?: number | null }[];
+    categories?: {
+      id: number | string;
+      title: string;
+      occupants?: number | null;
+    }[];
     price_unit?: "reais" | "cents";
     booking_link?: string | null;
     instance_id?: string;
@@ -742,6 +838,42 @@ export interface AvailabilityRoom {
   capacity?: number | null;
 }
 
+export interface TableAvailabilityOption {
+  acomodacao: string;
+  tarifa?: string;
+  lugares?: number;
+  total: number;
+  total_formatado: string;
+  unidades_disponiveis?: number;
+  estadia_curta?: "permitida" | "exige_minimo";
+  detalhamento?: Array<{
+    periodo: string;
+    noites: number;
+    diaria: number;
+    diaria_formatada: string;
+  }>;
+}
+
+/** Resultado pela tabela de preços + vaga do PMS (o que a MarIA recebe da ferramenta). */
+export interface TableAvailability {
+  erro?: string;
+  fechado?: boolean;
+  periodos_fechados?: string;
+  sem_tarifa?: boolean;
+  temporada_cadastrada?: string;
+  noites?: number;
+  periodos?: string[];
+  estadia_minima?: number;
+  atende_estadia_minima?: boolean;
+  opcoes?: TableAvailabilityOption[];
+  disponibilidade_confirmada?: boolean;
+  sem_vaga?: string[];
+  nao_verificadas?: TableAvailabilityOption[];
+  nao_comportam?: string[];
+  sem_opcao?: string;
+  link_reserva?: string;
+}
+
 export interface AvailabilityTest {
   provider: "hospedin" | "hbook";
   checkin: string;
@@ -753,6 +885,8 @@ export interface AvailabilityTest {
   sold_out: boolean;
   booking_link: string | null;
   rooms: AvailabilityRoom[];
+  /** Presente quando o workspace tem tabela de preços: é o que a MarIA usa (vaga do PMS, valores da tabela). */
+  tabela?: TableAvailability | null;
 }
 
 // ---------------------------------------------------------------- Fotos (function media)
@@ -798,8 +932,15 @@ export interface MediaImport {
 // Aprendizados do atendimento (sugestões geradas das conversas; só admin lê, a function grava).
 export type LearningKind = "faq" | "policy" | "guardrail";
 export type LearningStatus = "pending" | "applied" | "dismissed";
-export interface LearningExcerpt { who: "cliente" | "ia" | "equipe"; text: string }
-export interface LearningEvidence { conversation_id: string; contact: string; excerpts: LearningExcerpt[] }
+export interface LearningExcerpt {
+  who: "cliente" | "ia" | "equipe";
+  text: string;
+}
+export interface LearningEvidence {
+  conversation_id: string;
+  contact: string;
+  excerpts: LearningExcerpt[];
+}
 export type LearningPayload =
   | { question: string; answer: string | null }
   | { topic: string; title: string; content: string; id: string | null }

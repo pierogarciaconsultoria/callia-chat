@@ -7,6 +7,37 @@ import { type HbookConfig, hbookLinkOnly } from "../_shared/hbook.ts";
 import { accountFromClaims, detectPriceUnit, fetchHospedinAvailability, HospedinClient, type HospedinConfig } from "../_shared/hospedin.ts";
 import { assertPublicHttpUrl } from "../_shared/net.ts";
 import { adminDb, audit, type Db, env, optionalEnv, requireUser, requireWorkspaceRole } from "../_shared/supabase.ts";
+import { loadPriceTable } from "../_shared/agent-runtime.ts";
+import { mergeAvailability, stripPmsIds } from "../_shared/pricing.ts";
+import type { AvailabilityQuery, HbookAvailability } from "../_shared/hbook.ts";
+
+type TableQuoteLike = {
+  erro?: string; fechado?: boolean; sem_tarifa?: boolean; noites?: number;
+  opcoes?: Array<{ pms_category_ids?: number[] }>;
+};
+
+/** Mesmo caminho da MarIA: fechamento e valores pela tabela de preços, vaga pelo PMS nas categorias vinculadas. */
+async function availabilityLikeAgent(
+  db: Db,
+  workspaceId: string,
+  q: AvailabilityQuery & { adults: number; childrenAges: number[] },
+  fetchPms: (query: AvailabilityQuery) => Promise<HbookAvailability>,
+) {
+  const priceTable = await loadPriceTable(db, workspaceId);
+  if (!priceTable) return { ...(await fetchPms(q)), tabela: null };
+  const table = priceTable.quote({ checkin: q.checkin, checkout: q.checkout, adults: q.adults, childrenAges: q.childrenAges, unit: null }) as TableQuoteLike;
+  const categoryIds = [...new Set((table.opcoes ?? []).flatMap((o) => o.pms_category_ids ?? []))];
+  if (table.fechado || table.sem_tarifa || table.erro || !table.opcoes?.length) {
+    return {
+      checkin: q.checkin, checkout: q.checkout, nights: table.noites ?? 0, adults: q.adults, children: q.childrenAges.length,
+      children_ages: q.childrenAges, currency: "BRL", sold_out: true, rooms: [], booking_link: null,
+      tabela: stripPmsIds(table),
+    };
+  }
+  const found = await fetchPms({ ...q, ...(categoryIds.length ? { categoryIds } : {}) });
+  const merged = categoryIds.length ? mergeAvailability(table as never, found.rooms, { open: priceTable.isOpen }) : table;
+  return { ...found, tabela: stripPmsIds(merged) };
+}
 
 type Body = Record<string, unknown> & { action?: string; workspace_id?: string };
 const KINDS = ["hospedin", "hbook", "booking_link"] as const;
@@ -86,9 +117,10 @@ async function runTest(db: Db, workspaceId: string, kind: string, body: Body) {
     if (kind === "hospedin") {
       if (!row.secret_ciphertext) throw new RuntimeError("unprocessable", "Reconecte o Hospedin.");
       const provider = await loadAvailabilityProvider(db, workspaceId);
-      result = provider?.kind === "hospedin"
-        ? await provider.fn(q)
-        : await fetchHospedinAvailability(row.config as unknown as HospedinConfig, await hospedinClientFor(row.secret_ciphertext), q);
+      const client = provider?.kind === "hospedin" ? null : await hospedinClientFor(row.secret_ciphertext);
+      const fetchPms = (query: AvailabilityQuery) =>
+        provider?.kind === "hospedin" ? provider.fn(query) : fetchHospedinAvailability(row.config as unknown as HospedinConfig, client!, query);
+      result = await availabilityLikeAgent(db, workspaceId, q, fetchPms);
     } else {
       throw new RuntimeError("invalid_request", "Esta integração não tem consulta de disponibilidade.");
     }

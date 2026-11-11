@@ -260,7 +260,7 @@ Segredos (senhas) ficam cifrados em `workspace_connectors.secret_ciphertext` (co
 |---|---|---|
 | `list` | `workspace_id` | `{ integrations: Integration[] }` |
 | `connect_hospedin` | `workspace_id`, `email`, `password`, `account_id?` | `{ integration, test }` ou `422` com `error.details.needs = "account_id"` quando a conta não puder ser descoberta |
-| `test` | `workspace_id`, `kind` (`hospedin` \| `hbook`), `checkin?`, `checkout?`, `adults?`, `children_ages?` | `{ test }` (padrão: próximo fim de semana, 2 adultos) |
+| `test` | `workspace_id`, `kind` (`hospedin` \| `hbook`), `checkin?`, `checkout?`, `adults?`, `children_ages?` | `{ test }` (padrão: próximo fim de semana, 2 adultos). Com tabela de preços, `test.tabela` traz o mesmo resultado que a MarIA recebe (fechamento e valores da tabela, vaga do PMS por acomodação em `opcoes[].unidades_disponiveis`, lotadas em `sem_vaga`); `test.rooms` são só as tarifas base do PMS, para referência |
 | `sync_catalog` | `workspace_id` | `{ created, updated }` — categorias do Hospedin → catálogo (`products`) |
 | `set_price_unit` | `workspace_id`, `unit: "reais" \| "cents"` | `{ integration }` (correção se o teste mostrar valores 100× errados) |
 | `save_booking_link` | `workspace_id`, `booking_link` (URL) | `{ integration }` — link do motor de reservas (hbook ou outro) |
