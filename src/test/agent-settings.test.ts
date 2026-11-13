@@ -79,13 +79,22 @@ describe("pagamento no prompt", () => {
     expect(p).toContain("sinal é confirmado pela equipe");
   });
 
-  it("com link de pré-reserva, o PIX vai pela pré-reserva e nenhum dado bancário entra no prompt", () => {
+  it("com link de pré-reserva e chave cadastrada, a chave PIX vai junto com a pré-reserva", () => {
     const p = prompt({ ...pay, deposit_percent: 50, pre_reservation_url: "https://pms.hospedin.com/pre-reserva/exemplo" });
-    expect(p).toContain("envie o link de pré-reserva https://pms.hospedin.com/pre-reserva/exemplo");
-    expect(p).toContain("a equipe confirma a vaga e envia os dados do PIX");
+    expect(p).toContain("envie junto o link de pré-reserva https://pms.hospedin.com/pre-reserva/exemplo");
+    expect(p).toContain("Nunca diga que não pode passar esses dados");
     expect(p).toContain("Sinal para garantir a reserva: 50% do total");
-    expect(p).not.toContain("48 90000 0000");
-    expect(p).not.toContain("12.345-6");
+    expect(p).toContain("- PIX (telefone): 48 90000 0000");
+    expect(p).toContain("12.345-6");
+    expect(p).toContain("Antes de pagar por PIX");
+    expect(p).not.toContain("Não envie chave PIX");
+  });
+
+  it("com link de pré-reserva e sem chave nem conta, o PIX vai só pela pré-reserva", () => {
+    const p = prompt({ ...pay, pix_key: null, pix_key_type: null, account: null, pre_reservation_url: "https://pms.hospedin.com/pre-reserva/exemplo" });
+    expect(p).toContain("PIX: envie o link de pré-reserva https://pms.hospedin.com/pre-reserva/exemplo");
+    expect(p).toContain("a equipe confirma a vaga e envia os dados do PIX");
+    expect(p).not.toContain("Dados de pagamento:");
     expect(p).not.toContain("Antes de pagar por PIX");
   });
 

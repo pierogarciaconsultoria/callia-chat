@@ -16,7 +16,7 @@ import {
 } from "./agent-core.ts";
 import { ExternalAgentError, type ExternalAgentPayload, type ExternalAgentReply } from "./external-agent.ts";
 import type { AvailabilityQuery, HbookAvailability } from "./hbook.ts";
-import { matchAlbum, mentionedAlbums } from "./media.ts";
+import { matchAlbum, mentionedAlbums, unitForAlbum } from "./media.ts";
 import { fitToGroup, mergeAvailability, stripPmsIds } from "./pricing.ts";
 
 export interface PipelineInput {
@@ -69,6 +69,8 @@ export interface PipelineDeps {
     isOpen?: (night: string) => boolean;
     /** Texto da tabela para o prompt (gerado da estrutura). */
     summary?: string;
+    /** Acomodações e capacidade: fotos só de quem comporta o grupo. */
+    units?: Array<{ name: string; max_guests: number }>;
   };
   log?: (msg: string, extra?: Record<string, unknown>) => void;
 }
@@ -245,6 +247,9 @@ export function buildExternalPayload(input: PipelineInput, now: Date): ExternalA
   };
 }
 
+const ADULTS_DESCRIPTION = "Número de adultos (18 anos ou mais). Casal = 2. Não conte aqui os filhos informados em idades_criancas.";
+const CHILDREN_DESCRIPTION = "Idade de cada criança ou filho de 0 a 17 anos, um número por criança (casal com 3 filhos de 14, 16 e 17 → adultos 2 e idades [14, 16, 17]). Filho de 18 anos ou mais vai em adultos. Vazio se não houver.";
+
 function agentTools(hasAvailability: boolean, photoAlbums: string[] = [], hasPriceTable = false): ToolDefinition[] {
   const tools: ToolDefinition[] = [
     {
@@ -252,7 +257,7 @@ function agentTools(hasAvailability: boolean, photoAlbums: string[] = [], hasPri
       function: {
         name: "transferir_para_atendente",
         description:
-          "Transfere a conversa para a equipe humana. Use quando o cliente pedir uma pessoa, estiver insatisfeito, ou quando a resposta não estiver no contexto.",
+          "Transfere a conversa para a equipe humana. Use quando o cliente pedir uma pessoa, estiver insatisfeito, ou quando a resposta não estiver no contexto. Não use quando o cliente disser que vai pensar ou verificar e volta depois.",
         parameters: {
           type: "object",
           properties: { motivo: { type: "string", description: "Motivo curto da transferência." } },
@@ -286,8 +291,8 @@ function agentTools(hasAvailability: boolean, photoAlbums: string[] = [], hasPri
           properties: {
             checkin: { type: "string", description: "Data de entrada DD/MM/AAAA." },
             checkout: { type: "string", description: "Data de saída DD/MM/AAAA." },
-            adultos: { type: "integer", minimum: 1 },
-            idades_criancas: { type: "array", items: { type: "integer", minimum: 0, maximum: 17 } },
+            adultos: { type: "integer", minimum: 1, description: ADULTS_DESCRIPTION },
+            idades_criancas: { type: "array", items: { type: "integer", minimum: 0, maximum: 17 }, description: CHILDREN_DESCRIPTION },
             acomodacao: { type: "string", description: "Opcional: acomodação desejada (ex.: kitnet, 205)." },
           },
           required: ["checkin", "checkout", "adultos"],
@@ -306,6 +311,7 @@ function agentTools(hasAvailability: boolean, photoAlbums: string[] = [], hasPri
           properties: {
             album: { type: "string", description: `Álbum: ${photoAlbums.join(", ")}.` },
             quantidade: { type: "integer", minimum: 1, maximum: MAX_PHOTOS_PER_CALL, description: "Quantas fotos (padrão 4)." },
+            hospedes: { type: "integer", minimum: 1, description: "Total de pessoas do grupo (adultos + crianças), se o hóspede já informou. Fotos de acomodação que não comporta o grupo não são enviadas." },
           },
           required: ["album"],
         },
@@ -323,11 +329,11 @@ function agentTools(hasAvailability: boolean, photoAlbums: string[] = [], hasPri
           properties: {
             checkin: { type: "string", description: "Data de entrada DD/MM/AAAA." },
             checkout: { type: "string", description: "Data de saída DD/MM/AAAA." },
-            adultos: { type: "integer", minimum: 1 },
+            adultos: { type: "integer", minimum: 1, description: ADULTS_DESCRIPTION },
             idades_criancas: {
               type: "array",
               items: { type: "integer", minimum: 0, maximum: 17 },
-              description: "Idade de cada criança (0 a 17 anos). Se houver crianças, pergunte as idades antes de consultar. Vazio se não houver.",
+              description: `${CHILDREN_DESCRIPTION} Se houver crianças, pergunte as idades antes de consultar.`,
             },
             ...(hasPriceTable ? { acomodacao: { type: "string", description: "Opcional: acomodação pedida pelo hóspede (ex.: kitnet, Verdes Mares)." } } : {}),
           },
@@ -469,6 +475,32 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
     for (const p of photos) outcome.media.push({ type: "image", url: p.url, caption: p.caption ?? undefined, mimetype: p.mimetype });
     return photos.length;
   };
+  /** Tamanho do grupo da última consulta desta rodada (a IA às vezes omite hospedes em enviar_fotos). */
+  const lastQuotedGuests = () => {
+    const last = [...outcome.toolCalls].reverse().find((t) => (actionTools as string[]).includes(t.name));
+    const n = (last?.result as { hospedes?: unknown } | null)?.hospedes;
+    return typeof n === "number" && n > 0 ? n : 0;
+  };
+  // Trava: fotos só de acomodações que comportam o grupo (a IA mandava o 105, para 3 pessoas, a uma família de 5),
+  // a não ser que o hóspede tenha pedido esse álbum pelo nome.
+  const albumTooSmall = (album: string, guests: number) => {
+    const units = deps.priceTable?.units;
+    if (!units?.length || !(guests > 0) || mentionedAlbums(input.pendingText, [album]).length) return null;
+    const unit = unitForAlbum(album, units);
+    if (!unit || unit.max_guests >= guests) return null;
+    const albumNames = deps.photos?.albums.map((a) => a.name) ?? [];
+    const fitting = albumNames.filter((a) => {
+      const u = unitForAlbum(a, units);
+      return u ? u.max_guests >= guests : false;
+    });
+    return {
+      erro: `${album} é acomodação para até ${unit.max_guests} pessoa(s); o grupo tem ${guests}. Fotos não enviadas.`,
+      instrucao: fitting.length
+        ? `Envie fotos só de acomodações que comportam o grupo: ${fitting.join(", ")}.`
+        : "Nenhum álbum é de acomodação que comporta o grupo: diga isso ao hóspede em vez de enviar fotos.",
+      albuns_que_comportam: fitting,
+    };
+  };
   /** Envia os álbuns citados no texto que ainda não foram enviados (no máximo 2). */
   const sendMentioned = async (text: string) => {
     const names = deps.photos?.albums.map((a) => a.name) ?? [];
@@ -516,15 +548,15 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
   const withoutEarlyLink = (text: string) =>
     quotedThisRound() && !wantsBookingLink(input.history, input.pendingText) ? trimEarlyLink(text, bookingUrls()) || text : text;
   const finalize = (text: string) => {
-    if (availabilityConfirmed()) return withoutEarlyLink(text);
-    let out = claimsUnconfirmed(text) ? stripAvailabilityClaims(text) : text;
+    const confirmed = availabilityConfirmed();
+    let out = !confirmed && claimsUnconfirmed(text) ? stripAvailabilityClaims(text) : text;
     // PIX com pré-reserva: o endereço da pré-reserva sempre aparece (a IA às vezes manda "pelo mesmo link" do cartão).
     const pre = deps.paymentInfo?.pre_reservation_url?.trim();
     if (pre && /\bpix\b|pr[ée]-reserva/i.test(out) && !out.includes(pre)) {
       out = `${out.replace(/\b(pelo|no|neste|nesse)\s+mesmo\s+link(\s+acima)?/gi, "pelo link de pré-reserva abaixo")}\n\nPré-reserva para pagamento por PIX: ${pre}`;
     }
     const pix = deps.paymentInfo?.pix_key?.trim();
-    if (pix && out.includes(pix) && !out.includes(PIX_AVAILABILITY_WARNING)) out = `${out}\n\n${PIX_AVAILABILITY_WARNING}`;
+    if (!confirmed && pix && out.includes(pix) && !out.includes(PIX_AVAILABILITY_WARNING)) out = `${out}\n\n${PIX_AVAILABILITY_WARNING}`;
     return withoutEarlyLink(out);
   };
 
@@ -630,8 +662,11 @@ export async function runAgentPipeline(input: PipelineInput, deps: PipelineDeps)
           const names = deps.photos.albums.map((a) => a.name);
           const album = matchAlbum(String(args.album ?? ""), names);
           const room = MAX_PHOTOS_PER_REPLY - outcome.media.length;
+          const tooSmallFor = album ? albumTooSmall(album, Number(args.hospedes) || lastQuotedGuests()) : null;
           if (!album) {
             toolResult = { erro: "álbum não encontrado", albuns_disponiveis: names };
+          } else if (tooSmallFor) {
+            toolResult = tooSmallFor;
           } else if (sentAlbums.has(album)) {
             toolResult = { erro: "fotos deste álbum já foram enviadas nesta resposta; não repita", album };
           } else if (room <= 0) {

@@ -181,6 +181,8 @@ export const BASE_GUARDRAILS = [
   "Use o nome do cliente no máximo uma vez na conversa. Não explique por que está perguntando.",
   "Ao pedir um dado, reaja em poucas palavras e pergunte: \"Perfeito, 30/12 a 04/01. Tem criança entre vocês?\". Se faltarem dois dados simples, pergunte os dois na mesma mensagem.",
   "Feche com uma pergunta natural ligada ao assunto, não com frase de encerramento genérica.",
+  "Se a mensagem trouxer mais de uma pergunta (ex.: distância da praia e valor), responda todas na mesma resposta, uma frase para cada; não deixe nenhuma sem resposta.",
+  "Se o cliente disser que vai pensar, verificar, ver com a família ou avisar depois, responda curto que fica no aguardo; não transfira para a equipe nem consulte nada.",
 ];
 
 export interface PromptContext {
@@ -352,27 +354,28 @@ export function buildSystemPrompt(ctx: PromptContext): string {
       "- Nunca peça número de cartão, senha ou código de segurança.",
       pay.payment_instructions?.trim() ? `- ${pay.payment_instructions.trim()}` : null,
     ];
-    sections.push((preReservation
-      ? [
-        "# Pagamento da reserva",
-        "- Ofereça as duas formas: cartão de crédito direto no link de reserva (a disponibilidade aparece na hora) ou PIX.",
-        `- PIX: envie o link de pré-reserva ${preReservation} . O hóspede preenche os dados lá; a equipe confirma a vaga e envia os dados do PIX para o sinal.`,
-        "- O link de pré-reserva é diferente do link de reserva (cartão): escreva sempre o endereço completo da pré-reserva, nunca \"pelo mesmo link\".",
-        "- Não envie chave PIX nem dados bancários e não peça CPF ou documentos na conversa: tudo isso é tratado na pré-reserva e pela equipe.",
-        deposit,
-        ...common,
-      ]
-      : [
-        "# Pagamento da reserva",
-        "- Quando o hóspede quiser reservar ou pagar, envie os dados de pagamento abaixo exatamente como estão (copie a chave PIX sem alterar).",
-        deposit,
-        "- Peça ao hóspede que envie o comprovante aqui na conversa; a reserva só é confirmada pela equipe depois da conferência (transfira para a equipe ao receber o comprovante).",
-        "- Ofereça as duas formas: cartão de crédito direto no link de reserva (a disponibilidade aparece na hora) ou PIX com os dados abaixo.",
-        `- Se a disponibilidade não foi confirmada pela consulta ao sistema de reservas, escreva junto dos dados do PIX, com estas palavras: "${PIX_AVAILABILITY_WARNING}" e use a ferramenta de transferência para atendente quando o hóspede escolher pagar por PIX.`,
-        ...common,
-        "Dados de pagamento:",
-        formatPaymentInfo(pay),
-      ]).filter(Boolean).join("\n"));
+    const hasData = Boolean(pay.pix_key || pay.account);
+    sections.push([
+      "# Pagamento da reserva",
+      hasData
+        ? "- Quando o hóspede quiser reservar, pagar ou pedir a chave PIX ou os dados bancários, envie os dados de pagamento abaixo exatamente como estão (copie a chave PIX sem alterar). Nunca diga que não pode passar esses dados: é para isso que eles estão aqui."
+        : null,
+      deposit,
+      hasData
+        ? "- Ofereça as duas formas: cartão de crédito direto no link de reserva (a disponibilidade aparece na hora) ou PIX com os dados abaixo."
+        : "- Ofereça as duas formas: cartão de crédito direto no link de reserva (a disponibilidade aparece na hora) ou PIX pela pré-reserva.",
+      preReservation
+        ? (hasData
+          ? `- No PIX, envie junto o link de pré-reserva ${preReservation} para o hóspede registrar a reserva (nome, datas e acomodação). O link de pré-reserva é diferente do link de reserva (cartão): escreva sempre o endereço completo da pré-reserva, nunca "pelo mesmo link".`
+          : `- PIX: envie o link de pré-reserva ${preReservation} . O hóspede preenche os dados lá; a equipe confirma a vaga e envia os dados do PIX para o sinal. Escreva sempre o endereço completo da pré-reserva, nunca "pelo mesmo link".`)
+        : null,
+      "- Peça ao hóspede que envie o comprovante aqui na conversa; a reserva só é confirmada pela equipe depois da conferência (transfira para a equipe ao receber o comprovante).",
+      hasData
+        ? `- Se a disponibilidade não foi confirmada pela consulta ao sistema de reservas, escreva junto dos dados do PIX, com estas palavras: "${PIX_AVAILABILITY_WARNING}" e use a ferramenta de transferência para atendente quando o hóspede escolher pagar por PIX.`
+        : null,
+      ...common,
+      ...(hasData ? ["Dados de pagamento:", formatPaymentInfo(pay)] : []),
+    ].filter(Boolean).join("\n"));
   }
 
   if (ctx.hasAvailabilityTool) {
@@ -381,6 +384,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
         "# Reservas",
         "- Para disponibilidade e preços de hospedagem, use a ferramenta consultar_disponibilidade. Se faltar data de entrada, data de saída ou número de hóspedes, pergunte antes.",
         "- Se o hóspede disser só quantas pessoas são (ex.: \"3\"), pergunte se há alguma criança e a idade de cada uma antes de consultar: a tarifa e a acomodação dependem da idade.",
+        "- Conte o grupo uma vez só: adultos + crianças. \"Casal e 3 filhos de 14, 16 e 17 anos\" são 2 adultos e 3 crianças (5 pessoas), nunca 5 adultos e 3 crianças. Filho de 18 anos ou mais conta como adulto; filho sem idade informada, pergunte a idade.",
         "- Nunca estime preços sem consultar. Informe valor total, número de noites e o que a tarifa inclui quando vier no resultado.",
         "- Quando o hóspede quiser reservar (escolheu uma opção, disse que quer fechar ou pediu o link), envie o link de reserva do resultado (link_reserva ou booking_link). Na primeira apresentação dos valores, não mande o link: pergunte se gostou das opções ou se tem alguma dúvida.",
         ...(ctx.hasPriceTable
@@ -397,7 +401,7 @@ export function buildSystemPrompt(ctx: PromptContext): string {
 
   if (ctx.photoAlbums?.length) {
     sections.push(
-      `# Fotos\n- Quando o cliente pedir fotos (ou quando ajudar na decisão, depois de oferecer), chame a ferramenta enviar_fotos NESTA MESMA resposta. Nunca diga "vou enviar" sem chamar a ferramenta, e nunca diga que não pode enviar fotos.\n- Se houver mais de uma opção que atende o pedido, chame enviar_fotos uma vez para cada álbum (no máximo 2 álbuns).\n- Não envie o mesmo álbum duas vezes. Se não existir álbum para o que foi pedido, diga isso e ofereça o álbum mais próximo.\n- As fotos chegam logo depois do seu texto: escreva uma frase curta apresentando-as (ex.: "Seguem as fotos 👇"), sem dizer que já enviou.\nÁlbuns disponíveis:\n${
+      `# Fotos\n- Quando o cliente pedir fotos (ou quando ajudar na decisão, depois de oferecer), chame a ferramenta enviar_fotos NESTA MESMA resposta. Nunca diga "vou enviar" sem chamar a ferramenta, e nunca diga que não pode enviar fotos.\n- Se houver mais de uma opção que atende o pedido, chame enviar_fotos uma vez para cada álbum (no máximo 2 álbuns).\n- Se o hóspede já disse quantas pessoas são, informe hospedes na ferramenta e envie só fotos de acomodações que comportam o grupo. Álbum de apartamento acessível só quando o hóspede pedir acessibilidade.\n- Se o hóspede responder só "sim" à oferta de fotos, escolha você a(s) acomodação(ões) que comporta(m) o grupo; não pergunte de novo qual.\n- Não envie o mesmo álbum duas vezes. Se não existir álbum para o que foi pedido, diga isso e ofereça o álbum mais próximo.\n- As fotos chegam logo depois do seu texto: escreva uma frase curta apresentando-as (ex.: "Seguem as fotos 👇"), sem dizer que já enviou.\nÁlbuns disponíveis:\n${
         ctx.photoAlbums.map((a) => `- ${a.name} (${a.count} foto${a.count > 1 ? "s" : ""})`).join("\n")
       }`,
     );

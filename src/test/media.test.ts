@@ -1,11 +1,29 @@
 import { describe, expect, it, vi } from "vitest";
-import { cleanAlbumName, groupAlbums, matchAlbum, mentionedAlbums, photoGroups } from "../../supabase/functions/_shared/media.ts";
+import { cleanAlbumName, groupAlbums, matchAlbum, mentionedAlbums, photoGroups, unitForAlbum } from "../../supabase/functions/_shared/media.ts";
 import { collectDriveImages, downloadDriveImage, parseDriveFolderId, parseEmbeddedFolder } from "../../supabase/functions/_shared/gdrive.ts";
 
 const entry = (id: string, name: string, folder = false) =>
   `<div class="flip-entry" id="entry-${id}" tabindex="0" role="link"><div class="flip-entry-info"><a href="https://drive.google.com/${folder ? `drive/folders/${id}` : `file/d/${id}/view?usp=drive_web`}" target="_blank"><div class="flip-entry-visual"></div><div class="flip-entry-list-icon"></div><div class="flip-entry-title">${name}</div></a></div></div>`;
 
 describe("álbuns de fotos", () => {
+  it("liga o álbum à acomodação da tabela (números ou palavras distintivas)", () => {
+    const units = [
+      { name: "Apartamentos 101 a 104 e 201 a 204", max_guests: 4 },
+      { name: "Apartamentos 207 a 209", max_guests: 4 },
+      { name: "Apartamento 105 (acessível)", max_guests: 3 },
+      { name: "Apartamentos 205 e 206", max_guests: 4 },
+      { name: "Kitnet", max_guests: 2 },
+      { name: "Condomínio Verdes Mares", max_guests: 7 },
+    ];
+    expect(unitForAlbum("Apartamento 101 a 204", units)?.max_guests).toBe(4);
+    expect(unitForAlbum("Apartamento 105 - Acessibilidade", units)?.name).toBe("Apartamento 105 (acessível)");
+    expect(unitForAlbum("Apartamento 205 e 206", units)?.name).toBe("Apartamentos 205 e 206");
+    expect(unitForAlbum("Condomínio Verdes Mares", units)?.max_guests).toBe(7);
+    expect(unitForAlbum("Kitnet", units)?.max_guests).toBe(2);
+    expect(unitForAlbum("Estrutura", units)).toBeNull();
+    expect(unitForAlbum("Apartamento 301", units)).toBeNull();
+  });
+
   it("limpa nomes de pasta", () => {
     expect(cleanAlbumName("01 - Apto Família ")).toBe("Apto Família");
     expect(cleanAlbumName("  ")).toBe("Geral");

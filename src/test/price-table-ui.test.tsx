@@ -140,8 +140,15 @@ describe("tabela de preços: períodos fechados no editor", () => {
 });
 
 describe("prévia do pagamento com pré-reserva", () => {
-  it("mostra a pré-reserva e não mostra chave PIX nem conta", () => {
+  it("com chave cadastrada, mostra a chave PIX e a pré-reserva junto", () => {
     const lines = paymentPreview({ ...EMPTY_BUSINESS_INFO, pix_key: "48 90000 0000", account: "12.345-6", deposit_percent: 50, pre_reservation_url: "https://pms.hospedin.com/pre-reserva/exemplo", share_payment_info: true });
+    expect(lines).toContain("PIX (chave): 48 90000 0000");
+    expect(lines).toContain("Pré-reserva (enviada junto com o PIX): https://pms.hospedin.com/pre-reserva/exemplo");
+    expect(lines.join("\n")).toMatch(/12\.345-6/);
+  });
+
+  it("sem chave nem conta, mostra só a pré-reserva", () => {
+    const lines = paymentPreview({ ...EMPTY_BUSINESS_INFO, deposit_percent: 50, pre_reservation_url: "https://pms.hospedin.com/pre-reserva/exemplo", share_payment_info: true });
     expect(lines).toContain("PIX: pré-reserva em https://pms.hospedin.com/pre-reserva/exemplo");
     expect(lines.join("\n")).not.toMatch(/90000|12\.345/);
   });

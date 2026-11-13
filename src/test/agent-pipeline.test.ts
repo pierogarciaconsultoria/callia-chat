@@ -186,6 +186,54 @@ describe("pipeline do agente", () => {
     expect(system).toContain("Na primeira apresentação dos valores, não mande o link");
   });
 
+  it("trava: fotos só de acomodação que comporta o grupo (o 105, para 3, não vai para família de 5)", async () => {
+    const pick = vi.fn(async (_album: string, n: number) => Array.from({ length: n }, (_, i) => ({ url: `https://cdn.example/${i}.jpg`, caption: null, mimetype: "image/jpeg" })));
+    const albums = [{ name: "Apartamento 105 - Acessibilidade", count: 5 }, { name: "Apartamento 205 e 206", count: 5 }, { name: "Condomínio Verdes Mares", count: 9 }, { name: "Estrutura", count: 11 }];
+    const units = [
+      { name: "Apartamento 105 (acessível)", max_guests: 3 },
+      { name: "Apartamentos 205 e 206", max_guests: 4 },
+      { name: "Condomínio Verdes Mares", max_guests: 7 },
+    ];
+    const ai = fakeAi([
+      { toolCalls: [{ id: "t1", type: "function", function: { name: "enviar_fotos", arguments: '{"album":"Apartamento 105 - Acessibilidade","hospedes":5}' } }] },
+      { toolCalls: [{ id: "t2", type: "function", function: { name: "enviar_fotos", arguments: '{"album":"Condomínio Verdes Mares","hospedes":5}' } }] },
+      { content: "Seguem as fotos do Verdes Mares, que comporta a família 👇" },
+    ]);
+    const out = await runAgentPipeline(input("Sim"), deps({ ai, photos: { albums, pick }, priceTable: { quote: vi.fn(() => ({})), units } }));
+    const first = (ai.calls[2] as { messages: Array<{ role: string; content: string }> }).messages.find((m) => m.role === "tool" && /o grupo tem 5/.test(m.content ?? ""))?.content ?? "";
+    expect(first).toContain("até 3 pessoa(s); o grupo tem 5");
+    expect(first).toContain("Condomínio Verdes Mares");
+    expect(first).not.toContain("Estrutura,");
+    expect(pick).toHaveBeenCalledTimes(1);
+    expect(pick).toHaveBeenCalledWith("Condomínio Verdes Mares", 4);
+    expect(out.media).toHaveLength(4);
+    const system = (ai.calls[0] as { messages: Array<{ content: string }> }).messages[0].content;
+    expect(system).toContain("envie só fotos de acomodações que comportam o grupo");
+
+    // Pedido pelo nome passa: o hóspede quer ver o acessível mesmo sendo grupo maior.
+    const ai2 = fakeAi([
+      { toolCalls: [{ id: "t1", type: "function", function: { name: "enviar_fotos", arguments: '{"album":"Apartamento 105 - Acessibilidade","hospedes":5}' } }] },
+      { content: "Seguem as fotos do 105 👇" },
+    ]);
+    const out2 = await runAgentPipeline(input("quero ver o 105"), deps({ ai: ai2, photos: { albums, pick }, priceTable: { quote: vi.fn(() => ({})), units } }));
+    expect(out2.media).toHaveLength(4);
+  });
+
+  it("trava: sem hospedes na ferramenta, usa o grupo da consulta da mesma rodada", async () => {
+    const pick = vi.fn(async (_album: string, n: number) => Array.from({ length: n }, (_, i) => ({ url: `https://cdn.example/${i}.jpg`, caption: null, mimetype: "image/jpeg" })));
+    const albums = [{ name: "Kitnet", count: 1 }, { name: "Apartamento 205 e 206", count: 5 }];
+    const units = [{ name: "Kitnet", max_guests: 2 }, { name: "Apartamentos 205 e 206", max_guests: 4 }];
+    const quote = vi.fn(() => ({ hospedes: 4, opcoes: [{ acomodacao: "Apartamentos 205 e 206", total: 5000, total_formatado: "R$ 5.000,00" }], nao_comportam: ["Kitnet"] }));
+    const ai = fakeAi([
+      { toolCalls: [{ id: "t1", type: "function", function: { name: "calcular_valor", arguments: '{"checkin":"27/12/2026","checkout":"01/01/2027","adultos":4}' } }] },
+      { toolCalls: [{ id: "t2", type: "function", function: { name: "enviar_fotos", arguments: '{"album":"Kitnet"}' } }] },
+      { content: "O 205 sai R$ 5.000,00. Quer fotos?" },
+    ]);
+    await runAgentPipeline(input("27/12/2026 a 01/01/2027, 4 adultos, com fotos"), deps({ ai, photos: { albums, pick }, priceTable: { quote, units } }));
+    expect(pick).not.toHaveBeenCalled();
+    expect((ai.calls[2] as { messages: Array<{ content: string }> }).messages.at(-1)?.content).toContain("o grupo tem 4");
+  });
+
   it("IA envia fotos do álbum certo, com limite por pedido", async () => {
     const pick = vi.fn(async (_album: string, n: number) => Array.from({ length: n }, (_, i) => ({ url: `https://cdn.example/fam-${i}.jpg`, caption: null, mimetype: "image/jpeg" })));
     const photos = { albums: [{ name: "Apto Casal", count: 3 }, { name: "Apto Família", count: 8 }], pick };
@@ -406,6 +454,26 @@ describe("pipeline do agente", () => {
     const out = await runAgentPipeline(input("205 de 27/12/2026 a 01/01/2027, somos 4 adultos"), deps({ ai, priceTable: { quote }, paymentInfo }));
     expect((ai.calls[2] as { messages: Array<{ content: string }> }).messages.at(-1)?.content).toContain("NÃO foi confirmada");
     expect(out.reply).toBe("Total *R$ 5.000,00*.\n- PIX (telefone): 48 90000 0000\n\nAntes de pagar por PIX, aguarde nossa equipe confirmar a vaga para essas datas.");
+  });
+
+  it("com vaga confirmada pelo sistema, a chave PIX sai sem o aviso e com a pré-reserva", async () => {
+    const quote = vi.fn(() => ({ noites: 5, opcoes: [{ acomodacao: "Apartamentos 205 e 206", total: 5000, pms_category_ids: [275] }] }));
+    const checkAvailability = vi.fn(async () => ({ checkin: "", checkout: "", nights: 5, adults: 4, children: 0, children_ages: [], currency: "BRL", sold_out: false, booking_link: null,
+      rooms: [{ name: "Casal + 2", category_id: 275, rate: null, total_price: 3000, price_per_night: 600, available_units: 1 }] }));
+    const ai = fakeAi([
+      { toolCalls: [{ id: "t1", type: "function", function: { name: "consultar_disponibilidade", arguments: '{"checkin":"27/12/2026","checkout":"01/01/2027","adultos":4}' } }] },
+      { content: "Temos vaga no 205: R$ 5.000,00. Para pagar por PIX:\n- PIX (CNPJ): 11.222.333/0001-81" },
+    ]);
+    const paymentInfo = { legal_name: "Pousada Exemplo Ltda", cnpj: "11.222.333/0001-81", bank_name: null, bank_code: null, agency: null, account: null, account_type: null, payee_name: null, pix_key_type: "cnpj", pix_key: "11.222.333/0001-81", deposit_percent: 50, payment_instructions: null, pre_reservation_url: "https://pms.hospedin.com/pre-reserva/exemplo" };
+    const out = await runAgentPipeline(input("quero pagar por pix o 205 de 27/12/2026 a 01/01/2027, 4 adultos"), deps({ ai, priceTable: { quote }, checkAvailability, paymentInfo }));
+    expect(out.reply).toBe("Temos vaga no 205: R$ 5.000,00. Para pagar por PIX:\n- PIX (CNPJ): 11.222.333/0001-81\n\nPré-reserva para pagamento por PIX: https://pms.hospedin.com/pre-reserva/exemplo");
+    const system = (ai.calls[0] as { messages: Array<{ content: string }> }).messages[0].content;
+    expect(system).toContain("- PIX (CNPJ): 11.222.333/0001-81");
+    expect(system).toContain("Nunca diga que não pode passar esses dados");
+    expect(system).toContain("envie junto o link de pré-reserva https://pms.hospedin.com/pre-reserva/exemplo");
+    expect(system).toContain("Casal e 3 filhos de 14, 16 e 17 anos");
+    expect(system).toContain("responda todas na mesma resposta");
+    expect(system).toContain("vai pensar, verificar");
   });
 
   it("trava: PIX com pré-reserva sempre traz o endereço da pré-reserva", async () => {

@@ -111,15 +111,16 @@ export async function lookupCnpj(cnpj: string, fetchImpl: typeof fetch = fetch):
 /** Mesmo formato que o agente usa (formatPaymentInfo no backend). */
 export function paymentPreview(info: BusinessInfo): string[] {
   const lines: string[] = [];
-  if (info.pre_reservation_url) {
+  if (info.pre_reservation_url && !info.pix_key && !info.account) {
     lines.push("Cartão de crédito: pelo link de reserva com as datas");
     lines.push(`PIX: pré-reserva em ${info.pre_reservation_url}`);
-    lines.push("A equipe confirma a vaga e envia os dados do PIX (a MarIA não envia chave nem conta).");
+    lines.push("A equipe confirma a vaga e envia os dados do PIX (sem chave cadastrada, a MarIA não envia chave nem conta).");
     lines.push(info.deposit_percent ? `Sinal para garantir a reserva: ${String(info.deposit_percent).replace(".", ",")}% do total` : "Sinal: informado pela equipe");
     if (info.payment_instructions?.trim()) lines.push(info.payment_instructions.trim());
     return lines;
   }
   if (info.pix_key) lines.push(`PIX (${info.pix_key_type ? PIX_LABEL[info.pix_key_type] : "chave"}): ${info.pix_key}`);
+  if (info.pre_reservation_url) lines.push(`Pré-reserva (enviada junto com o PIX): ${info.pre_reservation_url}`);
   const payee = info.payee_name || info.legal_name;
   if (payee) lines.push(`Favorecido: ${payee}${info.cnpj ? ` — CNPJ ${info.cnpj}` : ""}`);
   if (info.bank_name || info.agency || info.account) {

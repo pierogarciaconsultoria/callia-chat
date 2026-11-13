@@ -111,15 +111,14 @@ export async function buildPipelineDeps(
 
 /** Tabela de preços estruturada ativa (cálculo exato do valor). */
 /**
- * Dados de pagamento, só quando o dono habilitou o compartilhamento. Com link de pré-reserva,
- * a chave PIX e os dados bancários nem chegam ao prompt (a equipe os envia após confirmar a vaga).
+ * Dados de pagamento, só quando o dono habilitou o compartilhamento. Com link de pré-reserva, a MarIA envia a
+ * chave PIX junto com a pré-reserva (o hóspede registra a reserva lá); o dono que não quiser a chave na
+ * conversa deixa o campo vazio.
  */
 async function loadPaymentInfo(db: Db, workspaceId: string): Promise<PaymentInfo | null> {
   const { data } = await db.from("workspace_business_info").select("*").eq("workspace_id", workspaceId).maybeSingle();
   if (!data?.share_payment_info) return null;
-  const info = { ...data, deposit_percent: data.deposit_percent === null ? null : Number(data.deposit_percent) } as PaymentInfo;
-  if (!info.pre_reservation_url) return info;
-  return { ...info, pix_key: null, pix_key_type: null, bank_name: null, bank_code: null, agency: null, account: null, account_type: null };
+  return { ...data, deposit_percent: data.deposit_percent === null ? null : Number(data.deposit_percent) } as PaymentInfo;
 }
 
 export async function loadPriceTable(db: Db, workspaceId: string, depositPercent: number | null = null): Promise<PipelineDeps["priceTable"]> {
@@ -139,6 +138,7 @@ export async function loadPriceTable(db: Db, workspaceId: string, depositPercent
     },
     isOpen: (night) => isOpenNight(parsed.data, night),
     summary: priceTableSummary(parsed.data, data.currency ?? "BRL"),
+    units: parsed.data.units.map((u) => ({ name: u.name, max_guests: u.max_guests })),
   };
 }
 

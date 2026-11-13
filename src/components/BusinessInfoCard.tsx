@@ -183,7 +183,7 @@ export function BusinessInfoCard() {
                 label="Link de pré-reserva (PIX)"
                 type="url"
                 placeholder="https://pms.hospedin.com/pre-reserva/sua-pousada"
-                hint="Com o link, no PIX a MarIA envia a pré-reserva: a equipe confirma a vaga e depois passa a chave. Sem ele, a MarIA envia a chave PIX acima."
+                hint="No PIX a MarIA envia a chave acima e este link, para o hóspede registrar a reserva. Sem chave cadastrada, envia só a pré-reserva e a equipe passa a chave depois."
                 error={preReservationInvalid ? "Use um endereço completo começando com https://" : undefined}
                 value={form.text.pre_reservation_url}
                 onChange={setText("pre_reservation_url")}

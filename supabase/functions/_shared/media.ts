@@ -65,6 +65,28 @@ export function mentionedAlbums(text: string, albums: string[]): string[] {
 }
 
 /**
+ * Acomodação da tabela de preços a que um álbum corresponde: pelos números do nome ("Apartamento 101 a 204" ⊂
+ * "Apartamentos 101 a 104 e 201 a 204") ou, sem números, pelas palavras distintivas ("Verdes Mares", "Kitnet").
+ * Álbuns de áreas comuns ("Estrutura") não correspondem a nenhuma.
+ */
+export function unitForAlbum<T extends { name: string }>(album: string, units: T[]): T | null {
+  const key = normalizeName(album.split(" - ")[0].replace(/\([^)]*\)/g, " "));
+  const numbers = key.match(/\d+/g) ?? [];
+  if (numbers.length) {
+    return units.find((u) => {
+      const own = new Set(normalizeName(u.name).match(/\d+/g) ?? []);
+      return numbers.every((n) => own.has(n));
+    }) ?? null;
+  }
+  const words = key.split(" ").filter((w) => w.length >= 4 && !GENERIC_WORDS.has(w));
+  if (!words.length) return null;
+  return units.find((u) => {
+    const name = ` ${normalizeName(u.name)} `;
+    return words.every((w) => name.includes(` ${w} `));
+  }) ?? null;
+}
+
+/**
  * Fotos como a MarIA as vê: álbuns ligados ao catálogo são agrupados e nomeados pelo item do catálogo
  * (duas pastas do mesmo apartamento viram uma opção só); os demais pelo nome do álbum.
  */
