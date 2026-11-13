@@ -120,6 +120,7 @@ export function periodForNight(table: PriceTableData, night: string): string {
 }
 
 const brDate = (iso: string) => iso.split("-").reverse().join("/");
+const nextDay = (iso: string) => new Date(Date.parse(`${iso}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
 
 const norm = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
@@ -149,7 +150,7 @@ export function quoteStay(table: PriceTableData, q: QuoteQuery, currency = "BRL"
 
   const closedHits = (table.closed ?? []).filter((c) => nights.some((n) => c.from <= n && n <= c.to));
   if (closedHits.length) {
-    const when = closedHits.map((c) => `${c.name}: ${brDate(c.from)} a ${brDate(c.to)}`).join("; ");
+    const when = closedHits.map((c) => `${c.name}: noites de ${brDate(c.from)} a ${brDate(c.to)} (última saída ${brDate(c.from)}, próxima entrada ${brDate(nextDay(c.to))})`).join("; ");
     return {
       checkin: q.checkin,
       checkout: q.checkout,
@@ -157,7 +158,7 @@ export function quoteStay(table: PriceTableData, q: QuoteQuery, currency = "BRL"
       fechado: true,
       periodos_fechados: when,
       opcoes: [],
-      observacao: `O hotel estará fechado nessas datas (${when}). Não cote nem ofereça reserva para elas; informe o fechamento e sugira datas fora desse período.`,
+      observacao: `O hotel estará fechado nessas noites (${when}). Sair no primeiro dia do fechamento e entrar no dia seguinte ao fim continuam possíveis. Não cote nem ofereça reserva com noites dentro do fechamento; informe o fechamento e sugira datas fora dele.`,
     };
   }
 
@@ -262,7 +263,9 @@ export function priceTableSummary(table: PriceTableData, currency = "BRL"): stri
       ? `Noites fora de todos os períodos acima não têm valor cadastrado: não cote nem ofereça reserva para elas.`
       : `Noites fora dos períodos acima valem como ${defaultPeriod.name}.`);
   }
-  if (table.closed.length) lines.push(`Fechado (não cote nem ofereça reserva): ${table.closed.map((c) => `${c.name}, ${brDate(c.from)} a ${brDate(c.to)}`).join("; ")}.`);
+  if (table.closed.length) {
+    lines.push(`Fechado (não cote nem ofereça reserva com noites nesses intervalos; sair no primeiro dia e entrar no dia seguinte ao fim é possível): ${table.closed.map((c) => `${c.name}, noites de ${brDate(c.from)} a ${brDate(c.to)} (última saída ${brDate(c.from)}, próxima entrada ${brDate(nextDay(c.to))})`).join("; ")}.`);
+  }
 
   lines.push("Acomodações e capacidade (crianças contam para a capacidade; só as tarifas com regra de idade tratam criança diferente de adulto):");
   for (const u of table.units) {

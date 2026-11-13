@@ -49,7 +49,7 @@ describe("tabela de preços: texto para o prompt gerado da estrutura", () => {
     const text = priceTableSummary(t);
     expect(text).toContain("- Baixa temporada: 30/11/2026 a 20/12/2026 (mínimo de 5 diárias)");
     expect(text).toContain("Noites fora de todos os períodos acima não têm valor cadastrado");
-    expect(text).toContain("Fechado (não cote nem ofereça reserva): Inverno, 21/06/2027 a 22/09/2027.");
+    expect(text).toContain("Inverno, noites de 21/06/2027 a 22/09/2027 (última saída 21/06/2027, próxima entrada 23/09/2027).");
     // Capacidade com a ressalva da criança explícita (a IA resumia "até 4 pessoas").
     expect(text).toContain("- Apartamentos 101 a 104: até 3 pessoas, ou 3 adultos + 1 criança de até 5 anos:");
     // Tarifas em ordem de pessoas, regra de idade explícita, diária por período.
@@ -218,7 +218,7 @@ describe("tabela de preços: períodos fechados", () => {
     const r = quoteStay(closedTable, { checkin: "08/03/2027", checkout: "12/03/2027", adults: 2 }) as { fechado?: boolean; opcoes: unknown[]; periodos_fechados?: string };
     expect(r.fechado).toBe(true);
     expect(r.opcoes).toEqual([]);
-    expect(r.periodos_fechados).toBe("Reforma: 10/03/2027 a 20/03/2027");
+    expect(r.periodos_fechados).toBe("Reforma: noites de 10/03/2027 a 20/03/2027 (última saída 10/03/2027, próxima entrada 21/03/2027)");
   });
 
   it("checkout no 1º dia fechado ainda é cotado (a noite anterior está aberta)", () => {
