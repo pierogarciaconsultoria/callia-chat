@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  appendGuardrail, buildLearningMessages, fingerprintFor, LearningError, LIMITS, mergeEvidence, messageText, normalizeSuggestions, resolveApplied,
+  appendGuardrail, buildLearningMessages, contactLabel, fingerprintFor, LearningError, LIMITS, mergeEvidence, messageText, normalizeSuggestions, resolveApplied,
   selectTranscripts, type Transcript, whoFor,
 } from "../../supabase/functions/_shared/learnings.ts";
 
@@ -27,6 +27,12 @@ describe("aprendizados: seleção das conversas", () => {
     expect(selectTranscripts(many)).toHaveLength(LIMITS.conversations);
     const long = t("c-long", Array.from({ length: 80 }, (_, i) => ["cliente", `m${i}`] as ["cliente", string]));
     expect(selectTranscripts([long])[0].messages).toHaveLength(LIMITS.messagesPerConversation);
+  });
+
+  it("rótulo do contato: nome, senão telefone mascarado (o número inteiro não vai para a IA)", () => {
+    expect(contactLabel("Cliente Um", "5548999990021")).toBe("Cliente Um");
+    expect(contactLabel("  ", "+55 (48) 99999-0021")).toBe("cliente final ****0021");
+    expect(contactLabel(null, null)).toBe("cliente");
   });
 
   it("mapeia remetentes e descreve mídia sem texto", () => {

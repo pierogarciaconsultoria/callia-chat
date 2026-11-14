@@ -16,8 +16,11 @@ function allowPrivateTargets(): boolean {
   return (globalThis as any).Deno?.env?.get("CALLIA_ALLOW_PRIVATE_URLS") === "true";
 }
 
-/** Aceita apenas http(s) para hosts públicos. Não resolve DNS: é uma barreira básica, não um firewall. */
-export function assertPublicHttpUrl(value: unknown, field = "url"): string {
+/**
+ * Aceita apenas http(s) para hosts públicos. Não resolve DNS: é uma barreira básica, não um firewall.
+ * Com `requireHttps` (webhooks, que carregam telefone e texto das mensagens), http só passa no teste ponta a ponta.
+ */
+export function assertPublicHttpUrl(value: unknown, field = "url", opts: { requireHttps?: boolean } = {}): string {
   if (typeof value !== "string" || !value.trim()) throw new RuntimeError("invalid_request", `${field} obrigatória.`);
   let parsed: URL;
   try {
@@ -26,6 +29,7 @@ export function assertPublicHttpUrl(value: unknown, field = "url"): string {
     throw new RuntimeError("invalid_request", `${field} inválida.`);
   }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new RuntimeError("invalid_request", `${field} deve usar http(s).`);
+  if (opts.requireHttps && parsed.protocol !== "https:" && !allowPrivateTargets()) throw new RuntimeError("invalid_request", `${field} deve usar https.`);
   if (parsed.username || parsed.password) throw new RuntimeError("invalid_request", `${field} não pode conter credenciais.`);
   if (isInternalHost(parsed.hostname) && !allowPrivateTargets()) throw new RuntimeError("invalid_request", "Destino interno não é permitido.");
   return parsed.toString();

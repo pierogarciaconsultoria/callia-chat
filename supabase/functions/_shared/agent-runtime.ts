@@ -187,7 +187,8 @@ interface MediaMessage {
 const DOC_TEXT_LIMIT = 3000;
 const VISION_PROMPT =
   "Descreva objetivamente esta imagem enviada por um cliente no WhatsApp, em português, em até 3 frases. Transcreva textos visíveis (ex.: códigos, preços). " +
-  "Se for comprovante de pagamento (PIX, transferência, depósito, boleto pago), comece com \"Comprovante de pagamento:\" e transcreva valor, data, pagador e favorecido.";
+  "Se for comprovante de pagamento (PIX, transferência, depósito, boleto pago), comece com \"Comprovante de pagamento:\" e transcreva só valor e data. " +
+  "Nunca transcreva nome, CPF, CNPJ, banco, agência, conta ou chave PIX de quem pagou ou recebeu: a equipe confere isso na imagem.";
 
 /**
  * Converte mídia em texto para o agente: áudio → transcrição (STT), imagem → descrição (visão), PDF → texto.

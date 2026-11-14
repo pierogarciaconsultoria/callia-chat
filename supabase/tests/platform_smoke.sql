@@ -149,16 +149,16 @@ declare
   msg uuid;
   r jsonb;
 begin
-  assert public.phone_key('554899978131') = public.phone_key('(48) 99997-8131'), 'WhatsApp sem o 9º dígito casa com o cadastro';
-  insert into conversations (workspace_id, channel, contact_phone) values (ws, 'whatsapp', '554899978131') returning id into conv;
+  assert public.phone_key('554899990131') = public.phone_key('(48) 99999-0131'), 'WhatsApp sem o 9º dígito casa com o cadastro';
+  insert into conversations (workspace_id, channel, contact_phone) values (ws, 'whatsapp', '554899990131') returning id into conv;
   insert into messages (workspace_id, conversation_id, direction, sender, type, content) values (ws, conv, 'inbound', 'customer', 'text', 'quanto fica?') returning id into msg;
   insert into agent_runs (workspace_id, conversation_id, trigger_message_id, status, usage, created_at)
     values (ws, conv, msg, 'replied', '{"tool_calls": ["calcular_valor"]}', now() - interval '2 days');
   insert into pms_reservations (workspace_id, provider, external_id, status, sale_channel, guest_phone, total_cents, baseline, first_seen_at) values
-    (ws, 'hospedin', 1, 'reservation', 'Formulário pré-reservas', '5548999978131', 500000, false, now() - interval '1 hour'),
+    (ws, 'hospedin', 1, 'reservation', 'Formulário pré-reservas', '5548999990131', 500000, false, now() - interval '1 hour'),
     (ws, 'hospedin', 2, 'pre_reservation', 'HBOOK', '5511988887777', 80000, false, now() - interval '1 hour'),
-    (ws, 'hospedin', 3, 'canceled', 'Balcão', '5548999978131', 1000, false, now() - interval '1 hour'),
-    (ws, 'hospedin', 4, 'reservation', 'Balcão', '5548999978131', 1000, true, now() - interval '1 hour');
+    (ws, 'hospedin', 3, 'canceled', 'Balcão', '5548999990131', 1000, false, now() - interval '1 hour'),
+    (ws, 'hospedin', 4, 'reservation', 'Balcão', '5548999990131', 1000, true, now() - interval '1 hour');
   r := public.get_quotes_reservations(ws, current_date - 6, current_date);
   assert (r->>'quotes')::int = 1 and (r->>'quoted_conversations')::int = 1, 'orçamentos: ' || r::text;
   assert (r->>'reservations')::int = 2 and (r->>'confirmed')::int = 1 and (r->>'pre_reservations')::int = 1 and (r->>'canceled')::int = 1, 'reservas (sem base e sem canceladas): ' || r::text;

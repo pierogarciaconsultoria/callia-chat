@@ -107,10 +107,11 @@ do $$ begin
   assert public.assign_conversation_operator('c0000000-0000-0000-0000-000000000005', '99999999-0000-0000-0000-000000000003') = '99999999-0000-0000-0000-000000000002', 'conversa de outro continua com ele';
   assert (select user_id from public.contact_assignments where phone = '5548999990004') = '99999999-0000-0000-0000-000000000002', 'vínculo mantido';
 end $$;
--- Vínculo desligado: assumir não mexe na carteira.
+-- Vínculo desligado: assumir não mexe na carteira. (A dona assume "mesmo assim": em visibilidade "own", a Bia nem vê
+-- a conversa da Ana, e assumir exige poder vê-la — auditoria 2026-11-14.)
 update public.workspace_routing set sticky_claim = false where workspace_id = current_setting('test.ws')::uuid;
 set local role authenticated;
-select set_config('request.jwt.claims', '{"sub":"99999999-0000-0000-0000-000000000003","role":"authenticated"}', true);
+select set_config('request.jwt.claims', '{"sub":"99999999-0000-0000-0000-000000000001","role":"authenticated"}', true);
 do $$ begin
   perform public.claim_conversation('c0000000-0000-0000-0000-000000000005', true);
   assert (select user_id from public.contact_assignments where phone = '5548999990004') = '99999999-0000-0000-0000-000000000002', 'desligado: carteira intacta';

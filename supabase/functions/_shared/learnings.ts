@@ -105,6 +105,17 @@ export function selectTranscripts(all: Transcript[], limits = LIMITS): Transcrip
   return out;
 }
 
+/**
+ * Rótulo do contato nas transcrições enviadas à IA: o nome, ou o telefone mascarado (só os 4 últimos dígitos).
+ * O número completo não é necessário para extrair aprendizados (auditoria 2026-11-14, A-05).
+ */
+export function contactLabel(name: string | null | undefined, phone: string | null | undefined): string {
+  const n = name?.trim();
+  if (n) return n;
+  const digits = String(phone ?? "").replace(/\D/g, "");
+  return digits.length >= 4 ? `cliente final ****${digits.slice(-4)}` : "cliente";
+}
+
 export function formatTranscripts(ts: Transcript[]): string {
   return ts.map((t) => {
     const head = `### Conversa ${t.id} — contato: ${t.contact}${t.handoff ? ` — transferida para a equipe (${t.handoff})` : ""}`;

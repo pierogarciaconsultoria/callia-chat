@@ -4,24 +4,38 @@ import { invokeFunction, unwrap } from "@/lib/functions";
 import type { WhatsAppInstance } from "@/lib/database.types";
 import { invalidateEntitlements } from "./use-entitlements";
 
-// Colunas liberadas por GRANT para authenticated (hash do token fica oculto).
+// Colunas liberadas por GRANT para authenticated (hash do token e o QR de pareamento ficam ocultos:
+// o QR só chega pela function evolution-connect, para admins).
 const INSTANCE_COLUMNS =
-  "id, workspace_id, name, instance_name, provider, status, qr_code, qr_updated_at, phone_number, profile_name, is_default, last_connected_at, last_error, webhook_token_rotated_at, created_at, updated_at";
+  "id, workspace_id, name, instance_name, provider, status, qr_updated_at, phone_number, profile_name, is_default, last_connected_at, last_error, webhook_token_rotated_at, created_at, updated_at";
 
 export const instancesKey = (workspaceId: string) => ["whatsapp_instances", workspaceId] as const;
 
+/** A lista não traz o QR; ao recarregar, mantém o último QR recebido da function enquanto a instância ainda espera leitura. */
+export function keepQr(prev: WhatsAppInstance[] | undefined, next: WhatsAppInstance[]): WhatsAppInstance[] {
+  if (!prev?.length) return next;
+  return next.map((i) => {
+    const old = prev.find((p) => p.id === i.id);
+    return old?.qr_code && i.qr_code === undefined && i.status === "qr" ? { ...i, qr_code: old.qr_code } : i;
+  });
+}
+
 export function useWhatsAppInstances(workspaceId: string, opts?: { refetchInterval?: number | false }) {
+  const qc = useQueryClient();
   return useQuery({
     queryKey: instancesKey(workspaceId),
     refetchInterval: opts?.refetchInterval,
     queryFn: async () =>
-      unwrap(
-        await supabase
-          .from("whatsapp_instances")
-          .select(INSTANCE_COLUMNS)
-          .eq("workspace_id", workspaceId)
-          .order("created_at"),
-      ) as unknown as WhatsAppInstance[],
+      keepQr(
+        qc.getQueryData<WhatsAppInstance[]>(instancesKey(workspaceId)),
+        unwrap(
+          await supabase
+            .from("whatsapp_instances")
+            .select(INSTANCE_COLUMNS)
+            .eq("workspace_id", workspaceId)
+            .order("created_at"),
+        ) as unknown as WhatsAppInstance[],
+      ),
   });
 }
 

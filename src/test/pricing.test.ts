@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { canExtendToMinimum, fitToGroup, isOpenNight, mergeAvailability, periodForNight, priceTableSchema, priceTableSummary, quoteStay } from "../../supabase/functions/_shared/pricing.ts";
 
-const table = priceTableSchema.parse(JSON.parse(readFileSync("scripts/data/morada-price-table.json", "utf8")));
+const table = priceTableSchema.parse(JSON.parse(readFileSync("scripts/data/sample-price-table.json", "utf8")));
 const best = (q: Parameters<typeof quoteStay>[1]) => {
   const r = quoteStay(table, q) as { opcoes: Array<{ acomodacao: string; total: number }> };
   return r.opcoes;

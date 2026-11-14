@@ -6,6 +6,7 @@ import { aiFromEnv, loadAgentConfig, loadBusinessName } from "../_shared/agent-r
 import type { AiProvider } from "../_shared/ai.ts";
 import { assertActive, assertFeature, hasFeature, loadEntitlements } from "../_shared/entitlements.ts";
 import {
+  contactLabel,
   appendGuardrail, buildLearningMessages, type Evidence, LEARNING_JSON_SCHEMA, LearningError, type LearningFacts, LIMITS, mergeEvidence,
   messageText, normalizeSuggestions, resolveApplied, selectTranscripts, type Suggestion, type SuggestionKind, type Transcript, whoFor,
 } from "../_shared/learnings.ts";
@@ -35,7 +36,7 @@ async function loadTranscripts(db: Db, workspaceId: string, since: Date, until: 
   for (const r of runs ?? []) handoffs.set(r.conversation_id, String(r.reason ?? "handoff"));
   const byConv = new Map<string, Transcript>();
   for (const c of convs) {
-    byConv.set(c.id, { id: c.id, contact: c.contact_name || `+${String(c.contact_phone).replace(/\D/g, "")}`, handoff: handoffs.get(c.id) ?? null, messages: [] });
+    byConv.set(c.id, { id: c.id, contact: contactLabel(c.contact_name, c.contact_phone), handoff: handoffs.get(c.id) ?? null, messages: [] });
   }
   for (const m of msgs ?? []) {
     const who = whoFor(m.sender);

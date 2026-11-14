@@ -51,7 +51,7 @@ Deno.serve(createHandler("manage-webhooks", async ({ req, correlationId }) => {
     const { data, error } = await db.from("webhooks").insert({
       workspace_id: body.workspace_id,
       name,
-      url: assertPublicHttpUrl(body.url),
+      url: assertPublicHttpUrl(body.url, "url", { requireHttps: true }),
       events: validateEvents(body.events),
       max_attempts: validateAttempts(body.max_attempts) ?? 6,
       secret_ciphertext: await encryptSecret(secret, masterKey),
@@ -89,7 +89,7 @@ Deno.serve(createHandler("manage-webhooks", async ({ req, correlationId }) => {
         if (name.length < 2 || name.length > 80) throw new RuntimeError("invalid_request", "Nome deve ter entre 2 e 80 caracteres.");
         patch.name = name;
       }
-      if (body.url !== undefined) patch.url = assertPublicHttpUrl(body.url);
+      if (body.url !== undefined) patch.url = assertPublicHttpUrl(body.url, "url", { requireHttps: true });
       if (body.events !== undefined) patch.events = validateEvents(body.events);
       if (body.active !== undefined) patch.active = Boolean(body.active);
       const attempts = validateAttempts(body.max_attempts);

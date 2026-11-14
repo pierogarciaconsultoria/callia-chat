@@ -131,9 +131,9 @@ describe("Hospedin: cliente e consulta", () => {
 
 describe("Hospedin: telefone do hóspede", () => {
   it("junta DDI e número, só dígitos, sem duplicar o DDI", () => {
-    expect(guestPhoneDigits("55", "(48) 99997-8131")).toBe("5548999978131");
-    expect(guestPhoneDigits("+55", "5548999978131")).toBe("5548999978131");
-    expect(guestPhoneDigits(null, "48 99997-8131")).toBe("5548999978131");
+    expect(guestPhoneDigits("55", "(48) 99999-0131")).toBe("5548999990131");
+    expect(guestPhoneDigits("+55", "5548999990131")).toBe("5548999990131");
+    expect(guestPhoneDigits(null, "48 99999-0131")).toBe("5548999990131");
     expect(guestPhoneDigits("351", "912 345 678")).toBe("351912345678");
     expect(guestPhoneDigits("55", "123")).toBeNull();
   });

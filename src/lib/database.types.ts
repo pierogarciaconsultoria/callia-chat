@@ -353,7 +353,8 @@ export interface WhatsAppInstance {
   instance_name: string;
   provider: string;
   status: InstanceStatus;
-  qr_code: string | null;
+  /** Só vem da function evolution-connect (admin); a lista do banco não traz a coluna. */
+  qr_code?: string | null;
   qr_updated_at: string | null;
   phone_number: string | null;
   profile_name: string | null;

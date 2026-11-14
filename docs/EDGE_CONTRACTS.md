@@ -81,7 +81,7 @@ para a equipe sem chamar `transferir_para_atendente` vira handoff de fato (motiv
 
 | action | body extra | resposta |
 |---|---|---|
-| `create` | `workspace_id`, `name`, `url`, `events[]`, `max_attempts?` | `{ webhook, secret }` |
+| `create` | `workspace_id`, `name`, `url` (só `https://`, host público), `events[]`, `max_attempts?` | `{ webhook, secret }` |
 | `update` | `webhook_id`, `name?`, `url?`, `events?`, `active?`, `max_attempts?` | `{ webhook }` |
 | `rotate_secret` | `webhook_id` | `{ webhook, secret }` |
 | `delete` | `webhook_id` | `{ deleted: true }` |

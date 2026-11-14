@@ -13,11 +13,14 @@ Deno.serve(createHandler("billing-webhook", async ({ req, url, correlationId, lo
   const body = await readJson(req);
   const { kind, id } = notificationOf(body, url);
 
+  // Fecha sem o segredo: notificação sem assinatura verificável não é processada (auditoria 2026-11-14, M-11).
   const secret = await getPlatformSecret(db, "mercadopago_webhook_secret");
-  if (secret) {
-    const ok = await verifyWebhookSignature({ xSignature: req.headers.get("x-signature"), xRequestId: req.headers.get("x-request-id"), dataId: id, secret });
-    if (!ok) throw new RuntimeError("unauthorized", "Assinatura da notificação inválida.");
+  if (!secret) {
+    log.warn("mercadopago_webhook_secret ausente: notificação recusada");
+    throw new RuntimeError("unauthorized", "Segredo do webhook do Mercado Pago não configurado no console da plataforma.");
   }
+  const ok = await verifyWebhookSignature({ xSignature: req.headers.get("x-signature"), xRequestId: req.headers.get("x-request-id"), dataId: id, secret });
+  if (!ok) throw new RuntimeError("unauthorized", "Assinatura da notificação inválida.");
 
   const mp = new MercadoPagoClient(token, { baseUrl: optionalEnv("MERCADOPAGO_BASE_URL") });
   const result = await processNotificationSafely(mp, db, { kind, id, correlationId, log });

@@ -49,7 +49,7 @@ export interface HospedinReservation {
 // ---------------------------------------------------------------------------
 // Funções puras
 // ---------------------------------------------------------------------------
-/** DDI + telefone do cadastro do hóspede → só dígitos com DDI (ex.: "5548999978131"). */
+/** DDI + telefone do cadastro do hóspede → só dígitos com DDI (ex.: "5548999990131"). */
 export function guestPhoneDigits(ddi: unknown, phone: unknown): string | null {
   const p = String(phone ?? "").replace(/\D/g, "");
   if (p.length < 8) return null;
